@@ -1,4 +1,4 @@
-import { TERRAIN_INFO } from './config.js?v=12';
+import { TERRAIN_INFO, CELL } from './config.js?v=13';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -8,7 +8,8 @@ const ROTATE_AT_ATTACK = 0.2; // während eines Angriffs erst später
 const ROTATE_IN_COMBAT = 0.25; // im Gefecht nur stark Verwundete herauslösen
 const RETURN_AT = 0.9;      // und kehren ab hier zurück
 const CODENAMES = ['ADLER', 'FALKE', 'WOLF', 'LUCHS', 'BÄR', 'HABICHT', 'KRANICH', 'ELCH', 'DACHS', 'MARDER', 'BUSSARD', 'STIER'];
-const PATH_BUDGET = 4;      // A*-Suchen pro Neuberechnung
+const PATH_BUDGET = 6;      // A*-Suchen pro Neuberechnung
+const DANGER_RADIUS = 45;   // so viel Abstand halten Verschiebungen zu Feinden
 
 // Fronten wie in Hearts of Iron: Einheiten werden einer Linie zugewiesen,
 // verteilen sich gleichmäßig darauf und halten sie selbstständig.
@@ -100,6 +101,38 @@ export class FrontManager {
     if (best) this.add(best, [u]);
   }
 
+  // Gefahrenkarte: Feindgebiet kostet mehr, die Nähe feindlicher Einheiten sehr viel mehr.
+  // Wird höchstens alle 0,5 s neu berechnet.
+  safeRouting() {
+    const g = this.game;
+    if (this.routing && g.time - this.routing.time < 0.5) return this.routing.opts;
+    const { w, h } = g.map;
+    const danger = this.danger || (this.danger = new Uint8Array(w * h));
+    danger.fill(0);
+    const cr = DANGER_RADIUS / CELL;
+    for (const o of g.units) {
+      if (o.owner === this.owner) continue;
+      const cx = o.x / CELL, cy = o.y / CELL;
+      const x0 = Math.max(0, Math.floor(cx - cr)), x1 = Math.min(w - 1, Math.ceil(cx + cr));
+      const y0 = Math.max(0, Math.floor(cy - cr)), y1 = Math.min(h - 1, Math.ceil(cy + cr));
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= cr * cr) danger[y * w + x] = 1;
+        }
+      }
+    }
+    const tr = g.territory, me = this.owner;
+    const opts = {
+      cost: (i) => (danger[i] ? 8 : 0) + (tr[i] !== me ? 3 : 0),
+      safe: (x, y) => {
+        const i = g.map.cellIndex(x, y);
+        return !danger[i] && tr[i] === me;
+      },
+    };
+    this.routing = { time: g.time, opts };
+    return opts;
+  }
+
   update(dt) {
     this.timer -= dt;
     if (this.timer > 0) return;
@@ -129,7 +162,7 @@ export class FrontManager {
         if (c) {
           u.rotating = true;
           u.frontGoal = null;
-          u.path = g.map.findPath(u.x, u.y, c.x, c.y) || [];
+          u.path = g.map.findPath(u.x, u.y, c.x, c.y, this.safeRouting()) || [];
           continue;
         }
       }
@@ -162,12 +195,15 @@ export class FrontManager {
         if (u.path.length && this.pathLeadsBack(u)) u.path = [];
         continue;
       }
-      if (g.map.clearLine(u, s)) {
+      // Verschiebungen laufen hinter der eigenen Linie, nicht durch Feindgebiet;
+      // nur ein Angriff darf direkt hinein
+      const opts = f.attack ? null : this.safeRouting();
+      if (g.map.clearLine(u, s, opts && opts.safe)) {
         u.path = [{ x: s.x, y: s.y }];
       } else {
         if (budget <= 0) continue;
         budget--;
-        u.path = g.map.findPath(u.x, u.y, s.x, s.y) || [];
+        u.path = g.map.findPath(u.x, u.y, s.x, s.y, opts) || [];
       }
       u.frontGoal = { x: s.x, y: s.y };
       u.stuck = 0;

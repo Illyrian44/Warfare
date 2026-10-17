@@ -1,5 +1,5 @@
-import { CELL, T, TERRAIN_INFO, MAP_SIZES } from './config.js?v=12';
-import { mulberry32, makeNoise, fbm } from './rng.js?v=12';
+import { CELL, T, TERRAIN_INFO, MAP_SIZES } from './config.js?v=13';
+import { mulberry32, makeNoise, fbm } from './rng.js?v=13';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -64,7 +64,8 @@ export class GameMap {
   }
 
   // A* auf dem Zellgitter, Kosten = Weglänge / Geländetempo. Liefert Weltpunkte.
-  findPath(sx, sy, tx, ty) {
+  // opts.cost(i): Zusatzkosten je Zelle (z. B. Feindgebiet), opts.safe(x, y): Abkürzungen nur über sichere Punkte
+  findPath(sx, sy, tx, ty, opts = null) {
     const { w, h } = this;
     const start = this.cellIndex(sx, sy);
     let goal = this.cellIndex(tx, ty);
@@ -103,7 +104,7 @@ export class GameMap {
         if (closed[ni] || !this.cellPassable(ni)) continue;
         if (dx && dy && (!this.cellPassable(cy * w + nx) || !this.cellPassable(ny * w + cx))) continue;
         const sp = (TERRAIN_INFO[this.cells[ni]].speed + curSpeed) / 2;
-        const ng = g[cur] + len / sp;
+        const ng = g[cur] + len / sp + (opts && opts.cost ? len * opts.cost(ni) : 0);
         if (ng < g[ni]) {
           g[ni] = ng;
           parent[ni] = cur;
@@ -117,17 +118,17 @@ export class GameMap {
     cellsPath.reverse();
     const pts = cellsPath.map((c) => ({ x: (c % w + 0.5) * CELL, y: (Math.floor(c / w) + 0.5) * CELL }));
     pts[pts.length - 1] = { x: tx, y: ty };
-    return this.smoothPath({ x: sx, y: sy }, pts);
+    return this.smoothPath({ x: sx, y: sy }, pts, opts && opts.safe);
   }
 
   // Wegpunkte überspringen, solange die direkte Linie auf gleich gutem Gelände bleibt
-  smoothPath(from, pts) {
+  smoothPath(from, pts, safe = null) {
     const out = [];
     let anchor = from;
     let i = 0;
     while (i < pts.length) {
       let j = pts.length - 1;
-      while (j > i && !this.clearLine(anchor, pts[j])) j--;
+      while (j > i && !this.clearLine(anchor, pts[j], safe)) j--;
       out.push(pts[j]);
       anchor = pts[j];
       i = j + 1;
@@ -135,7 +136,7 @@ export class GameMap {
     return out;
   }
 
-  clearLine(a, b) {
+  clearLine(a, b, safe = null) {
     const dx = b.x - a.x, dy = b.y - a.y;
     const d = Math.hypot(dx, dy);
     const steps = Math.ceil(d / 4);
@@ -144,6 +145,7 @@ export class GameMap {
     for (let s = 1; s < steps; s++) {
       const t = this.terrainAt(a.x + dx * s / steps, a.y + dy * s / steps);
       if (TERRAIN_INFO[t].speed < minSpeed) return false;
+      if (safe && !safe(a.x + dx * s / steps, a.y + dy * s / steps)) return false;
     }
     return true;
   }
