@@ -1,10 +1,10 @@
-import { generateMap } from './map.js?v=6';
-import { Game } from './game.js?v=6';
-import { AI } from './ai.js?v=6';
-import { Renderer } from './render.js?v=6';
-import { Input } from './input.js?v=6';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=6';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=6';
+import { generateMap } from './map.js?v=7';
+import { Game } from './game.js?v=7';
+import { AI } from './ai.js?v=7';
+import { Renderer } from './render.js?v=7';
+import { Input } from './input.js?v=7';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=7';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=7';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -126,7 +126,7 @@ const app = {
     if (mode) {
       $('frontBanner').firstElementChild.textContent = mode === 'new'
         ? 'Front zeichnen: Linie mit dem Finger ziehen'
-        : 'Neue Linie für diese Front ziehen';
+        : 'Angriffsziel: Linie ziehen, bis wohin die Front vorstoßen soll';
     }
   },
 
@@ -137,9 +137,10 @@ const app = {
       this.toast('Linie zu kurz – nochmal versuchen');
       return;
     }
-    if (mode && mode.redraw) {
-      this.fronts.redraw(mode.redraw, line);
-      this.selectFront(mode.redraw);
+    if (mode && mode.plan) {
+      this.fronts.planAttack(mode.plan, line);
+      this.selectFront(mode.plan);
+      this.toast('Angriff geplant – „▶ Angriff starten“ drücken');
       return;
     }
     const f = this.fronts.create('line', line, [...this.ui.selection]);
@@ -193,10 +194,10 @@ const app = {
     $('frontPanel').hidden = !cur;
     if (!cur) return;
     $('frontTitle').textContent = `${cur.kind === 'border' ? 'Grenzfront' : 'Front'} · ${cur.units.length} Einheiten`;
-    $('stanceBtn').hidden = cur.kind !== 'border';
-    $('stanceBtn').textContent = cur.stance === 'attack' ? '⚔ Angriff' : '🛡 Halten';
-    $('stanceBtn').classList.toggle('active', cur.stance === 'attack');
-    $('redrawBtn').hidden = cur.kind !== 'line';
+    $('planBtn').hidden = !!cur.plan;
+    $('planBtn').textContent = cur.attack ? '➜ Neues Ziel' : '➜ Angriff planen';
+    $('attackBtn').hidden = !cur.plan;
+    $('cancelPlanBtn').hidden = !cur.plan;
     $('reinforceBtn').classList.toggle('active', cur.reinforce);
     $('rotateBtn').classList.toggle('active', cur.rotate);
     $('addBtn').hidden = !this.ui.selection.size;
@@ -268,6 +269,10 @@ const app = {
       } else if (ev.type === 'gameover') this.showEnd(ev.winner);
     }
     g.events.length = 0;
+    for (const ev of this.fronts.events) {
+      if (ev.type === 'attackDone') this.toast('Angriffsziel erreicht – die Front hält die neue Linie', 'good');
+    }
+    this.fronts.events.length = 0;
   },
 
   showEnd(winner) {
@@ -378,15 +383,15 @@ $('selectBtn').onclick = () => app.setSelectMode(!app.ui.selectMode);
 $('allBtn').onclick = () => app.selectAll();
 $('frontBtn').onclick = () => app.setFrontMode(app.ui.frontMode ? null : 'new');
 $('borderBtn').onclick = () => app.borderFront();
-$('stanceBtn').onclick = () => {
-  const f = app.ui.front;
-  f.stance = f.stance === 'attack' ? 'hold' : 'attack';
-  app.fronts.schedule(f);
+$('planBtn').onclick = () => app.setFrontMode({ plan: app.ui.front });
+$('attackBtn').onclick = () => {
+  app.fronts.startAttack(app.ui.front);
+  app.toast('Angriff läuft!', 'good');
   app.updateFrontPanel();
 };
+$('cancelPlanBtn').onclick = () => { app.fronts.cancelPlan(app.ui.front); app.updateFrontPanel(); };
 $('reinforceBtn').onclick = () => { app.ui.front.reinforce = !app.ui.front.reinforce; app.updateFrontPanel(); };
 $('rotateBtn').onclick = () => { app.ui.front.rotate = !app.ui.front.rotate; app.updateFrontPanel(); };
-$('redrawBtn').onclick = () => app.setFrontMode({ redraw: app.ui.front });
 $('addBtn').onclick = () => {
   app.fronts.add(app.ui.front, [...app.ui.selection]);
   app.ui.selection.clear();

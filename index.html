@@ -7,7 +7,7 @@
   <meta name="description" content="War of Dots im Browser: minimalistisches Echtzeit-Strategiespiel gegen eine KI.">
   <title>War of Dots</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=6">
+  <link rel="stylesheet" href="css/style.css?v=7">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -43,8 +43,9 @@
         <button id="frontClose" title="Schließen">✕</button>
       </div>
       <div class="frontButtons">
-        <button id="stanceBtn" title="Halten oder ins Feindgebiet drücken">🛡 Halten</button>
-        <button id="redrawBtn" title="Neue Linie zeichnen – die Front rückt dorthin vor">↗ Verlegen</button>
+        <button id="planBtn" title="Angriffslinie ziehen – ein Pfeil zeigt den geplanten Vorstoß">➜ Angriff planen</button>
+        <button id="attackBtn" class="attack" title="Geplanten Angriff ausführen">▶ Angriff starten</button>
+        <button id="cancelPlanBtn" title="Geplanten Angriff verwerfen">Plan verwerfen</button>
         <button id="addBtn" title="Ausgewählte Einheiten dieser Front zuteilen">+ Auswahl</button>
         <button id="reinforceBtn" title="Neue Einheiten rücken automatisch nach">Verstärkung</button>
         <button id="rotateBtn" title="Schwer Verwundete ziehen sich zum Heilen zurück">Rotation</button>
@@ -85,7 +86,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 6</small>
+      <small id="version" class="muted">Version 7</small>
     </div>
   </div>
 
@@ -101,7 +102,7 @@
         <li><b>Auswählen:</b> Einheit antippen. PC: Rahmen mit linker Maustaste aufziehen (Umschalt = hinzufügen). Handy: „▢ Auswahl“ und dann Rahmen ziehen.</li>
         <li><b>Karte bewegen:</b> PC: rechte Maustaste ziehen, Mausrad zoomt. Handy: mit einem Finger ziehen, mit zwei Fingern zoomen.</li>
         <li><b>Frontlinie (wie in Hearts of Iron):</b> Einheiten auswählen, „〰 Front“ tippen und eine Linie zeichnen. Die Einheiten verteilen sich gleichmäßig und halten die Linie. „⛨ Grenze“ erstellt eine Front, die automatisch der Grenze zum Gegner folgt.</li>
-        <li><b>Front antippen</b> (Linie oder Zahl) öffnet ihr Menü: <i>Angriff</i> lässt eine Grenzfront ins Feindgebiet drücken, <i>Verlegen</i> zeichnet eine neue Linie, <i>Verstärkung</i> schickt neue Einheiten automatisch an die Front, <i>Rotation</i> zieht Verwundete zum Heilen ab und schickt sie danach zurück.</li>
+        <li><b>Front antippen</b> (Linie oder Zahl) öffnet ihr Menü: <i>➜ Angriff planen</i>: eine Ziellinie ziehen – ein Pfeil zeigt den Vorstoß wie in Hearts of Iron; <i>▶ Angriff starten</i> schickt die Front los, bis sie die neue Linie hält, <i>Verstärkung</i> schickt neue Einheiten automatisch an die Front, <i>Rotation</i> zieht Verwundete zum Heilen ab und schickt sie danach zurück.</li>
         <li><b>Stadt antippen</b> (ohne Auswahl): wechselt zwischen Infanterie (X) und Panzern (Oval).</li>
         <li>Tasten: Leertaste Pause · A alle · S anhalten · F Front zeichnen · G Grenzfront · Esc abwählen · 1/2/3 Tempo</li>
       </ul>
@@ -139,6 +140,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=6"></script>
+  <script type="module" src="js/main.js?v=7"></script>
 </body>
 </html>

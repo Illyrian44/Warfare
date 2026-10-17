@@ -1,6 +1,6 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=6';
-import { classify } from './map.js?v=6';
-import { frontBadge } from './fronts.js?v=6';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=7';
+import { classify } from './map.js?v=7';
+import { frontBadge } from './fronts.js?v=7';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -268,6 +268,29 @@ export class Renderer {
       ctx.fill();
     }
 
+    // Angriffspfeil: geplant halbtransparent, laufender Angriff deckend
+    if (!fogged && (f.plan || f.attack)) {
+      const target = (f.plan || f.attack).line;
+      if (f.plan) {
+        ctx.setLineDash([6 * px, 5 * px]);
+        ctx.beginPath();
+        ctx.moveTo(target[0].x, target[0].y);
+        for (const p of target) ctx.lineTo(p.x, p.y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4 * px;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      const active = f.units.filter((u) => !u.rotating);
+      const from = active.length && f.attack
+        ? { x: active.reduce((a, u) => a + u.x, 0) / active.length, y: active.reduce((a, u) => a + u.y, 0) / active.length }
+        : frontBadge(f);
+      const to = polylineMid(target);
+      if (from && to && Math.hypot(to.x - from.x, to.y - from.y) > 50 * px) {
+        drawArrow(ctx, from, to, px, color, f.plan ? 0.45 : 0.85, !!f.plan);
+      }
+    }
+
     const b = f.hideBadge ? null : frontBadge(f);
     if (!b) return;
     const r = 12 * px;
@@ -426,4 +449,50 @@ export function drawNatoSymbol(ctx, u, friend, px, highlight, starving) {
     ctx.fillStyle = frac > 0.6 ? '#4cd17a' : frac > 0.3 ? '#f2c94c' : '#ff5b4b';
     ctx.fillRect(x - hw, by, bw * Math.max(0, frac), bh);
   }
+}
+
+function polylineMid(line) {
+  let total = 0;
+  for (let i = 1; i < line.length; i++) total += Math.hypot(line[i].x - line[i - 1].x, line[i].y - line[i - 1].y);
+  let half = total / 2;
+  for (let i = 1; i < line.length; i++) {
+    const a = line[i - 1], b = line[i];
+    const seg = Math.hypot(b.x - a.x, b.y - a.y);
+    if (half <= seg) {
+      const t = seg ? half / seg : 0;
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    }
+    half -= seg;
+  }
+  return line[0];
+}
+
+// Breiter Angriffspfeil im Stil von Hearts of Iron, leicht gebogen
+function drawArrow(ctx, from, to, px, color, alpha, dashed) {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  const ux = dx / len, uy = dy / len;
+  const nx = -uy, ny = ux;
+  const body = 10 * px, headW = 22 * px, headL = Math.min(32 * px, len * 0.45);
+  const bend = len * 0.12; // Krümmung des Schafts
+  const hx = to.x - ux * headL, hy = to.y - uy * headL;
+  const cx = (from.x + hx) / 2 + nx * bend, cy = (from.y + hy) / 2 + ny * bend;
+  ctx.beginPath();
+  ctx.moveTo(from.x + nx * body * 0.5, from.y + ny * body * 0.5);
+  ctx.quadraticCurveTo(cx + nx * body, cy + ny * body, hx + nx * body, hy + ny * body);
+  ctx.lineTo(hx + nx * headW, hy + ny * headW);
+  ctx.lineTo(to.x, to.y);
+  ctx.lineTo(hx - nx * headW, hy - ny * headW);
+  ctx.lineTo(hx - nx * body, hy - ny * body);
+  ctx.quadraticCurveTo(cx - nx * body, cy - ny * body, from.x - nx * body * 0.5, from.y - ny * body * 0.5);
+  ctx.closePath();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  if (dashed) ctx.setLineDash([5 * px, 4 * px]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 2 * px;
+  ctx.stroke();
+  ctx.setLineDash([]);
 }

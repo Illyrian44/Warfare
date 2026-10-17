@@ -258,3 +258,5 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 
 .legend { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 4px; }
 .legend svg { justify-self: center; }
+
+.frontButtons button.attack { background: #c0392b; border-color: #e0412f; font-weight: 600; }

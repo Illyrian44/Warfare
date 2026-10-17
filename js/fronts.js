@@ -1,4 +1,4 @@
-import { TERRAIN_INFO } from './config.js?v=6';
+import { TERRAIN_INFO } from './config.js?v=7';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 40;     // Grenzfront: so weit hinter der Grenze stehen
@@ -16,6 +16,7 @@ export class FrontManager {
     this.fronts = [];
     this.timer = owner === 1 ? 0 : REFRESH / 2; // Spieler versetzt rechnen
     this.nextId = 1;
+    this.events = [];
   }
 
   create(kind, line, units) {
@@ -55,6 +56,25 @@ export class FrontManager {
 
   redraw(f, line) {
     f.line = line;
+    this.refresh(f, true);
+  }
+
+  // Angriff wie in Hearts of Iron: erst Ziel-Linie planen, dann auf Befehl vorstoßen
+  planAttack(f, line) {
+    f.plan = { line };
+  }
+
+  cancelPlan(f) {
+    f.plan = null;
+  }
+
+  startAttack(f) {
+    if (!f.plan) return;
+    f.kind = 'line';
+    f.line = f.plan.line;
+    f.attack = { line: f.plan.line, started: this.game.time };
+    f.plan = null;
+    f.stance = 'hold';
     this.refresh(f, true);
   }
 
@@ -135,6 +155,15 @@ export class FrontManager {
       }
       u.frontGoal = { x: s.x, y: s.y };
       u.stuck = 0;
+    }
+
+    // Angriff abgeschlossen, sobald die meisten Einheiten ihre Plätze erreicht haben
+    if (f.attack && active.length) {
+      const arrived = active.filter((u) => u.frontGoal && Math.hypot(u.x - u.frontGoal.x, u.y - u.frontGoal.y) < 30).length;
+      if (arrived >= active.length * 0.7) {
+        f.attack = null;
+        this.events.push({ type: 'attackDone', front: f });
+      }
     }
   }
 
