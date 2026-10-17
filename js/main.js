@@ -3,6 +3,7 @@ import { Game } from './game.js';
 import { AI } from './ai.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
+import { FrontManager, chainLength, frontBadge } from './fronts.js';
 import { DIFFICULTY, UNITS_PER_CITY } from './config.js';
 
 const STEP = 1 / 30;
@@ -14,7 +15,7 @@ const app = {
   renderer: null,
   human: 1,
   cam: { x: 0, y: 0, zoom: 1, min: 0.2, max: 6 },
-  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false },
+  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null },
   paused: false,
   speed: 1,
   settings: loadSettings(),
@@ -24,6 +25,10 @@ const app = {
     const map = generateMap(seed, size);
     this.game = new Game(map);
     this.ai = new AI(this.game, 2, difficulty);
+    this.fronts = new FrontManager(this.game, this.human);
+    this.ui.frontMode = null;
+    this.ui.front = null;
+    this.updateFrontPanel();
     this.renderer = new Renderer(canvas, this.game, this.human);
     this.ui.selection.clear();
     this.ui.revealAll = false;
@@ -105,7 +110,88 @@ const app = {
   },
 
   stopSelection() {
-    for (const u of this.ui.selection) u.path = [];
+    for (const u of this.ui.selection) { this.fronts.release(u); u.path = []; }
+    this.updateFrontPanel();
+  },
+
+  // Manueller Befehl: Einheit verlässt ihre Front
+  release(u) {
+    if (u.front) { this.fronts.release(u); this.updateFrontPanel(); }
+  },
+
+  setFrontMode(mode) {
+    this.ui.frontMode = mode;
+    $('frontBtn').classList.toggle('active', !!mode);
+    if (mode) this.toast(mode === 'new' ? 'Zeichne jetzt die Frontlinie auf die Karte.' : 'Zeichne die neue Linie für diese Front.');
+  },
+
+  finishFront(line) {
+    const mode = this.ui.frontMode;
+    this.setFrontMode(null);
+    if (chainLength(line) < 30) return;
+    if (mode && mode.redraw) {
+      this.fronts.redraw(mode.redraw, line);
+      this.selectFront(mode.redraw);
+      return;
+    }
+    const f = this.fronts.create('line', line, [...this.ui.selection]);
+    this.ui.selection.clear();
+    this.updateSelectionInfo();
+    this.selectFront(f);
+    this.toast(f.units.length ? `Front mit ${f.units.length} Einheiten erstellt` : 'Front erstellt – neue Einheiten rücken nach');
+  },
+
+  borderFront() {
+    const units = [...this.ui.selection];
+    let f = this.fronts.fronts.find((o) => o.kind === 'border');
+    if (f) this.fronts.add(f, units);
+    else f = this.fronts.create('border', null, units);
+    this.ui.selection.clear();
+    this.updateSelectionInfo();
+    this.selectFront(f);
+    this.toast(`Grenzfront: ${f.units.length} Einheiten`);
+  },
+
+  selectFront(f) {
+    this.ui.front = f;
+    this.updateFrontPanel();
+  },
+
+  pickFrontBadge(w) {
+    const tol = Math.max(8, 14 / this.cam.zoom);
+    for (const f of this.fronts.fronts) {
+      const b = frontBadge(f);
+      if (b && Math.hypot(b.x - w.x, b.y - w.y) < tol * 1.3) return f;
+    }
+    return null;
+  },
+
+  pickFront(w) {
+    const tol = Math.max(8, 14 / this.cam.zoom);
+    const badge = this.pickFrontBadge(w);
+    if (badge) return badge;
+    for (const f of this.fronts.fronts) {
+      for (const c of f.chains) {
+        for (let i = 1; i < c.length; i++) if (segDist(w, c[i - 1], c[i]) < tol * 0.7) return f;
+      }
+    }
+    return null;
+  },
+
+  updateFrontPanel() {
+    const f = this.ui.front;
+    if (f && !this.fronts.fronts.includes(f)) this.ui.front = null;
+    const cur = this.ui.front;
+    $('frontPanel').hidden = !cur;
+    if (!cur) return;
+    $('frontTitle').textContent = `${cur.kind === 'border' ? 'Grenzfront' : 'Front'} · ${cur.units.length} Einheiten`;
+    $('stanceBtn').hidden = cur.kind !== 'border';
+    $('stanceBtn').textContent = cur.stance === 'attack' ? '⚔ Angriff' : '🛡 Halten';
+    $('stanceBtn').classList.toggle('active', cur.stance === 'attack');
+    $('redrawBtn').hidden = cur.kind !== 'line';
+    $('reinforceBtn').classList.toggle('active', cur.reinforce);
+    $('rotateBtn').classList.toggle('active', cur.rotate);
+    $('addBtn').hidden = !this.ui.selection.size;
   },
 
   setSelectMode(on) {
@@ -135,6 +221,7 @@ const app = {
       if (base && base.length) {
         const p = base.map((q) => ({ x: q.x, y: q.y }));
         p[p.length - 1] = { x: tx, y: ty };
+        this.release(u);
         u.path = p;
         u.stuck = 0;
       }
@@ -145,6 +232,7 @@ const app = {
     const n = this.ui.selection.size;
     $('selInfo').textContent = n ? `${n} ausgewählt` : '';
     $('deselectBtn').hidden = !n;
+    if (this.fronts) this.updateFrontPanel();
   },
 
   toast(msg, kind = '') {
@@ -160,7 +248,12 @@ const app = {
   handleEvents() {
     const g = this.game;
     for (const ev of g.events) {
-      if (ev.type === 'death') this.ui.selection.delete(ev.unit);
+      if (ev.type === 'death') {
+        this.ui.selection.delete(ev.unit);
+        if (ev.unit.front) this.fronts.release(ev.unit);
+      } else if (ev.type === 'spawn' && ev.unit.owner === this.human) {
+        this.fronts.onSpawn(ev.unit);
+      }
       else if (ev.type === 'capture') {
         if (ev.owner === this.human) this.toast(ev.old ? 'Feindliche Stadt erobert!' : 'Neutrale Stadt eingenommen!', 'good');
         else if (ev.old === this.human) this.toast('Eine Stadt ist gefallen!', 'bad');
@@ -195,6 +288,7 @@ const app = {
     $('hudUnits').innerHTML = `${myU}<span class="muted">/${myC * UNITS_PER_CITY} Einheiten</span>`;
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     $('hudTime').textContent = `${m}:${String(s).padStart(2, '0')}`;
+    if (this.ui.front) this.updateFrontPanel();
   },
 };
 
@@ -222,6 +316,7 @@ function frame(now) {
       let steps = 0;
       while (acc >= STEP && steps < 12) {
         app.ai.update(STEP);
+        app.fronts.update(STEP);
         app.game.step(STEP);
         acc -= STEP;
         steps++;
@@ -229,7 +324,7 @@ function frame(now) {
       if (steps === 12) acc = 0;
     }
     app.handleEvents();
-    app.renderer.draw(app.cam, app.ui);
+    app.renderer.draw(app.cam, app.ui, app.fronts);
     if (now - app.lastHud > 250) { app.updateHud(); app.lastHud = now; }
   }
   requestAnimationFrame(frame);
@@ -273,6 +368,28 @@ $('menuBtn').onclick = () => {
 $('resumeBtn').onclick = () => { $('menu').hidden = true; if (app.paused) app.togglePause(); };
 $('selectBtn').onclick = () => app.setSelectMode(!app.ui.selectMode);
 $('allBtn').onclick = () => app.selectAll();
+$('frontBtn').onclick = () => app.setFrontMode(app.ui.frontMode ? null : 'new');
+$('borderBtn').onclick = () => app.borderFront();
+$('stanceBtn').onclick = () => {
+  const f = app.ui.front;
+  f.stance = f.stance === 'attack' ? 'hold' : 'attack';
+  app.fronts.refresh(f, true);
+  app.updateFrontPanel();
+};
+$('reinforceBtn').onclick = () => { app.ui.front.reinforce = !app.ui.front.reinforce; app.updateFrontPanel(); };
+$('rotateBtn').onclick = () => { app.ui.front.rotate = !app.ui.front.rotate; app.updateFrontPanel(); };
+$('redrawBtn').onclick = () => app.setFrontMode({ redraw: app.ui.front });
+$('addBtn').onclick = () => {
+  app.fronts.add(app.ui.front, [...app.ui.selection]);
+  app.ui.selection.clear();
+  app.updateSelectionInfo();
+};
+$('disbandBtn').onclick = () => {
+  for (const u of app.ui.front.units) u.path = [];
+  app.fronts.remove(app.ui.front);
+  app.selectFront(null);
+};
+$('frontClose').onclick = () => app.selectFront(null);
 $('deselectBtn').onclick = () => { app.ui.selection.clear(); app.updateSelectionInfo(); };
 $('centerBtn').onclick = () => app.fitCamera();
 $('againBtn').onclick = () => app.start(app.current.seed, app.current.size, app.current.difficulty);
@@ -287,3 +404,10 @@ function saveSettings(s) {
 }
 
 window.wod = app; // zum Debuggen in der Konsole
+
+function segDist(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+  return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
+}

@@ -1,5 +1,6 @@
 import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js';
 import { classify } from './map.js';
+import { frontBadge } from './fronts.js';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -125,7 +126,7 @@ export class Renderer {
     }
   }
 
-  draw(cam, ui) {
+  draw(cam, ui, fronts) {
     const { ctx, canvas, game } = this;
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -142,6 +143,8 @@ export class Renderer {
     const px = 1 / cam.zoom; // eine Bildschirm-Einheit in Weltkoordinaten
     const me = this.human;
     const visible = (u) => u.owner === me || ui.revealAll || game.isVisible(me, u.x, u.y);
+
+    if (fronts) for (const f of fronts.fronts) this.drawFront(f, px, f === ui.front);
 
     // Geplante Wege eigener Einheiten
     ctx.lineWidth = 1.5 * px;
@@ -198,6 +201,13 @@ export class Renderer {
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
         ctx.fill();
       }
+      if (ui.front && u.front === ui.front) {
+        ctx.beginPath();
+        ctx.arc(u.x, u.y, r + 2.5, 0, Math.PI * 2);
+        ctx.strokeStyle = '#f2c94c';
+        ctx.lineWidth = Math.max(1, 1.4 * px);
+        ctx.stroke();
+      }
       if (ui.selection.has(u)) {
         ctx.beginPath();
         ctx.arc(u.x, u.y, r + 2.5, 0, Math.PI * 2);
@@ -207,9 +217,9 @@ export class Renderer {
       }
     }
 
-    // Weg, der gerade gezeichnet wird
+    // Weg oder Front, die gerade gezeichnet wird
     if (ui.drawPath && ui.drawPath.length > 1) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+      ctx.strokeStyle = ui.frontMode ? PLAYER_COLORS[me] : 'rgba(255,255,255,0.95)';
       ctx.lineWidth = 2.5 * px;
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
@@ -230,6 +240,69 @@ export class Renderer {
       ctx.fillRect(x, y, w, h);
       ctx.strokeRect(x, y, w, h);
     }
+  }
+
+  // Frontlinie wie in Hearts of Iron: dicke Linie mit Zacken Richtung Feind
+  drawFront(f, px, selected) {
+    const { ctx } = this;
+    const color = PLAYER_COLORS[f.owner || this.human];
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (const c of f.chains) {
+      if (c.length < 2) continue;
+      ctx.beginPath();
+      ctx.moveTo(c[0].x, c[0].y);
+      for (const p of c) ctx.lineTo(p.x, p.y);
+      ctx.strokeStyle = selected ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.55)';
+      ctx.lineWidth = (selected ? 7 : 6) * px;
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3.5 * px;
+      ctx.stroke();
+
+      // Zacken in festen Bildschirmabständen
+      const step = 14 * px, tooth = 5 * px, half = 3.5 * px;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      let carry = step / 2;
+      for (let i = 1; i < c.length; i++) {
+        const a = c[i - 1], b = c[i];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const seg = Math.hypot(dx, dy);
+        if (!seg) continue;
+        const tx = dx / seg, ty = dy / seg;
+        // Normale zur Feindseite ausrichten
+        let nx = -ty, ny = tx;
+        const fx = (a.nx + b.nx), fy = (a.ny + b.ny);
+        if (nx * fx + ny * fy < 0) { nx = -nx; ny = -ny; }
+        let d = carry;
+        while (d < seg) {
+          const x = a.x + tx * d, y = a.y + ty * d;
+          ctx.moveTo(x - tx * half, y - ty * half);
+          ctx.lineTo(x + nx * tooth, y + ny * tooth);
+          ctx.lineTo(x + tx * half, y + ty * half);
+          d += step;
+        }
+        carry = d - seg;
+      }
+      ctx.fill();
+    }
+
+    const b = frontBadge(f);
+    if (!b) return;
+    const r = 9 * px;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 2 * px;
+    ctx.strokeStyle = selected ? '#f2c94c' : '#fff';
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${10 * px}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(f.kind === 'border' && f.stance === 'attack' ? `⚔${f.units.length}` : String(f.units.length), b.x, b.y + 0.5 * px);
   }
 
   drawCity(c, px, ui) {

@@ -18,6 +18,7 @@ Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https:
 - **Gelände:** Ebene, Wald (−25 % Angriff), Hügel (+50 % Angriff, mehr Sicht), Wasser (−50 % Angriff, langsam), Gebirge und tiefes Wasser sind unpassierbar.
 - **Kampf** läuft automatisch. Eingekesselte Einheiten nehmen 50 % mehr Schaden.
 - **Versorgung:** Heilung nahe eigener Städte, Schaden tief im Feindesland. Jede Stadt versorgt 5 Einheiten, überzählige hungern.
+- **Frontlinien wie in Hearts of Iron:** Einheiten einer gezeichneten Linie oder der Grenze zum Gegner zuweisen. Sie verteilen sich gleichmäßig und halten die Stellung. Grenzfronten wandern mit der Grenze und können im Angriffsmodus ins Feindgebiet drücken. Optional rücken neue Einheiten automatisch nach (Verstärkung) und Verwundete ziehen sich zum Heilen zurück (Rotation).
 - **Nebel des Krieges:** Gegner sind nur in Sichtweite sichtbar.
 
 ## Steuerung
@@ -29,6 +30,8 @@ Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https:
 | Gruppe bewegen | Von ausgewählter Einheit ziehen oder auf Ziel klicken | ebenso |
 | Karte verschieben | Rechte Maustaste ziehen | Ein Finger ziehen |
 | Zoomen | Mausrad | Zwei Finger |
+| Front zeichnen | „〰 Front“ (F), dann Linie ziehen | ebenso |
+| Grenzfront | „⛨ Grenze“ (G) | ebenso |
 | Produktion wechseln | Eigene Stadt anklicken (ohne Auswahl) | Stadt antippen |
 
 Tasten: Leertaste Pause · A alle auswählen · S anhalten · Esc abwählen · 1/2/3 Tempo.
@@ -42,6 +45,7 @@ js/config.js      Spielwerte (Gelände, Einheiten, Schwierigkeit)
 js/map.js         Kartengenerator (punktsymmetrische Insel) und A*-Wegfindung
 js/game.js        Simulation: Bewegung, Kampf, Versorgung, Städte, Gebiet, Sicht
 js/ai.js          KI-Gegner
+js/fronts.js      Frontlinien (Verteilung, Grenzverfolgung, Rotation)
 js/render.js      Canvas-Darstellung
 js/input.js       Maus-, Touch- und Tastatursteuerung
 js/main.js        Spielschleife und Menüs

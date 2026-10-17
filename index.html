@@ -32,7 +32,23 @@
         <button id="deselectBtn" hidden title="Auswahl aufheben (Esc)">✕ Abwählen</button>
         <button id="selectBtn" title="Rahmen aufziehen, um Einheiten auszuwählen">▢ Auswahl</button>
         <button id="allBtn" title="Alle eigenen Einheiten auswählen (A)">Alle</button>
+        <button id="frontBtn" title="Frontlinie zeichnen – ausgewählte Einheiten verteilen sich darauf (F)">〰 Front</button>
+        <button id="borderBtn" title="Grenzfront: ausgewählte Einheiten halten die Grenze zum Gegner (G)">⛨ Grenze</button>
         <button id="centerBtn" title="Ansicht zurücksetzen">⤢</button>
+      </div>
+    </div>
+    <div id="frontPanel" hidden>
+      <div class="frontHead">
+        <b id="frontTitle"></b>
+        <button id="frontClose" title="Schließen">✕</button>
+      </div>
+      <div class="frontButtons">
+        <button id="stanceBtn" title="Halten oder ins Feindgebiet drücken">🛡 Halten</button>
+        <button id="redrawBtn" title="Neue Linie zeichnen – die Front rückt dorthin vor">↗ Verlegen</button>
+        <button id="addBtn" title="Ausgewählte Einheiten dieser Front zuteilen">+ Auswahl</button>
+        <button id="reinforceBtn" title="Neue Einheiten rücken automatisch nach">Verstärkung</button>
+        <button id="rotateBtn" title="Schwer Verwundete ziehen sich zum Heilen zurück">Rotation</button>
+        <button id="disbandBtn" title="Front auflösen">Auflösen</button>
       </div>
     </div>
     <div id="seedLabel" class="muted"></div>
@@ -79,8 +95,10 @@
         <li><b>Gruppe bewegen:</b> Einheiten auswählen, dann von einer ausgewählten Einheit aus ziehen – alle folgen in Formation. Oder einfach auf die Karte tippen.</li>
         <li><b>Auswählen:</b> Einheit antippen. PC: Rahmen mit linker Maustaste aufziehen (Umschalt = hinzufügen). Handy: „▢ Auswahl“ und dann Rahmen ziehen.</li>
         <li><b>Karte bewegen:</b> PC: rechte Maustaste ziehen, Mausrad zoomt. Handy: mit einem Finger ziehen, mit zwei Fingern zoomen.</li>
+        <li><b>Frontlinie (wie in Hearts of Iron):</b> Einheiten auswählen, „〰 Front“ tippen und eine Linie zeichnen. Die Einheiten verteilen sich gleichmäßig und halten die Linie. „⛨ Grenze“ erstellt eine Front, die automatisch der Grenze zum Gegner folgt.</li>
+        <li><b>Front antippen</b> (Linie oder Zahl) öffnet ihr Menü: <i>Angriff</i> lässt eine Grenzfront ins Feindgebiet drücken, <i>Verlegen</i> zeichnet eine neue Linie, <i>Verstärkung</i> schickt neue Einheiten automatisch an die Front, <i>Rotation</i> zieht Verwundete zum Heilen ab und schickt sie danach zurück.</li>
         <li><b>Stadt antippen</b> (ohne Auswahl): wechselt zwischen leichten (L) und schweren (S) Einheiten.</li>
-        <li>Tasten: Leertaste Pause · A alle · S anhalten · Esc abwählen · 1/2/3 Tempo</li>
+        <li>Tasten: Leertaste Pause · A alle · S anhalten · F Front zeichnen · G Grenzfront · Esc abwählen · 1/2/3 Tempo</li>
       </ul>
       <h3>Regeln</h3>
       <ul>

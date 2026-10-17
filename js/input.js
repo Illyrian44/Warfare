@@ -65,14 +65,20 @@ export class Input {
       this.gesture = { kind: 'pan', moved: false, button: e.button };
       return;
     }
-    const u = this.pickOwnUnit(w);
+    if (this.ui.frontMode) {
+      this.gesture = { kind: 'front', moved: false };
+      this.ui.drawPath = [w];
+      return;
+    }
+    const badge = this.app.pickFrontBadge(w);
+    const u = badge ? null : this.pickOwnUnit(w);
     if (u) {
       this.gesture = { kind: 'path', unit: u, moved: false, shift: e.shiftKey };
       this.ui.drawPath = [{ x: u.x, y: u.y }];
       return;
     }
     const boxMode = mouse || this.ui.selectMode;
-    this.gesture = { kind: boxMode ? 'box' : 'pan', moved: false, city: this.pickOwnCity(w), world: w, shift: e.shiftKey };
+    this.gesture = { kind: boxMode ? 'box' : 'pan', moved: false, city: this.pickOwnCity(w), world: w, shift: e.shiftKey, badge };
   }
 
   move(e) {
@@ -99,7 +105,7 @@ export class Input {
       cam.x -= (p.x - lx) / cam.zoom;
       cam.y -= (p.y - ly) / cam.zoom;
       this.app.clampCamera();
-    } else if (g.kind === 'path') {
+    } else if (g.kind === 'path' || g.kind === 'front') {
       const w = this.toWorld(p.x, p.y);
       const path = this.ui.drawPath;
       const last = path[path.length - 1];
@@ -133,11 +139,16 @@ export class Input {
       } else {
         const group = sel.has(g.unit) && sel.size > 1 ? [...sel] : [g.unit];
         for (const u of group) {
+          this.app.release(u);
           const ox = u.x - g.unit.x, oy = u.y - g.unit.y;
           u.path = path.slice(1).map((q) => ({ x: q.x + ox, y: q.y + oy }));
           u.stuck = 0;
         }
       }
+    } else if (g.kind === 'front') {
+      const path = this.ui.drawPath || [];
+      this.ui.drawPath = null;
+      if (g.moved && path.length >= 2) this.app.finishFront(path);
     } else if (g.kind === 'box') {
       this.ui.box = null;
       if (g.moved) {
@@ -160,6 +171,11 @@ export class Input {
 
   tap(g, e) {
     const sel = this.ui.selection;
+    const f = g.badge || this.app.pickFront(g.world);
+    if (f && (g.badge || !sel.size || f === this.ui.front)) {
+      this.app.selectFront(f === this.ui.front ? null : f);
+      return;
+    }
     if (g.city && !sel.size) {
       g.city.prodType = g.city.prodType === 'light' ? 'heavy' : 'light';
       this.app.toast(g.city.prodType === 'heavy' ? 'Stadt baut jetzt: Schwere Einheiten' : 'Stadt baut jetzt: Leichte Einheiten');
@@ -186,7 +202,13 @@ export class Input {
     if (!app.game || e.target.tagName === 'INPUT') return;
     const k = e.key.toLowerCase();
     if (k === ' ' || k === 'p') { e.preventDefault(); app.togglePause(); }
-    else if (k === 'escape') { this.ui.selection.clear(); app.updateSelectionInfo(); }
+    else if (k === 'escape') {
+      this.ui.selection.clear();
+      app.setFrontMode(null);
+      app.selectFront(null);
+      app.updateSelectionInfo();
+    } else if (k === 'f') app.setFrontMode(this.ui.frontMode ? null : 'new');
+    else if (k === 'g') app.borderFront();
     else if (k === 'a' && (e.ctrlKey || e.metaKey || !e.shiftKey)) {
       e.preventDefault();
       app.selectAll();
