@@ -1,11 +1,10 @@
-import { TERRAIN_INFO, CELL } from './config.js?v=13';
+import { TERRAIN_INFO, CELL } from './config.js?v=14';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
 const ATTACK_OFFSET = 30;   // Grenzfront im Angriff: so weit in Feindesland drücken
 const ROTATE_AT = 0.35;     // Verwundete ziehen sich darunter zurück
 const ROTATE_AT_ATTACK = 0.2; // während eines Angriffs erst später
-const ROTATE_IN_COMBAT = 0.25; // im Gefecht nur stark Verwundete herauslösen
 const RETURN_AT = 0.9;      // und kehren ab hier zurück
 const CODENAMES = ['ADLER', 'FALKE', 'WOLF', 'LUCHS', 'BÄR', 'HABICHT', 'KRANICH', 'ELCH', 'DACHS', 'MARDER', 'BUSSARD', 'STIER'];
 const PATH_BUDGET = 6;      // A*-Suchen pro Neuberechnung
@@ -156,8 +155,9 @@ export class FrontManager {
       const frac = u.hp / u.maxHp;
       const limit = f.attack ? ROTATE_AT_ATTACK : ROTATE_AT;
       // Im Gefecht erst bei schweren Verlusten herauslösen
-      const contact = u.target || (frac < limit && this.enemyNear(u, 100));
-      if (f.rotate && !u.rotating && (contact ? frac < ROTATE_IN_COMBAT : frac < limit)) {
+      // Bei Feindkontakt wird nicht rotiert: die Front hält. Verwundete gehen nur
+      // zum Heilen, wenn kein Feind in der Nähe ist.
+      if (f.rotate && !u.rotating && frac < limit && !u.target && !this.enemyNear(u, 160)) {
         const c = this.nearestCity(u);
         if (c) {
           u.rotating = true;

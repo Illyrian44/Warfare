@@ -1,10 +1,10 @@
-import { generateMap } from './map.js?v=13';
-import { Game } from './game.js?v=13';
-import { AI } from './ai.js?v=13';
-import { Renderer } from './render.js?v=13';
-import { Input } from './input.js?v=13';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=13';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=13';
+import { generateMap } from './map.js?v=14';
+import { Game } from './game.js?v=14';
+import { AI } from './ai.js?v=14';
+import { Renderer } from './render.js?v=14';
+import { Input } from './input.js?v=14';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=14';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=14';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);

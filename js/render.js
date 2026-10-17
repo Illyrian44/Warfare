@@ -1,6 +1,6 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=13';
-import { classify } from './map.js?v=13';
-import { frontBadge } from './fronts.js?v=13';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=14';
+import { classify } from './map.js?v=14';
+import { frontBadge } from './fronts.js?v=14';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
