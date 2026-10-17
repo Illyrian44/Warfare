@@ -1,6 +1,6 @@
-import { DIFFICULTY } from './config.js';
-import { unitStrength } from './game.js';
-import { mulberry32 } from './rng.js';
+import { DIFFICULTY } from './config.js?v=3';
+import { unitStrength } from './game.js?v=3';
+import { mulberry32 } from './rng.js?v=3';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;

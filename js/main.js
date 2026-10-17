@@ -1,10 +1,10 @@
-import { generateMap } from './map.js';
-import { Game } from './game.js';
-import { AI } from './ai.js';
-import { Renderer } from './render.js';
-import { Input } from './input.js';
-import { FrontManager, chainLength, frontBadge } from './fronts.js';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js';
+import { generateMap } from './map.js?v=3';
+import { Game } from './game.js?v=3';
+import { AI } from './ai.js?v=3';
+import { Renderer } from './render.js?v=3';
+import { Input } from './input.js?v=3';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=3';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=3';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -122,13 +122,21 @@ const app = {
   setFrontMode(mode) {
     this.ui.frontMode = mode;
     $('frontBtn').classList.toggle('active', !!mode);
-    if (mode) this.toast(mode === 'new' ? 'Zeichne jetzt die Frontlinie auf die Karte.' : 'Zeichne die neue Linie für diese Front.');
+    $('frontBanner').hidden = !mode;
+    if (mode) {
+      $('frontBanner').firstElementChild.textContent = mode === 'new'
+        ? 'Front zeichnen: Linie mit dem Finger ziehen'
+        : 'Neue Linie für diese Front ziehen';
+    }
   },
 
   finishFront(line) {
     const mode = this.ui.frontMode;
     this.setFrontMode(null);
-    if (chainLength(line) < 30) return;
+    if (chainLength(line) < 30) {
+      this.toast('Linie zu kurz – nochmal versuchen');
+      return;
+    }
     if (mode && mode.redraw) {
       this.fronts.redraw(mode.redraw, line);
       this.selectFront(mode.redraw);
@@ -149,7 +157,7 @@ const app = {
     this.ui.selection.clear();
     this.updateSelectionInfo();
     this.selectFront(f);
-    this.toast(`Grenzfront: ${f.units.length} Einheiten`);
+    this.toast(f.chains.length ? `Grenzfront: ${f.units.length} Einheiten` : 'Keine Grenze zum Gegner gefunden');
   },
 
   selectFront(f) {
@@ -389,6 +397,7 @@ $('disbandBtn').onclick = () => {
   app.fronts.remove(app.ui.front);
   app.selectFront(null);
 };
+$('frontCancel').onclick = () => app.setFrontMode(null);
 $('frontClose').onclick = () => app.selectFront(null);
 $('deselectBtn').onclick = () => { app.ui.selection.clear(); app.updateSelectionInfo(); };
 $('centerBtn').onclick = () => app.fitCamera();

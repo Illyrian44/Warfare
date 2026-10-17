@@ -7,7 +7,7 @@
   <meta name="description" content="War of Dots im Browser: minimalistisches Echtzeit-Strategiespiel gegen eine KI.">
   <title>War of Dots</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=3">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -53,6 +53,10 @@
     </div>
     <div id="seedLabel" class="muted"></div>
     <div id="pausedBanner" hidden>Pausiert</div>
+    <div id="frontBanner" hidden>
+      <span>Front zeichnen: Linie mit dem Finger ziehen</span>
+      <button id="frontCancel">Abbrechen</button>
+    </div>
   </div>
 
   <div id="toasts"></div>
@@ -81,6 +85,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
+      <small id="version" class="muted">Version 0</small>
     </div>
   </div>
 
@@ -124,6 +129,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js?v=3"></script>
 </body>
 </html>

@@ -129,6 +129,27 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   pointer-events: none;
 }
 
+#version { text-align: center; font-size: 11px; }
+#frontBanner {
+  position: fixed;
+  bottom: calc(120px + env(safe-area-inset-bottom));
+  color: #fff;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: 94vw;
+  background: var(--blue);
+  padding: 6px 6px 6px 14px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+#frontBanner button { min-height: 34px; background: rgba(0, 0, 0, 0.25); }
+
 /* Front-Menü */
 #frontPanel {
   position: fixed;

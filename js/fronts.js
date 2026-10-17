@@ -1,4 +1,4 @@
-import { TERRAIN_INFO } from './config.js';
+import { TERRAIN_INFO } from './config.js?v=3';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 40;     // Grenzfront: so weit hinter der Grenze stehen
@@ -149,7 +149,16 @@ export class FrontManager {
       if (g.territory[g.map.cellIndex(p.x + n.x * d, p.y + n.y * d)] !== this.owner) a++;
       if (g.territory[g.map.cellIndex(p.x - n.x * d, p.y - n.y * d)] !== this.owner) b++;
     }
-    return a >= b ? 1 : -1;
+    if (a !== b) return a > b ? 1 : -1;
+    // Gleichstand (z. B. neutrales Land auf beiden Seiten): zur nächsten Feindstadt zeigen
+    let best = null, bd = Infinity;
+    for (const c of g.cities) {
+      if (c.owner !== 3 - this.owner) continue;
+      const d = Math.hypot(c.x - p.x, c.y - p.y);
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (!best) return 1;
+    return (best.x - p.x) * n.x + (best.y - p.y) * n.y >= 0 ? 1 : -1;
   }
 
   // Grenzzellen zum Gegner (ohne Kontakt: zu fremdem Land) zu Linien verketten
@@ -192,7 +201,8 @@ export class FrontManager {
         }
       }
       const foeCities = g.cities.filter((c) => c.owner === foe);
-      cells = collect((n) => outside[n] === 1).filter((i) => {
+      const frontier = collect((n) => outside[n] === 1);
+      cells = frontier.filter((i) => {
         if (!foeCities.length) return true;
         const x = (i % w + 0.5) * map.worldW / w, y = ((i / w | 0) + 0.5) * map.worldH / h;
         let best = null, bd = Infinity;
@@ -203,6 +213,7 @@ export class FrontManager {
         const ol = Math.hypot(ox, oy) || 1;
         return (ox * (best.x - x) + oy * (best.y - y)) / (ol * bd) > 0.25;
       });
+      if (cells.length < 4) cells = frontier;
     }
 
     const set = new Set(cells);

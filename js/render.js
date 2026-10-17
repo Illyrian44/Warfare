@@ -1,6 +1,6 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js';
-import { classify } from './map.js';
-import { frontBadge } from './fronts.js';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=3';
+import { classify } from './map.js?v=3';
+import { frontBadge } from './fronts.js?v=3';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -254,14 +254,14 @@ export class Renderer {
       ctx.moveTo(c[0].x, c[0].y);
       for (const p of c) ctx.lineTo(p.x, p.y);
       ctx.strokeStyle = selected ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.55)';
-      ctx.lineWidth = (selected ? 7 : 6) * px;
+      ctx.lineWidth = (selected ? 10 : 9) * px;
       ctx.stroke();
       ctx.strokeStyle = color;
-      ctx.lineWidth = 3.5 * px;
+      ctx.lineWidth = 5.5 * px;
       ctx.stroke();
 
       // Zacken in festen Bildschirmabständen
-      const step = 14 * px, tooth = 5 * px, half = 3.5 * px;
+      const step = 16 * px, tooth = 8 * px, half = 5 * px;
       ctx.fillStyle = color;
       ctx.beginPath();
       let carry = step / 2;
@@ -290,7 +290,7 @@ export class Renderer {
 
     const b = frontBadge(f);
     if (!b) return;
-    const r = 9 * px;
+    const r = 12 * px;
     ctx.beginPath();
     ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
     ctx.fillStyle = color;
@@ -299,7 +299,7 @@ export class Renderer {
     ctx.strokeStyle = selected ? '#f2c94c' : '#fff';
     ctx.stroke();
     ctx.fillStyle = '#fff';
-    ctx.font = `bold ${10 * px}px system-ui, sans-serif`;
+    ctx.font = `bold ${12 * px}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(f.kind === 'border' && f.stance === 'attack' ? `⚔${f.units.length}` : String(f.units.length), b.x, b.y + 0.5 * px);
