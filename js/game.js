@@ -2,8 +2,8 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER,
-} from './config.js?v=5';
-import { mulberry32 } from './rng.js?v=5';
+} from './config.js?v=6';
+import { mulberry32 } from './rng.js?v=6';
 
 export class Game {
   constructor(map, opts = {}) {
@@ -31,13 +31,92 @@ export class Game {
     this.stats = [null, { lost: 0, built: 0, captured: 0 }, { lost: 0, built: 0, captured: 0 }];
 
     for (const c of this.cities) {
-      if (c.owner) {
-        this.paint(c.owner, c.x, c.y, CITY_BORDER * 1.8);
-        for (let k = 0; k < 2; k++) this.spawnUnit(c.owner, 'light', c);
+      if (c.owner) for (let k = 0; k < 2; k++) this.spawnUnit(c.owner, 'light', c);
+    }
+    this.partitionTerritory();
+    this.updateVision();
+  }
+
+  // Das ganze Land lückenlos aufteilen: jedes Feld gehört der Seite, deren Stadt es
+  // auf dem Landweg am schnellsten erreicht. Gebirge und Wasser bremsen, so folgen
+  // die Grenzen natürlichen Hindernissen.
+  partitionTerritory() {
+    const map = this.map;
+    const { w, h } = map;
+    const n = w * h;
+    const dist = new Float64Array(n).fill(Infinity);
+    const owner = new Uint8Array(n);
+    const cost = (t) => (t === T.MOUNTAIN ? 4 : t === T.WATER ? 2 : t === T.HILL || t === T.FOREST ? 1.3 : 1);
+    const heap = [];
+    const push = (i, d) => {
+      heap.push([d, i]);
+      let k = heap.length - 1;
+      while (k > 0) {
+        const p = (k - 1) >> 1;
+        if (heap[p][0] <= heap[k][0]) break;
+        [heap[p], heap[k]] = [heap[k], heap[p]];
+        k = p;
+      }
+    };
+    const pop = () => {
+      const top = heap[0];
+      const last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        let k = 0;
+        for (;;) {
+          const l = 2 * k + 1, r = l + 1;
+          let m = k;
+          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+          if (m === k) break;
+          [heap[m], heap[k]] = [heap[k], heap[m]];
+          k = m;
+        }
+      }
+      return top;
+    };
+    for (const c of this.cities) {
+      if (!c.owner) continue;
+      const i = map.cellIndex(c.x, c.y);
+      dist[i] = 0;
+      owner[i] = c.owner;
+      push(i, 0);
+    }
+    const dirs = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.4142], [1, -1, 1.4142], [-1, 1, 1.4142], [-1, -1, 1.4142]];
+    while (heap.length) {
+      const [d, i] = pop();
+      if (d > dist[i]) continue;
+      const x = i % w, y = (i / w) | 0;
+      for (const [dx, dy, len] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const ni = ny * w + nx;
+        const t = map.cells[ni];
+        if (t === T.DEEP) continue;
+        const nd = d + len * cost(t);
+        if (nd < dist[ni]) {
+          dist[ni] = nd;
+          owner[ni] = owner[i];
+          push(ni, nd);
+        }
       }
     }
-    for (const c of this.cities) if (c.owner) this.paint(c.owner, c.x, c.y, CITY_BORDER);
-    this.updateVision();
+    // Abgetrennte Inseln: an die Seite mit der nächstgelegenen Stadt
+    const owned = this.cities.filter((c) => c.owner);
+    for (let i = 0; i < n; i++) {
+      if (map.cells[i] === T.DEEP) continue;
+      if (!owner[i] && owned.length) {
+        const cx = (i % w + 0.5) * CELL, cy = (((i / w) | 0) + 0.5) * CELL;
+        let best = owned[0], bd = Infinity;
+        for (const c of owned) {
+          const dd = Math.hypot(c.x - cx, c.y - cy);
+          if (dd < bd) { bd = dd; best = c; }
+        }
+        owner[i] = best.owner;
+      }
+      this.territory[i] = owner[i];
+    }
   }
 
   spawnUnit(owner, type, city) {
