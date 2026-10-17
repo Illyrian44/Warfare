@@ -1,4 +1,4 @@
-import { TERRAIN_INFO } from './config.js?v=11';
+import { TERRAIN_INFO } from './config.js?v=12';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -123,7 +123,8 @@ export class FrontManager {
       const frac = u.hp / u.maxHp;
       const limit = f.attack ? ROTATE_AT_ATTACK : ROTATE_AT;
       // Im Gefecht erst bei schweren Verlusten herauslösen
-      if (f.rotate && !u.rotating && (u.target ? frac < ROTATE_IN_COMBAT : frac < limit)) {
+      const contact = u.target || (frac < limit && this.enemyNear(u, 100));
+      if (f.rotate && !u.rotating && (contact ? frac < ROTATE_IN_COMBAT : frac < limit)) {
         const c = this.nearestCity(u);
         if (c) {
           u.rotating = true;
@@ -138,26 +139,29 @@ export class FrontManager {
 
     const slots = distribute(f.chains, active.length);
     if (!slots.length) return;
-    // Gierige Zuordnung: jeder Platz bekommt die nächste freie Einheit
-    const free = new Set(active);
+    // Reihenfolge entlang der Linie beibehalten: Einheiten werden nach ihrer Lage
+    // auf der Front sortiert, so rücken bei Ausfällen nur Nachbarn seitlich nach
+    const ordered = active
+      .map((u) => ({ u, t: projectOnChains(f.chains, u) }))
+      .sort((a, b) => a.t - b.t)
+      .map((o) => o.u);
     let budget = PATH_BUDGET;
-    for (const s of slots) {
-      let best = null, bd = Infinity;
-      for (const u of free) {
-        const d = (u.x - s.x) ** 2 + (u.y - s.y) ** 2;
-        if (d < bd) { bd = d; best = u; }
-      }
-      if (!best) break;
-      free.delete(best);
-      const u = best;
+    for (let k = 0; k < slots.length && k < ordered.length; k++) {
+      const s = slots[k];
+      const u = ordered[k];
       const goalMoved = !u.frontGoal || Math.hypot(u.frontGoal.x - s.x, u.frontGoal.y - s.y) > 20;
       if (!goalMoved && !force && u.path.length) continue;
       if (!goalMoved && Math.hypot(u.x - s.x, u.y - s.y) < 10) continue;
       if (u.target) continue; // im Gefecht die Stellung halten, keine neuen Marschbefehle
       // Mit Feind in der Nähe nicht zurückweichen, nur weil sich die Grenze verschoben hat
       // (kleine Verschiebungen ignorieren, bei echtem Durchbruch geordnet zurück)
-      const behind = s.nx === undefined ? 0 : -((s.x - u.x) * s.nx + (s.y - u.y) * s.ny);
-      if (!f.attack && behind > 15 && behind < 60 && this.enemyNear(u, 160)) continue;
+      // Feindkontakt: Stellung halten wie in HOI4. Nur wer bereits an der Front steht
+      // und nicht abgeschnitten im Feindgebiet ist, bleibt; Lücken füllen andere auf.
+      if (!f.attack && u.frontGoal && Math.hypot(u.x - u.frontGoal.x, u.y - u.frontGoal.y) < 80 &&
+          this.enemyNear(u, 160) && !this.cutOff(u)) {
+        if (u.path.length && this.pathLeadsBack(u)) u.path = [];
+        continue;
+      }
       if (g.map.clearLine(u, s)) {
         u.path = [{ x: s.x, y: s.y }];
       } else {
@@ -177,6 +181,30 @@ export class FrontManager {
         this.events.push({ type: 'attackDone', front: f });
       }
     }
+  }
+
+  // Abgeschnitten: die Einheit steht auf Feindgebiet und hat kein eigenes Gebiet in der Nähe
+  cutOff(u) {
+    const g = this.game;
+    const tr = g.territory;
+    if (tr[g.map.cellIndex(u.x, u.y)] === this.owner) return false;
+    for (const [dx, dy] of [[40, 0], [-40, 0], [0, 40], [0, -40]]) {
+      if (tr[g.map.cellIndex(u.x + dx, u.y + dy)] === this.owner) return false;
+    }
+    return true;
+  }
+
+  // Führt der aktuelle Weg vom nächsten Feind weg?
+  pathLeadsBack(u) {
+    let e = null, bd = Infinity;
+    for (const o of this.game.units) {
+      if (o.owner === this.owner) continue;
+      const d = Math.hypot(o.x - u.x, o.y - u.y);
+      if (d < bd) { bd = d; e = o; }
+    }
+    if (!e) return false;
+    const p = u.path[u.path.length - 1];
+    return (p.x - u.x) * (e.x - u.x) + (p.y - u.y) * (e.y - u.y) < 0;
   }
 
   enemyNear(u, r) {
@@ -310,6 +338,11 @@ export class FrontManager {
     chains.push(...kept);
 
     const offset = stance === 'attack' ? ATTACK_OFFSET : -HOLD_OFFSET;
+    // Feste Richtung und Reihenfolge, damit die Einheiten bei jeder Neuberechnung
+    // ihre Plätze behalten (sonst kehrt sich die Linie um und alle tauschen quer)
+    const key = (i) => { const x = i % w, y = (i / w) | 0; return x * 0.3 + y; };
+    for (const c of chains) if (key(c[0]) > key(c[c.length - 1])) c.reverse();
+    chains.sort((a, b) => key(a[0]) - key(b[0]));
     return chains.map((chain) => {
       const pts = [];
       for (let k = 0; k < chain.length; k += 2) {
@@ -381,6 +414,24 @@ function withNormals(line, facing) {
     const s = facing(p, n);
     return { x: p.x, y: p.y, nx: n.x * s, ny: n.y * s, bx: p.x, by: p.y };
   });
+}
+
+// Bogenlänge des nächstgelegenen Punkts auf den (aneinandergehängten) Teillinien
+function projectOnChains(chains, p) {
+  let best = Infinity, bestT = 0, acc = 0;
+  for (const c of chains) {
+    for (let i = 1; i < c.length; i++) {
+      const a = c[i - 1], b = c[i];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const l2 = dx * dx + dy * dy;
+      const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+      const d = (p.x - a.x - dx * t) ** 2 + (p.y - a.y - dy * t) ** 2;
+      const seg = Math.sqrt(l2);
+      if (d < best) { best = d; bestT = acc + seg * t; }
+      acc += seg;
+    }
+  }
+  return bestT;
 }
 
 export function chainLength(c) {

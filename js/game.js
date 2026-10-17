@@ -2,8 +2,8 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER,
-} from './config.js?v=11';
-import { mulberry32 } from './rng.js?v=11';
+} from './config.js?v=12';
+import { mulberry32 } from './rng.js?v=12';
 
 export class Game {
   constructor(map, opts = {}) {
@@ -136,7 +136,8 @@ export class Game {
     return u;
   }
 
-  paint(owner, x, y, radius) {
+  // rivals: feindliche Einheiten in der Nähe; ein Feld bekommt nur, wer näher dran ist
+  paint(owner, x, y, radius, rivals = null) {
     const { w, h } = this.map;
     const cr = radius / CELL;
     const cx = x / CELL, cy = y / CELL;
@@ -149,6 +150,13 @@ export class Game {
         if (dx * dx + dy * dy > r2) continue;
         const i = yy * w + xx;
         if (this.map.cells[i] === T.DEEP) continue;
+        if (rivals && rivals.length) {
+          const px = (xx + 0.5) * CELL, py = (yy + 0.5) * CELL;
+          const own = (px - x) ** 2 + (py - y) ** 2;
+          let closer = false;
+          for (const r of rivals) if ((px - r.x) ** 2 + (py - r.y) ** 2 < own) { closer = true; break; }
+          if (closer) continue;
+        }
         this.territory[i] = owner;
       }
     }
@@ -294,7 +302,13 @@ export class Game {
     if (this.terrTimer <= 0) {
       this.terrTimer = 0.25;
       for (const c of this.cities) if (c.owner) this.paint(c.owner, c.x, c.y, CITY_BORDER);
-      for (const u of this.units) this.paint(u.owner, u.x, u.y, UNIT_BORDER);
+      // Grenze liegt zwischen gegnerischen Truppen, nicht hinter ihnen
+      const reach = UNIT_BORDER * 2;
+      for (const u of this.units) {
+        const rivals = this.units.filter((o) => o.owner !== u.owner &&
+          Math.abs(o.x - u.x) < reach && Math.abs(o.y - u.y) < reach);
+        this.paint(u.owner, u.x, u.y, UNIT_BORDER, rivals);
+      }
       this.territoryVersion++;
     }
     this.visTimer -= dt;
@@ -323,10 +337,13 @@ export class Game {
       // Front-Einheiten im Gefecht weichen nicht zurück: kein Marsch vom Feind weg
       const retreating = u.front && !u.rotating && u.target &&
         dx * (u.target.x - u.x) + dy * (u.target.y - u.y) < 0;
+      // Bei Feindkontakt stehen bleiben statt den Gegner wegzuschieben
+      const pressing = u.target && u.td <= u.r + u.target.r + ENEMY_GAP + 3 &&
+        dx * (u.target.x - u.x) + dy * (u.target.y - u.y) > 0;
       if (d < (u.path.length > 1 ? 6 : 3)) {
         u.path.shift();
         u.stuck = 0;
-      } else if (!retreating) {
+      } else if (!retreating && !pressing) {
         const s = Math.min(spd * dt, d);
         mx = dx / d * s; my = dy / d * s;
         wantMove = s;
