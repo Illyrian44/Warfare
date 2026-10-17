@@ -1,6 +1,6 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=4';
-import { classify } from './map.js?v=4';
-import { frontBadge } from './fronts.js?v=4';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=5';
+import { classify } from './map.js?v=5';
+import { frontBadge } from './fronts.js?v=5';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -174,48 +174,12 @@ export class Renderer {
       ctx.stroke();
     }
 
-    // Einheiten
+    // Einheiten als NATO-Symbole (APP-6)
     const flash = (game.time * 4) % 1 < 0.5;
     for (const u of game.units) {
       if (!visible(u)) continue;
-      const r = u.r;
-      ctx.beginPath();
-      ctx.arc(u.x, u.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = PLAYER_COLORS[u.owner];
-      ctx.fill();
-      ctx.lineWidth = Math.max(0.8, 1.2 * px);
-      ctx.strokeStyle = u.starving && flash ? '#ffd23f' : 'rgba(0,0,0,0.6)';
-      ctx.stroke();
-      if (u.type === 'heavy') {
-        ctx.beginPath();
-        ctx.arc(u.x, u.y, r * 0.45, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.fill();
-      }
-      const frac = u.hp / u.maxHp;
-      if (frac < 0.999) {
-        // Fehlende Lebenspunkte als dunkler Kreissektor
-        ctx.beginPath();
-        ctx.moveTo(u.x, u.y);
-        ctx.arc(u.x, u.y, r - 0.6, -Math.PI / 2 + frac * Math.PI * 2, Math.PI * 1.5);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fill();
-      }
-      if (ui.front && u.front === ui.front) {
-        ctx.beginPath();
-        ctx.arc(u.x, u.y, r + 2.5, 0, Math.PI * 2);
-        ctx.strokeStyle = '#f2c94c';
-        ctx.lineWidth = Math.max(1, 1.4 * px);
-        ctx.stroke();
-      }
-      if (ui.selection.has(u)) {
-        ctx.beginPath();
-        ctx.arc(u.x, u.y, r + 2.5, 0, Math.PI * 2);
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = Math.max(1, 1.6 * px);
-        ctx.stroke();
-      }
+      const highlight = ui.selection.has(u) ? '#fff' : ui.front && u.front === ui.front ? '#f2c94c' : null;
+      drawNatoSymbol(ctx, u, u.owner === me, px, highlight, u.starving && flash);
     }
 
     // Weg oder Front, die gerade gezeichnet wird
@@ -356,11 +320,16 @@ export class Renderer {
       ctx.setLineDash([]);
     }
     if (c.owner === me) {
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 8px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(c.prodType === 'heavy' ? 'S' : 'L', c.x, c.y + 0.5);
+      // Produktion als NATO-Zeichen: X = Infanterie, Oval = Panzer
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      if (c.prodType === 'heavy') ctx.ellipse(c.x, c.y, 4.2, 2.4, 0, 0, Math.PI * 2);
+      else {
+        ctx.moveTo(c.x - 3.2, c.y - 3.2); ctx.lineTo(c.x + 3.2, c.y + 3.2);
+        ctx.moveTo(c.x + 3.2, c.y - 3.2); ctx.lineTo(c.x - 3.2, c.y + 3.2);
+      }
+      ctx.stroke();
     }
   }
 }
@@ -376,4 +345,85 @@ function hash(x, y) {
   let n = (x * 374761393 + y * 668265263) | 0;
   n = Math.imul(n ^ (n >>> 13), 1274126177);
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+
+const NATO_FRIEND = '#80e0ff';
+const NATO_HOSTILE = '#ff8080';
+
+// Rahmen nach APP-6: Rechteck für eigene, Raute für feindliche Einheiten
+function symbolPath(ctx, x, y, hw, hh, friend) {
+  ctx.beginPath();
+  if (friend) {
+    ctx.rect(x - hw, y - hh, hw * 2, hh * 2);
+  } else {
+    ctx.moveTo(x, y - hw);
+    ctx.lineTo(x + hw, y);
+    ctx.lineTo(x, y + hw);
+    ctx.lineTo(x - hw, y);
+    ctx.closePath();
+  }
+}
+
+export function drawNatoSymbol(ctx, u, friend, px, highlight, starving) {
+  // Mindestgröße auf dem Bildschirm, damit die Symbole auch herausgezoomt lesbar bleiben
+  const base = u.type === 'heavy' ? 1.25 : 1;
+  const hw = Math.max(u.r * 1.45, 7 * px * base);
+  const hh = hw * 0.68;
+  const d = hw * 0.95; // halbe Diagonale der Raute
+  const { x, y } = u;
+  const line = Math.max(0.5, 1.1 * px);
+
+  if (highlight) {
+    symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
+    ctx.strokeStyle = highlight;
+    ctx.lineWidth = line * 4;
+    ctx.stroke();
+  }
+
+  symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
+  ctx.fillStyle = friend ? NATO_FRIEND : NATO_HOSTILE;
+  ctx.fill();
+  ctx.strokeStyle = starving ? '#ffd23f' : '#000';
+  ctx.lineWidth = starving ? line * 2 : line;
+  ctx.stroke();
+
+  // Innenleben: X = Infanterie (leicht), Oval = Panzer (schwer)
+  const ix = friend ? hw : d / 2, iy = friend ? hh : d / 2;
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = line;
+  ctx.beginPath();
+  if (u.type === 'heavy') {
+    ctx.ellipse(x, y, ix * 0.62, iy * 0.5, 0, 0, Math.PI * 2);
+  } else {
+    ctx.moveTo(x - ix, y - iy); ctx.lineTo(x + ix, y + iy);
+    ctx.moveTo(x + ix, y - iy); ctx.lineTo(x - ix, y + iy);
+  }
+  ctx.stroke();
+
+  const top = friend ? y - hh : y - d;
+  const bottom = friend ? y + hh : y + d;
+
+  // Größenzeichen (I = Kompanie, II = Bataillon) nur bei ausreichendem Zoom
+  if (hw / px > 10) {
+    const n = u.type === 'heavy' ? 2 : 1;
+    const gap = 2.2 * px, h = 3.5 * px;
+    ctx.beginPath();
+    for (let k = 0; k < n; k++) {
+      const lx = x + (k - (n - 1) / 2) * gap;
+      ctx.moveTo(lx, top - 1.5 * px);
+      ctx.lineTo(lx, top - 1.5 * px - h);
+    }
+    ctx.lineWidth = Math.max(0.5, 1.2 * px);
+    ctx.stroke();
+  }
+
+  // Lebensbalken unter dem Symbol
+  const frac = u.hp / u.maxHp;
+  if (frac < 0.999) {
+    const bw = hw * 2, bh = Math.max(1, 2.2 * px), by = bottom + 1.5 * px;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(x - hw, by, bw, bh);
+    ctx.fillStyle = frac > 0.6 ? '#4cd17a' : frac > 0.3 ? '#f2c94c' : '#ff5b4b';
+    ctx.fillRect(x - hw, by, bw * Math.max(0, frac), bh);
+  }
 }

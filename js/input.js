@@ -1,4 +1,4 @@
-import { CITY_RADIUS } from './config.js?v=4';
+import { CITY_RADIUS } from './config.js?v=5';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -178,7 +178,7 @@ export class Input {
     }
     if (g.city && !sel.size) {
       g.city.prodType = g.city.prodType === 'light' ? 'heavy' : 'light';
-      this.app.toast(g.city.prodType === 'heavy' ? 'Stadt baut jetzt: Schwere Einheiten' : 'Stadt baut jetzt: Leichte Einheiten');
+      this.app.toast(g.city.prodType === 'heavy' ? 'Stadt baut jetzt: Panzer (schwer)' : 'Stadt baut jetzt: Infanterie (leicht)');
       return;
     }
     if (sel.size) this.app.moveSelectionTo(g.world);

@@ -255,3 +255,6 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   .bar.bottom button { font-size: 14px; }
   #frontPanel { bottom: calc(108px + env(safe-area-inset-bottom)); }
 }
+
+.legend { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 4px; }
+.legend svg { justify-self: center; }

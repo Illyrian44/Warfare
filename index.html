@@ -7,7 +7,7 @@
   <meta name="description" content="War of Dots im Browser: minimalistisches Echtzeit-Strategiespiel gegen eine KI.">
   <title>War of Dots</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -85,7 +85,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 4</small>
+      <small id="version" class="muted">Version 5</small>
     </div>
   </div>
 
@@ -102,14 +102,22 @@
         <li><b>Karte bewegen:</b> PC: rechte Maustaste ziehen, Mausrad zoomt. Handy: mit einem Finger ziehen, mit zwei Fingern zoomen.</li>
         <li><b>Frontlinie (wie in Hearts of Iron):</b> Einheiten auswählen, „〰 Front“ tippen und eine Linie zeichnen. Die Einheiten verteilen sich gleichmäßig und halten die Linie. „⛨ Grenze“ erstellt eine Front, die automatisch der Grenze zum Gegner folgt.</li>
         <li><b>Front antippen</b> (Linie oder Zahl) öffnet ihr Menü: <i>Angriff</i> lässt eine Grenzfront ins Feindgebiet drücken, <i>Verlegen</i> zeichnet eine neue Linie, <i>Verstärkung</i> schickt neue Einheiten automatisch an die Front, <i>Rotation</i> zieht Verwundete zum Heilen ab und schickt sie danach zurück.</li>
-        <li><b>Stadt antippen</b> (ohne Auswahl): wechselt zwischen leichten (L) und schweren (S) Einheiten.</li>
+        <li><b>Stadt antippen</b> (ohne Auswahl): wechselt zwischen Infanterie (X) und Panzern (Oval).</li>
         <li>Tasten: Leertaste Pause · A alle · S anhalten · F Front zeichnen · G Grenzfront · Esc abwählen · 1/2/3 Tempo</li>
       </ul>
       <h3>Regeln</h3>
       <ul>
         <li><b>Kampf</b> läuft automatisch, sobald Feinde nah sind. Wer von mehreren Seiten angegriffen wird (eingekesselt), nimmt 50&nbsp;% mehr Schaden.</li>
         <li><b>Gelände:</b> Hügel +50&nbsp;% Angriff &amp; Sicht, aber langsam. Wald −25&nbsp;% Angriff, weniger Sicht. Wasser −50&nbsp;% Angriff, sehr langsam. Gebirge und tiefes Wasser sind unpassierbar.</li>
-        <li><b>Einheiten:</b> Leichte sind schnell und günstig. Schwere halten mehr aus und schlagen härter zu – am besten auf offener Ebene.</li>
+        <li><b>Symbole (NATO):</b>
+          <span class="legend">
+            <svg viewBox="0 0 30 20" width="30" height="20"><rect x="1" y="2" width="28" height="16" fill="#80e0ff" stroke="#000"/><path d="M1 2L29 18M29 2L1 18" stroke="#000"/></svg> eigene Infanterie (leicht)
+            <svg viewBox="0 0 30 20" width="30" height="20"><rect x="1" y="2" width="28" height="16" fill="#80e0ff" stroke="#000"/><ellipse cx="15" cy="10" rx="9" ry="4.5" fill="none" stroke="#000"/></svg> eigene Panzer (schwer)
+            <svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 1L23 12L12 23L1 12Z" fill="#ff8080" stroke="#000"/><path d="M6.5 6.5L17.5 17.5M17.5 6.5L6.5 17.5" stroke="#000"/></svg> feindliche Infanterie
+            <svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 1L23 12L12 23L1 12Z" fill="#ff8080" stroke="#000"/><ellipse cx="12" cy="12" rx="6" ry="3.5" fill="none" stroke="#000"/></svg> feindliche Panzer
+          </span>
+        </li>
+        <li><b>Einheiten:</b> Leichte (Infanterie) sind schnell und günstig. Schwere (Panzer) halten mehr aus und schlagen härter zu – am besten auf offener Ebene.</li>
         <li><b>Versorgung:</b> Einheiten heilen in eigenem Gebiet nahe Städten. Weit im Feindesland verlieren sie Leben. Verwundete zurückziehen und frische nachschieben!</li>
         <li><b>Städte</b> produzieren Einheiten und versorgen je 5. Gibt es mehr Einheiten als Versorgung, hungern die überzähligen (gelb blinkend).</li>
         <li><b>Erobern:</b> Stell dich in eine Stadt, die nicht verteidigt wird. Der gestrichelte Ring zeigt den Fortschritt.</li>
@@ -130,6 +138,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=4"></script>
+  <script type="module" src="js/main.js?v=5"></script>
 </body>
 </html>
