@@ -1,10 +1,10 @@
-import { generateMap } from './map.js?v=7';
-import { Game } from './game.js?v=7';
-import { AI } from './ai.js?v=7';
-import { Renderer } from './render.js?v=7';
-import { Input } from './input.js?v=7';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=7';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=7';
+import { generateMap } from './map.js?v=8';
+import { Game } from './game.js?v=8';
+import { AI } from './ai.js?v=8';
+import { Renderer } from './render.js?v=8';
+import { Input } from './input.js?v=8';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=8';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=8';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -273,6 +273,12 @@ const app = {
       if (ev.type === 'attackDone') this.toast('Angriffsziel erreicht – die Front hält die neue Linie', 'good');
     }
     this.fronts.events.length = 0;
+    for (const ev of this.ai.events) {
+      if (ev.type !== 'enemyAttack') continue;
+      const seen = ev.front.units.some((u) => this.game.isVisible(this.human, u.x, u.y));
+      if (seen || ev.target.owner === this.human) this.toast('Feindlicher Angriff!', 'bad');
+    }
+    this.ai.events.length = 0;
   },
 
   showEnd(winner) {

@@ -53,7 +53,7 @@ export const MAP_SIZES = {
 };
 
 export const DIFFICULTY = {
-  easy: { name: 'Leicht', interval: 2.4, seeAll: false, prodMult: 0.85, heavyRatio: 0.15, retreatAt: 0.2, attackFactor: 1.0, frontShare: 0.35, frontPush: 2.2 },
-  medium: { name: 'Mittel', interval: 1.2, seeAll: false, prodMult: 1.0, heavyRatio: 0.3, retreatAt: 0.33, attackFactor: 1.3, frontShare: 0.45, frontPush: 1.7 },
-  hard: { name: 'Schwer', interval: 0.6, seeAll: true, prodMult: 1.12, heavyRatio: 0.35, retreatAt: 0.4, attackFactor: 1.45, frontShare: 0.5, frontPush: 1.4 },
+  easy: { name: 'Leicht', interval: 2.4, seeAll: false, prodMult: 0.8, heavyRatio: 0.15, retreatAt: 0.2, attackFactor: 1.0, frontShare: 0.35, frontPush: 2.6, rotate: false },
+  medium: { name: 'Mittel', interval: 1.2, seeAll: false, prodMult: 1.0, heavyRatio: 0.3, retreatAt: 0.33, attackFactor: 1.3, frontShare: 0.45, frontPush: 2.0, rotate: true },
+  hard: { name: 'Schwer', interval: 0.6, seeAll: true, prodMult: 1.25, heavyRatio: 0.35, retreatAt: 0.4, attackFactor: 1.45, frontShare: 0.5, frontPush: 1.7, rotate: true },
 };

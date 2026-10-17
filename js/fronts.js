@@ -1,4 +1,4 @@
-import { TERRAIN_INFO } from './config.js?v=7';
+import { TERRAIN_INFO } from './config.js?v=8';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 40;     // Grenzfront: so weit hinter der Grenze stehen

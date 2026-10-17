@@ -1,6 +1,6 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=7';
-import { classify } from './map.js?v=7';
-import { frontBadge } from './fronts.js?v=7';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=8';
+import { classify } from './map.js?v=8';
+import { frontBadge } from './fronts.js?v=8';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -269,7 +269,8 @@ export class Renderer {
     }
 
     // Angriffspfeil: geplant halbtransparent, laufender Angriff deckend
-    if (!fogged && (f.plan || f.attack)) {
+    const arrowSeen = !fogged || (f.attack && f.units.some((u) => game.isVisible(this.human, u.x, u.y)));
+    if (arrowSeen && (f.plan || f.attack)) {
       const target = (f.plan || f.attack).line;
       if (f.plan) {
         ctx.setLineDash([6 * px, 5 * px]);

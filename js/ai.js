@@ -1,7 +1,7 @@
-import { DIFFICULTY } from './config.js?v=7';
-import { unitStrength } from './game.js?v=7';
-import { mulberry32 } from './rng.js?v=7';
-import { FrontManager } from './fronts.js?v=7';
+import { DIFFICULTY } from './config.js?v=8';
+import { unitStrength } from './game.js?v=8';
+import { mulberry32 } from './rng.js?v=8';
+import { FrontManager } from './fronts.js?v=8';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -20,10 +20,13 @@ export class AI {
     this.pathCache = new Map();
     this.fronts = new FrontManager(game, player);
     this.front = null;
+    this.nextFrontAttack = 30;
+    this.events = [];
   }
 
   update(dt) {
     this.fronts.update(dt);
+    this.fronts.events.length = 0;
     this.timer -= dt;
     if (this.timer > 0) return;
     this.timer = this.cfg.interval * (0.8 + this.rng() * 0.4);
@@ -190,6 +193,7 @@ export class AI {
     if (!this.front) {
       this.front = this.fronts.create('border', null, []);
       this.front.reinforce = false;
+      this.front.rotate = this.cfg.rotate;
       if (!this.front.chains.length) {
         this.fronts.remove(this.front);
         this.front = null;
@@ -228,12 +232,58 @@ export class AI {
     for (const e of enemies) {
       if (f.units.some((u) => Math.hypot(u.x - e.x, u.y - e.y) < 180)) theirs += unitStrength(e);
     }
-    const stance = mine > theirs * this.cfg.frontPush + 2 ? 'attack'
-      : mine < theirs * 1.1 ? 'hold' : f.stance;
-    if (stance !== f.stance) {
-      f.stance = stance;
-      this.fronts.schedule(f);
+    const g = this.game;
+    if (f.attack) {
+      // Laufenden Angriff abbrechen, wenn das Kräfteverhältnis kippt
+      if (mine < theirs * 0.9) this.backToBorder(f);
+      return;
     }
+    if (f.kind === 'line') {
+      // Angriff beendet: wieder der (vorgerückten) Grenze folgen
+      this.backToBorder(f);
+      return;
+    }
+    if (g.time < this.nextFrontAttack || f.units.length < 4) return;
+    if (mine > theirs * this.cfg.frontPush + 2) this.launchFrontAttack(f);
+  }
+
+  // Angriffspfeil wie der Spieler: Ziellinie quer hinter die nächste feindliche Stadt legen
+  launchFrontAttack(f) {
+    const g = this.game;
+    const active = f.units.filter((u) => !u.rotating);
+    if (!active.length) return;
+    const cx = active.reduce((a, u) => a + u.x, 0) / active.length;
+    const cy = active.reduce((a, u) => a + u.y, 0) / active.length;
+    const targets = g.cities.filter((c) => c.owner !== this.me);
+    if (!targets.length) return;
+    let target = null, bd = Infinity;
+    for (const c of targets) {
+      const d = Math.hypot(c.x - cx, c.y - cy) + (c.owner === this.foe ? 0 : 80);
+      if (d < bd) { bd = d; target = c; }
+    }
+    const dx = target.x - cx, dy = target.y - cy;
+    const dl = Math.hypot(dx, dy) || 1;
+    const ux = dx / dl, uy = dy / dl;
+    const mx = target.x + ux * 40, my = target.y + uy * 40;
+    const half = Math.min(220, Math.max(90, active.length * 14));
+    const line = [];
+    for (let k = -2; k <= 2; k++) {
+      line.push({ x: mx - uy * half * k / 2, y: my + ux * half * k / 2 });
+    }
+    this.fronts.planAttack(f, line);
+    this.fronts.startAttack(f);
+    this.nextFrontAttack = g.time + 20;
+    this.events.push({ type: 'enemyAttack', front: f, target });
+  }
+
+  backToBorder(f) {
+    f.kind = 'border';
+    f.line = null;
+    f.attack = null;
+    f.plan = null;
+    f.stance = 'hold';
+    this.fronts.schedule(f);
+    this.nextFrontAttack = Math.max(this.nextFrontAttack, this.game.time + 15);
   }
 
   // Pfade innerhalb eines Denkschritts teilen, um A*-Aufrufe zu sparen
