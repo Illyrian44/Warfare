@@ -1,6 +1,6 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=9';
-import { classify } from './map.js?v=9';
-import { frontBadge } from './fronts.js?v=9';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=10';
+import { classify } from './map.js?v=10';
+import { frontBadge } from './fronts.js?v=10';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -270,26 +270,19 @@ export class Renderer {
       ctx.fill();
     }
 
-    // Angriffspfeil: geplant halbtransparent, laufender Angriff deckend
+    // NATO-Führungszeichen: Phasenlinie als Ziel und Hauptangriffsachse.
+    // Geplant = gestrichelt, laufend = durchgezogen (wie in APP-6)
     if (!fogged && (f.plan || f.attack)) {
-      const target = (f.plan || f.attack).line;
-      if (f.plan) {
-        ctx.setLineDash([6 * px, 5 * px]);
-        ctx.beginPath();
-        ctx.moveTo(target[0].x, target[0].y);
-        for (const p of target) ctx.lineTo(p.x, p.y);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 4 * px;
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
+      const order = f.plan || f.attack;
+      const planned = !!f.plan;
+      drawPhaseLine(ctx, order.line, order.name, px, color, planned);
       const active = f.units.filter((u) => !u.rotating);
       const from = active.length && f.attack
         ? { x: active.reduce((a, u) => a + u.x, 0) / active.length, y: active.reduce((a, u) => a + u.y, 0) / active.length }
         : frontBadge(f);
-      const to = polylineMid(target);
+      const to = polylineMid(order.line);
       if (from && to && Math.hypot(to.x - from.x, to.y - from.y) > 50 * px) {
-        drawArrow(ctx, from, to, px, color, f.plan ? 0.45 : 0.85, !!f.plan);
+        drawAxisOfAdvance(ctx, from, to, px, color, planned);
       }
     }
 
@@ -469,32 +462,80 @@ function polylineMid(line) {
   return line[0];
 }
 
-// Breiter Angriffspfeil im Stil von Hearts of Iron, leicht gebogen
-function drawArrow(ctx, from, to, px, color, alpha, dashed) {
+// Linie mit weißem Hof zeichnen, damit sie auf jedem Gelände lesbar bleibt
+function haloStroke(ctx, px, color, width, dashed) {
+  ctx.setLineDash(dashed ? [7 * px, 5 * px] : []);
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = width + 2.5 * px;
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// Phasenlinie (PL) mit Decknamen an beiden Enden
+function drawPhaseLine(ctx, line, name, px, color, planned) {
+  if (line.length < 2) return;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(line[0].x, line[0].y);
+  for (const p of line) ctx.lineTo(p.x, p.y);
+  haloStroke(ctx, px, color, 2.5 * px, planned);
+  if (!name) return;
+  const label = `PL ${name}`;
+  ctx.font = `bold ${11 * px}px system-ui, sans-serif`;
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3 * px;
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillStyle = color;
+  for (const [p, q] of [[line[0], line[1]], [line[line.length - 1], line[line.length - 2]]]) {
+    // Beschriftung in Verlängerung der Linie hinter dem Endpunkt
+    const dx = p.x - q.x, dy = p.y - q.y;
+    const l = Math.hypot(dx, dy) || 1;
+    const x = p.x + dx / l * 8 * px, y = p.y + dy / l * 8 * px;
+    ctx.textAlign = dx >= 0 ? 'left' : 'right';
+    ctx.strokeText(label, x, y);
+    ctx.fillText(label, x, y);
+  }
+}
+
+// Hauptangriffsachse (Axis of Advance, Main Attack): hohler, leicht gebogener Pfeil
+// aus zwei Linien mit zusätzlicher innerer Spitze
+function drawAxisOfAdvance(ctx, from, to, px, color, planned) {
   const dx = to.x - from.x, dy = to.y - from.y;
   const len = Math.hypot(dx, dy);
   const ux = dx / len, uy = dy / len;
   const nx = -uy, ny = ux;
-  const body = 10 * px, headW = 22 * px, headL = Math.min(32 * px, len * 0.45);
-  const bend = len * 0.12; // Krümmung des Schafts
+  const body = 8 * px, headW = 25 * px, headL = Math.min(34 * px, len * 0.45);
+  const bend = len * 0.12;
   const hx = to.x - ux * headL, hy = to.y - uy * headL;
   const cx = (from.x + hx) / 2 + nx * bend, cy = (from.y + hy) / 2 + ny * bend;
+  ctx.lineJoin = 'miter';
+  ctx.lineCap = 'butt';
+
+  // Umriss: linke Schaftkante, Spitze, rechte Schaftkante; hinten offen
   ctx.beginPath();
-  ctx.moveTo(from.x + nx * body * 0.5, from.y + ny * body * 0.5);
+  ctx.moveTo(from.x + nx * body, from.y + ny * body);
   ctx.quadraticCurveTo(cx + nx * body, cy + ny * body, hx + nx * body, hy + ny * body);
   ctx.lineTo(hx + nx * headW, hy + ny * headW);
   ctx.lineTo(to.x, to.y);
   ctx.lineTo(hx - nx * headW, hy - ny * headW);
   ctx.lineTo(hx - nx * body, hy - ny * body);
-  ctx.quadraticCurveTo(cx - nx * body, cy - ny * body, from.x - nx * body * 0.5, from.y - ny * body * 0.5);
-  ctx.closePath();
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  if (dashed) ctx.setLineDash([5 * px, 4 * px]);
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-  ctx.lineWidth = 2 * px;
-  ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.quadraticCurveTo(cx - nx * body, cy - ny * body, from.x - nx * body, from.y - ny * body);
+  haloStroke(ctx, px, color, 2.2 * px, planned);
+
+  // Innere Spitze kennzeichnet den Hauptangriff
+  const g = 8 * px;
+  const tx = to.x - ux * g * 1.6, ty = to.y - uy * g * 1.6;
+  const bx = hx - ux * g * 0.2, by = hy - uy * g * 0.2;
+  const iw = headW - g * 1.1;
+  ctx.beginPath();
+  ctx.moveTo(bx + nx * iw, by + ny * iw);
+  ctx.lineTo(tx, ty);
+  ctx.lineTo(bx - nx * iw, by - ny * iw);
+  haloStroke(ctx, px, color, 2.2 * px, planned);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
 }

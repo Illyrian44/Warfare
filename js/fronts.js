@@ -1,10 +1,11 @@
-import { TERRAIN_INFO } from './config.js?v=9';
+import { TERRAIN_INFO } from './config.js?v=10';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 40;     // Grenzfront: so weit hinter der Grenze stehen
 const ATTACK_OFFSET = 30;   // Grenzfront im Angriff: so weit in Feindesland drücken
 const ROTATE_AT = 0.35;     // Verwundete ziehen sich darunter zurück
 const RETURN_AT = 0.9;      // und kehren ab hier zurück
+const CODENAMES = ['ADLER', 'FALKE', 'WOLF', 'LUCHS', 'BÄR', 'HABICHT', 'KRANICH', 'ELCH', 'DACHS', 'MARDER', 'BUSSARD', 'STIER'];
 const PATH_BUDGET = 4;      // A*-Suchen pro Neuberechnung
 
 // Fronten wie in Hearts of Iron: Einheiten werden einer Linie zugewiesen,
@@ -17,6 +18,7 @@ export class FrontManager {
     this.timer = owner === 1 ? 0 : REFRESH / 2; // Spieler versetzt rechnen
     this.nextId = 1;
     this.events = [];
+    this.codename = owner === 1 ? 0 : 7;
   }
 
   create(kind, line, units) {
@@ -61,7 +63,9 @@ export class FrontManager {
 
   // Angriff wie in Hearts of Iron: erst Ziel-Linie planen, dann auf Befehl vorstoßen
   planAttack(f, line) {
-    f.plan = { line };
+    // Phasenlinien tragen wie bei der NATO einen Decknamen
+    const name = CODENAMES[this.codename++ % CODENAMES.length];
+    f.plan = { line, name };
   }
 
   cancelPlan(f) {
@@ -72,7 +76,7 @@ export class FrontManager {
     if (!f.plan) return;
     f.kind = 'line';
     f.line = f.plan.line;
-    f.attack = { line: f.plan.line, started: this.game.time };
+    f.attack = { line: f.plan.line, name: f.plan.name, started: this.game.time };
     f.plan = null;
     f.stance = 'hold';
     this.refresh(f, true);
