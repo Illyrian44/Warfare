@@ -2,8 +2,8 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER,
-} from './config.js?v=10';
-import { mulberry32 } from './rng.js?v=10';
+} from './config.js?v=11';
+import { mulberry32 } from './rng.js?v=11';
 
 export class Game {
   constructor(map, opts = {}) {
@@ -320,10 +320,13 @@ export class Game {
       const p = u.path[0];
       const dx = p.x - u.x, dy = p.y - u.y;
       const d = Math.hypot(dx, dy);
+      // Front-Einheiten im Gefecht weichen nicht zurück: kein Marsch vom Feind weg
+      const retreating = u.front && !u.rotating && u.target &&
+        dx * (u.target.x - u.x) + dy * (u.target.y - u.y) < 0;
       if (d < (u.path.length > 1 ? 6 : 3)) {
         u.path.shift();
         u.stuck = 0;
-      } else {
+      } else if (!retreating) {
         const s = Math.min(spd * dt, d);
         mx = dx / d * s; my = dy / d * s;
         wantMove = s;

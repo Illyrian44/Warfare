@@ -1,9 +1,11 @@
-import { TERRAIN_INFO } from './config.js?v=10';
+import { TERRAIN_INFO } from './config.js?v=11';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
-const HOLD_OFFSET = 40;     // Grenzfront: so weit hinter der Grenze stehen
+const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
 const ATTACK_OFFSET = 30;   // Grenzfront im Angriff: so weit in Feindesland drücken
 const ROTATE_AT = 0.35;     // Verwundete ziehen sich darunter zurück
+const ROTATE_AT_ATTACK = 0.2; // während eines Angriffs erst später
+const ROTATE_IN_COMBAT = 0.25; // im Gefecht nur stark Verwundete herauslösen
 const RETURN_AT = 0.9;      // und kehren ab hier zurück
 const CODENAMES = ['ADLER', 'FALKE', 'WOLF', 'LUCHS', 'BÄR', 'HABICHT', 'KRANICH', 'ELCH', 'DACHS', 'MARDER', 'BUSSARD', 'STIER'];
 const PATH_BUDGET = 4;      // A*-Suchen pro Neuberechnung
@@ -119,7 +121,9 @@ export class FrontManager {
     const active = [];
     for (const u of f.units) {
       const frac = u.hp / u.maxHp;
-      if (f.rotate && !u.rotating && frac < ROTATE_AT && !u.target) {
+      const limit = f.attack ? ROTATE_AT_ATTACK : ROTATE_AT;
+      // Im Gefecht erst bei schweren Verlusten herauslösen
+      if (f.rotate && !u.rotating && (u.target ? frac < ROTATE_IN_COMBAT : frac < limit)) {
         const c = this.nearestCity(u);
         if (c) {
           u.rotating = true;
@@ -149,7 +153,11 @@ export class FrontManager {
       const goalMoved = !u.frontGoal || Math.hypot(u.frontGoal.x - s.x, u.frontGoal.y - s.y) > 20;
       if (!goalMoved && !force && u.path.length) continue;
       if (!goalMoved && Math.hypot(u.x - s.x, u.y - s.y) < 10) continue;
-      if (u.target && Math.hypot(u.x - s.x, u.y - s.y) < 120) continue; // im Gefecht die Stellung halten
+      if (u.target) continue; // im Gefecht die Stellung halten, keine neuen Marschbefehle
+      // Mit Feind in der Nähe nicht zurückweichen, nur weil sich die Grenze verschoben hat
+      // (kleine Verschiebungen ignorieren, bei echtem Durchbruch geordnet zurück)
+      const behind = s.nx === undefined ? 0 : -((s.x - u.x) * s.nx + (s.y - u.y) * s.ny);
+      if (!f.attack && behind > 15 && behind < 60 && this.enemyNear(u, 160)) continue;
       if (g.map.clearLine(u, s)) {
         u.path = [{ x: s.x, y: s.y }];
       } else {
@@ -169,6 +177,13 @@ export class FrontManager {
         this.events.push({ type: 'attackDone', front: f });
       }
     }
+  }
+
+  enemyNear(u, r) {
+    for (const o of this.game.units) {
+      if (o.owner !== this.owner && Math.abs(o.x - u.x) < r && Math.abs(o.y - u.y) < r && Math.hypot(o.x - u.x, o.y - u.y) < r) return true;
+    }
+    return false;
   }
 
   nearestCity(u) {
@@ -392,7 +407,7 @@ function distribute(chains, n) {
       const seg = Math.hypot(b.x - a.x, b.y - a.y);
       while (target <= acc + seg && slots.length < n) {
         const t = seg ? (target - acc) / seg : 0;
-        slots.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+        slots.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, nx: a.nx, ny: a.ny });
         target += spacing;
       }
       acc += seg;
