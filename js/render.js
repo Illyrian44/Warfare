@@ -1,6 +1,6 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=8';
-import { classify } from './map.js?v=8';
-import { frontBadge } from './fronts.js?v=8';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=9';
+import { classify } from './map.js?v=9';
+import { frontBadge } from './fronts.js?v=9';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -211,6 +211,8 @@ export class Renderer {
   drawFront(f, px, selected, fogged = false) {
     const { ctx, game } = this;
     const color = PLAYER_COLORS[f.owner || this.human];
+    // Angriffspläne des Gegners bleiben geheim: weder Pfeil noch Ziellinie zeigen
+    if (fogged && (f.attack || f.plan)) return;
     if (fogged) {
       // Fremde Fronten nur in eigener Sichtweite zeigen: Linie an unsichtbaren Stellen auftrennen
       const seen = (p) => game.isVisible(this.human, p.x, p.y);
@@ -269,8 +271,7 @@ export class Renderer {
     }
 
     // Angriffspfeil: geplant halbtransparent, laufender Angriff deckend
-    const arrowSeen = !fogged || (f.attack && f.units.some((u) => game.isVisible(this.human, u.x, u.y)));
-    if (arrowSeen && (f.plan || f.attack)) {
+    if (!fogged && (f.plan || f.attack)) {
       const target = (f.plan || f.attack).line;
       if (f.plan) {
         ctx.setLineDash([6 * px, 5 * px]);

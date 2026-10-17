@@ -7,7 +7,7 @@
   <meta name="description" content="War of Dots im Browser: minimalistisches Echtzeit-Strategiespiel gegen eine KI.">
   <title>War of Dots</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -86,7 +86,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 8</small>
+      <small id="version" class="muted">Version 9</small>
     </div>
   </div>
 
@@ -124,7 +124,7 @@
         <li><b>Erobern:</b> Stell dich in eine Stadt, die nicht verteidigt wird. Der gestrichelte Ring zeigt den Fortschritt.</li>
         <li><b>Gebiet:</b> Die Insel ist von Anfang an lückenlos zwischen dir und dem Gegner aufgeteilt – es gibt keine freie Fläche, die Grenze verläuft entlang von Gebirgen und Seen. Neutrale (graue) Städte liegen in einem der Gebiete und müssen trotzdem erobert werden. Wo deine Einheiten stehen, verschiebt sich die Grenze.</li>
         <li>Gegner siehst du nur in Sichtweite deiner Einheiten und Städte.</li>
-        <li>Auch die <b>KI hält eine Grenzfront</b> (rot). Ist sie dort überlegen, startet sie einen Angriff mit rotem Pfeil auf deine nächste Stadt – du siehst ihn, sobald ihre Truppen in Sichtweite sind, und bekommst die Warnung „Feindlicher Angriff!“. Mit dem Rest ihrer Armee erobert sie Städte.</li>
+        <li>Auch die <b>KI hält eine Grenzfront</b> (rot). Ist sie dort überlegen, plant sie Angriffe auf deine Städte. Angriffspläne sind geheim: Du siehst die Pfeile der KI nicht, und die KI sieht deine nicht – nur die Truppen selbst, sobald sie in Sichtweite sind. Mit dem Rest ihrer Armee erobert sie Städte.</li>
       </ul>
       <button id="helpClose" class="primary">Verstanden</button>
     </div>
@@ -140,6 +140,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=8"></script>
+  <script type="module" src="js/main.js?v=9"></script>
 </body>
 </html>
