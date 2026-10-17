@@ -53,4 +53,4 @@ js/main.js        Spielschleife und Menüs
 
 ## Veröffentlichen
 
-Der Workflow `.github/workflows/pages.yml` veröffentlicht die Seite bei jedem Push auf `main`. Einmalig in den Repository-Einstellungen unter **Settings → Pages → Source** „GitHub Actions“ auswählen.
+GitHub Pages veröffentlicht die Seite direkt aus dem Branch `main` (Settings → Pages → „Deploy from a branch“). Jeder Push aktualisiert das Spiel nach etwa einer Minute.
