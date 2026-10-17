@@ -1,6 +1,7 @@
-import { DIFFICULTY } from './config.js?v=3';
-import { unitStrength } from './game.js?v=3';
-import { mulberry32 } from './rng.js?v=3';
+import { DIFFICULTY } from './config.js?v=4';
+import { unitStrength } from './game.js?v=4';
+import { mulberry32 } from './rng.js?v=4';
+import { FrontManager } from './fronts.js?v=4';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -17,9 +18,12 @@ export class AI {
     this.currentTarget = null;
     this.penalty = new Map();
     this.pathCache = new Map();
+    this.fronts = new FrontManager(game, player);
+    this.front = null;
   }
 
   update(dt) {
+    this.fronts.update(dt);
     this.timer -= dt;
     if (this.timer > 0) return;
     this.timer = this.cfg.interval * (0.8 + this.rng() * 0.4);
@@ -60,7 +64,8 @@ export class AI {
     }
     if (!myUnits.length) return;
 
-    const free = new Set(myUnits);
+    this.manageFront(myUnits, enemies);
+    const free = new Set(myUnits.filter((u) => !u.front));
 
     // Angeschlagene Einheiten zurückziehen
     for (const u of myUnits) {
@@ -174,6 +179,60 @@ export class AI {
       if (Math.hypot(u.x - sx, u.y - sy) < 60 && !u.path.length) continue;
       const ox = (this.rng() - 0.5) * 50, oy = (this.rng() - 0.5) * 50;
       this.order(u, sx + ox, sy + oy, 'stage', best.id);
+    }
+  }
+
+  // Grenzfront wie ein Spieler: ein Teil der Armee hält die Grenze, der Rest greift Städte an
+  manageFront(myUnits, enemies) {
+    if (this.front && !this.fronts.fronts.includes(this.front)) this.front = null;
+    const want = myUnits.length >= 6 ? Math.round(myUnits.length * this.cfg.frontShare) : 0;
+    if (!want) return;
+    if (!this.front) {
+      this.front = this.fronts.create('border', null, []);
+      this.front.reinforce = false;
+      if (!this.front.chains.length) {
+        this.fronts.remove(this.front);
+        this.front = null;
+        return;
+      }
+    }
+    const f = this.front;
+    const have = f.units.length;
+    if (have < want) {
+      // Freie Einheiten, die der Grenze am nächsten stehen, an die Front schicken
+      const pts = f.chains.flat();
+      const dist = (u) => {
+        let best = Infinity;
+        for (let i = 0; i < pts.length; i += 3) best = Math.min(best, Math.hypot(pts[i].x - u.x, pts[i].y - u.y));
+        return best;
+      };
+      const cands = myUnits
+        .filter((u) => !u.front && !u.target && !(u.ai && (u.ai.role === 'retreat' || u.ai.role === 'attack')))
+        .map((u) => ({ u, d: dist(u) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, want - have)
+        .map((o) => o.u);
+      if (cands.length) {
+        for (const u of cands) u.ai = null;
+        this.fronts.add(f, cands);
+      }
+    } else if (have > want + 2) {
+      // Überschuss für Angriffe freigeben
+      for (const u of f.units.slice(want)) { this.fronts.release(u); u.path = []; }
+    }
+
+    // Halten oder angreifen, je nach Kräfteverhältnis an der Front
+    let mine = 0;
+    for (const u of f.units) mine += unitStrength(u);
+    let theirs = 0;
+    for (const e of enemies) {
+      if (f.units.some((u) => Math.hypot(u.x - e.x, u.y - e.y) < 180)) theirs += unitStrength(e);
+    }
+    const stance = mine > theirs * this.cfg.frontPush + 2 ? 'attack'
+      : mine < theirs * 1.1 ? 'hold' : f.stance;
+    if (stance !== f.stance) {
+      f.stance = stance;
+      this.fronts.schedule(f);
     }
   }
 

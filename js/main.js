@@ -1,10 +1,10 @@
-import { generateMap } from './map.js?v=3';
-import { Game } from './game.js?v=3';
-import { AI } from './ai.js?v=3';
-import { Renderer } from './render.js?v=3';
-import { Input } from './input.js?v=3';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=3';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=3';
+import { generateMap } from './map.js?v=4';
+import { Game } from './game.js?v=4';
+import { AI } from './ai.js?v=4';
+import { Renderer } from './render.js?v=4';
+import { Input } from './input.js?v=4';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=4';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=4';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -332,7 +332,7 @@ function frame(now) {
       if (steps === 12) acc = 0;
     }
     app.handleEvents();
-    app.renderer.draw(app.cam, app.ui, app.fronts);
+    app.renderer.draw(app.cam, app.ui, app.fronts, app.ai.fronts);
     if (now - app.lastHud > 250) { app.updateHud(); app.lastHud = now; }
   }
   requestAnimationFrame(frame);
@@ -381,7 +381,7 @@ $('borderBtn').onclick = () => app.borderFront();
 $('stanceBtn').onclick = () => {
   const f = app.ui.front;
   f.stance = f.stance === 'attack' ? 'hold' : 'attack';
-  app.fronts.refresh(f, true);
+  app.fronts.schedule(f);
   app.updateFrontPanel();
 };
 $('reinforceBtn').onclick = () => { app.ui.front.reinforce = !app.ui.front.reinforce; app.updateFrontPanel(); };

@@ -1,11 +1,11 @@
-import { TERRAIN_INFO } from './config.js?v=3';
+import { TERRAIN_INFO } from './config.js?v=4';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 40;     // Grenzfront: so weit hinter der Grenze stehen
 const ATTACK_OFFSET = 30;   // Grenzfront im Angriff: so weit in Feindesland drücken
 const ROTATE_AT = 0.35;     // Verwundete ziehen sich darunter zurück
 const RETURN_AT = 0.9;      // und kehren ab hier zurück
-const PATH_BUDGET = 10;     // A*-Suchen pro Neuberechnung
+const PATH_BUDGET = 4;      // A*-Suchen pro Neuberechnung
 
 // Fronten wie in Hearts of Iron: Einheiten werden einer Linie zugewiesen,
 // verteilen sich gleichmäßig darauf und halten sie selbstständig.
@@ -14,14 +14,14 @@ export class FrontManager {
     this.game = game;
     this.owner = owner;
     this.fronts = [];
-    this.timer = 0;
+    this.timer = owner === 1 ? 0 : REFRESH / 2; // Spieler versetzt rechnen
     this.nextId = 1;
   }
 
   create(kind, line, units) {
     for (const u of units) this.release(u);
     const f = {
-      id: this.nextId++, kind, line, units: [...units], chains: [],
+      id: this.nextId++, owner: this.owner, kind, line, units: [...units], chains: [],
       stance: 'hold', reinforce: true, rotate: true,
     };
     for (const u of f.units) u.front = f;
@@ -50,12 +50,18 @@ export class FrontManager {
       u.front = f;
       f.units.push(u);
     }
-    this.refresh(f, true);
+    this.schedule(f);
   }
 
   redraw(f, line) {
     f.line = line;
     this.refresh(f, true);
+  }
+
+  // Neuberechnung im nächsten Frame statt sofort, damit sich die Rechenlast verteilt
+  schedule(f) {
+    f.force = true;
+    this.timer = Math.min(this.timer, 0.05);
   }
 
   onSpawn(u) {
@@ -72,11 +78,12 @@ export class FrontManager {
     this.timer -= dt;
     if (this.timer > 0) return;
     this.timer = REFRESH;
-    for (const f of [...this.fronts]) this.refresh(f, false);
+    for (const f of [...this.fronts]) this.refresh(f, !!f.force);
   }
 
   refresh(f, force) {
     const g = this.game;
+    f.force = false;
     f.units = f.units.filter((u) => u.hp > 0 && g.units.includes(u));
     if (!f.units.length && !f.reinforce) { this.remove(f); return; }
 
@@ -217,15 +224,17 @@ export class FrontManager {
     }
 
     const set = new Set(cells);
-    const degree = (i) => {
+    // Nachbarzahl einmal vorab bestimmen; Enden einer Linie haben wenige Nachbarn
+    const degree = new Map();
+    for (const i of set) {
       let d = 0;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && set.has(i + dy * w + dx)) d++;
-      return d;
-    };
+      degree.set(i, d);
+    }
     const chains = [];
     while (set.size) {
       let start = -1, sd = Infinity;
-      for (const i of set) { const d = degree(i); if (d < sd) { sd = d; start = i; if (d <= 1) break; } }
+      for (const i of set) { const d = degree.get(i); if (d < sd) { sd = d; start = i; if (d <= 1) break; } }
       const chain = [];
       let cur = start;
       set.delete(cur);

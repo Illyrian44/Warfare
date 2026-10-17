@@ -1,6 +1,6 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=3';
-import { classify } from './map.js?v=3';
-import { frontBadge } from './fronts.js?v=3';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=4';
+import { classify } from './map.js?v=4';
+import { frontBadge } from './fronts.js?v=4';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -126,7 +126,7 @@ export class Renderer {
     }
   }
 
-  draw(cam, ui, fronts) {
+  draw(cam, ui, fronts, enemyFronts) {
     const { ctx, canvas, game } = this;
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -144,6 +144,7 @@ export class Renderer {
     const me = this.human;
     const visible = (u) => u.owner === me || ui.revealAll || game.isVisible(me, u.x, u.y);
 
+    if (enemyFronts) for (const f of enemyFronts.fronts) this.drawFront(f, px, false, !ui.revealAll);
     if (fronts) for (const f of fronts.fronts) this.drawFront(f, px, f === ui.front);
 
     // Geplante Wege eigener Einheiten
@@ -243,9 +244,24 @@ export class Renderer {
   }
 
   // Frontlinie wie in Hearts of Iron: dicke Linie mit Zacken Richtung Feind
-  drawFront(f, px, selected) {
-    const { ctx } = this;
+  drawFront(f, px, selected, fogged = false) {
+    const { ctx, game } = this;
     const color = PLAYER_COLORS[f.owner || this.human];
+    if (fogged) {
+      // Fremde Fronten nur in eigener Sichtweite zeigen: Linie an unsichtbaren Stellen auftrennen
+      const seen = (p) => game.isVisible(this.human, p.x, p.y);
+      const parts = [];
+      for (const c of f.chains) {
+        let cur = [];
+        for (const p of c) {
+          if (seen(p)) cur.push(p);
+          else { if (cur.length >= 2) parts.push(cur); cur = []; }
+        }
+        if (cur.length >= 2) parts.push(cur);
+      }
+      if (!parts.length) return;
+      f = { ...f, chains: parts, hideBadge: true };
+    }
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     for (const c of f.chains) {
@@ -288,7 +304,7 @@ export class Renderer {
       ctx.fill();
     }
 
-    const b = frontBadge(f);
+    const b = f.hideBadge ? null : frontBadge(f);
     if (!b) return;
     const r = 12 * px;
     ctx.beginPath();
