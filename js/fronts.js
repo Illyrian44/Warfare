@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=40';
-import { DIVISION, formationOf } from './orbat.js?v=40';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=46';
+import { DIVISION, formationOf } from './orbat.js?v=46';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -305,7 +305,9 @@ export class FrontManager {
       const len = total * d.strength / sum;
       const n = d.list.length;
       for (let k = 0; k < n; k++) {
-        slots.push(pointAt(f.chains, start + (k + 0.5) * len / n));
+        const pt = pointAt(f.chains, start + (k + 0.5) * len / n);
+        if (!pt) continue;
+        slots.push(pt);
         ordered.push(d.list[k].u);
       }
       f.sections.push({ div: d.div, from: start, to: start + len });
@@ -556,7 +558,7 @@ export function pointAt(chains, t) {
     }
   }
   const c = chains[chains.length - 1];
-  return { ...c[c.length - 1] };
+  return c && c.length ? { ...c[c.length - 1] } : null;
 }
 
 function distribute(chains, n) {

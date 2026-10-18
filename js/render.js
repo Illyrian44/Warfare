@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=40';
-import { classify } from './map.js?v=40';
-import { frontBadge, pointAt } from './fronts.js?v=40';
-import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=40';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=46';
+import { classify } from './map.js?v=46';
+import { frontBadge, pointAt } from './fronts.js?v=46';
+import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=46';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -374,6 +374,7 @@ export class Renderer {
         let lx = null, ly = null;
         for (let k = 0; k <= steps; k++) {
           const p = pointAt(f.chains, sec.from + (sec.to - sec.from) * k / steps);
+          if (!p) continue;
           const off = -7 * px; // hinter der Linie
           const x = p.x + (p.nx || 0) * off, y = p.y + (p.ny || 0) * off;
           // Sprung zwischen getrennten Teillinien nicht verbinden
@@ -386,6 +387,7 @@ export class Renderer {
       }
       for (let i = 1; i < f.sections.length; i++) {
         const p = pointAt(f.chains, f.sections[i].from);
+        if (!p) continue;
         ctx.beginPath();
         ctx.moveTo(p.x - (p.nx || 0) * 13 * px, p.y - (p.ny || 0) * 13 * px);
         ctx.lineTo(p.x + (p.nx || 0) * 9 * px, p.y + (p.ny || 0) * 9 * px);

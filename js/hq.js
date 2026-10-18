@@ -1,6 +1,6 @@
-import { unitStrength } from './game.js?v=40';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=40';
-import { pointAt } from './fronts.js?v=40';
+import { unitStrength } from './game.js?v=46';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=46';
+import { pointAt } from './fronts.js?v=46';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -105,7 +105,8 @@ export class HQManager {
   coverGaps(p, enemies) {
     const g = this.game;
     const own = g.units.filter((u) => u.owner === p && !u.rotating);
-    const fronts = new Set(own.map((u) => u.front).filter((f) => f && f.sections && f.sections.length > 1 && !f.attack));
+    const fronts = new Set(own.map((u) => u.front).filter((f) => f && f.chains && f.chains.length &&
+      f.sections && f.sections.length > 1 && !f.attack));
     for (const f of fronts) {
       const secs = f.sections;
       for (let i = 0; i < secs.length; i++) {
@@ -116,6 +117,7 @@ export class HQManager {
         for (let t = sec.from + 15; t < sec.to; t += 30) {
           total++;
           const pt = pointAt(f.chains, t);
+          if (!pt) continue;
           if (!own.some((u) => Math.abs(u.x - pt.x) < GAP_COVER && Math.abs(u.y - pt.y) < GAP_COVER &&
             Math.hypot(u.x - pt.x, u.y - pt.y) < GAP_COVER)) gaps.push(pt);
         }

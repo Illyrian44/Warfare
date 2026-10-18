@@ -1,5 +1,5 @@
-import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=40';
-import { mulberry32, makeNoise, fbm } from './rng.js?v=40';
+import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=46';
+import { mulberry32, makeNoise, fbm } from './rng.js?v=46';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -39,11 +39,11 @@ export class GameMap {
     return TERRAIN_INFO[t].speed;
   }
 
+  // Bewegung und Wegfindung nutzen dasselbe Zellraster (sonst blockieren an Bergrändern
+  // weich interpolierte Höhen Wege, die A* für frei hält)
   speedAt(wx, wy) {
-    const t = this.terrainAt(wx, wy);
-    if (!TERRAIN_INFO[t].passable) return 0;
-    if (this.roads[this.cellIndex(wx, wy)]) return t === T.WATER ? BRIDGE_SPEED : ROAD_SPEED;
-    return TERRAIN_INFO[t].speed;
+    if (wx < 0 || wy < 0 || wx >= this.worldW || wy >= this.worldH) return 0;
+    return this.cellSpeed(this.cellIndex(wx, wy));
   }
 
   // Bilineare Interpolation; Zellmittelpunkte liegen bei (i + 0.5) * CELL
@@ -66,7 +66,8 @@ export class GameMap {
   }
 
   passableAt(wx, wy) {
-    return TERRAIN_INFO[this.terrainAt(wx, wy)].passable;
+    if (wx < 0 || wy < 0 || wx >= this.worldW || wy >= this.worldH) return false;
+    return TERRAIN_INFO[this.cells[this.cellIndex(wx, wy)]].passable;
   }
 
   cellIndex(wx, wy) {
@@ -156,7 +157,7 @@ export class GameMap {
   clearLine(a, b, safe = null) {
     const dx = b.x - a.x, dy = b.y - a.y;
     const d = Math.hypot(dx, dy);
-    const steps = Math.ceil(d / 4);
+    const steps = Math.ceil(d / 2); // fein genug, um keine Bergzelle an der Ecke zu schneiden
     const s0 = this.speedAt(a.x, a.y) || 1, s1 = this.speedAt(b.x, b.y) || 1;
     // Liegen beide Enden auf einer Straße, muss auch die Abkürzung auf der Straße bleiben
     const minSpeed = s0 > 1 && s1 > 1 ? Math.min(s0, s1) : Math.min(s0, s1, 0.8);

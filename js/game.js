@@ -2,10 +2,10 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE,
-} from './config.js?v=40';
-import { mulberry32 } from './rng.js?v=40';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=40';
-import { HQManager } from './hq.js?v=40';
+} from './config.js?v=46';
+import { mulberry32 } from './rng.js?v=46';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=46';
+import { HQManager } from './hq.js?v=46';
 
 export class Game {
   constructor(map, opts = {}) {
@@ -29,6 +29,7 @@ export class Game {
     this.visTimer = 0;
     this.starveTimer = 0;
     this.divisions = [];
+    this.repathBudget = 2;
     this.divTimer = 0;
     this.territoryVersion = 0;
     this.visionVersion = 0;
@@ -299,7 +300,8 @@ export class Game {
       u.hp = Math.min(u.maxHp, u.hp + regen * dt - u.incoming);
     }
 
-    // Bewegung
+    // Bewegung (höchstens 2 neue Wegsuchen für Festgefahrene je Schritt)
+    this.repathBudget = 2;
     for (const u of U) {
       this.moveUnit(u, dt);
       if (u.swapUntil > this.time && !u.path.length) u.swapUntil = 0; // Platztausch abgeschlossen
@@ -345,7 +347,6 @@ export class Game {
   moveUnit(u, dt) {
     const map = this.map;
     const ut = UNIT_TYPES[u.type];
-    const terr = map.terrainAt(u.x, u.y);
     let spd = ut.speed * (map.speedAt(u.x, u.y) || 0.5);
     if (u.target) spd *= ENGAGED_SPEED;
     let mx = 0, my = 0;
@@ -363,6 +364,7 @@ export class Game {
       if (d < (u.path.length > 1 ? 6 : 3)) {
         u.path.shift();
         u.stuck = 0;
+        u.repathed = false;
       } else if (!retreating && !pressing) {
         const s = Math.min(spd * dt, d);
         mx = dx / d * s; my = dy / d * s;
@@ -377,7 +379,7 @@ export class Game {
     const ox = u.x, oy = u.y;
     let nx = Math.min(map.worldW - 1, Math.max(1, u.x + mx));
     let ny = Math.min(map.worldH - 1, Math.max(1, u.y + my));
-    const free = !TERRAIN_INFO[terr].passable; // auf unbegehbarem Feld gelandet: frei bewegen
+    const free = !map.passableAt(u.x, u.y); // auf unbegehbarem Feld gelandet: frei bewegen
     if (free || map.passableAt(nx, ny)) { u.x = nx; u.y = ny; }
     else if (map.passableAt(nx, u.y)) u.x = nx;
     else if (map.passableAt(u.x, ny)) u.y = ny;
@@ -389,7 +391,17 @@ export class Game {
       if (u.path.length === 1 && last && Math.hypot(last.x - u.x, last.y - u.y) < 18 && u.stuck > 0.4) {
         u.path.length = 0; u.stuck = 0;
       } else if (u.stuck > 1.2) {
-        u.path.shift(); u.stuck = 0;
+        // Festgefahren: einmal neuen Weg ab der aktuellen Stelle suchen, sonst Wegpunkt überspringen
+        const goal = u.path[u.path.length - 1];
+        if (!u.repathed && goal && this.repathBudget > 0) {
+          this.repathBudget--;
+          u.path = map.findPath(u.x, u.y, goal.x, goal.y) || [];
+          u.repathed = true;
+        } else {
+          u.path.shift();
+          u.repathed = false;
+        }
+        u.stuck = 0;
       }
     }
   }
