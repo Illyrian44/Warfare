@@ -2,9 +2,9 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE,
-} from './config.js?v=20';
-import { mulberry32 } from './rng.js?v=20';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=20';
+} from './config.js?v=21';
+import { mulberry32 } from './rng.js?v=21';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=21';
 
 export class Game {
   constructor(map, opts = {}) {
@@ -419,7 +419,7 @@ export class Game {
         let best = null, bd = Infinity;
         for (const f of fresh) {
           if (f.front !== w.front) continue;
-          if (Math.hypot(f.x - w.x, f.y - w.y) > 150) continue; // nur Reserven in der Nähe
+          if (Math.hypot(f.x - w.x, f.y - w.y) > 80) continue; // nur Reserven in der Nähe
           const d = Math.hypot(f.x - w.x, f.y - w.y);
           if (d < bd) { bd = d; best = f; }
         }
