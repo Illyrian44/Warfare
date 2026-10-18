@@ -33,15 +33,13 @@ export const SURROUND_BONUS = 1.5;     // Schadensbonus bei Einkesselung
 export const CITY_RADIUS = 12;
 export const CITY_CAPTURE_RADIUS = 20;
 export const CAPTURE_TIME = 4;         // Sekunden
-export const UNITS_PER_CITY = 5;
+export const UNITS_PER_CITY = 10;
 
 export const SUPPLY_FULL = 200;        // volle Versorgung bis zu dieser Distanz
 export const SUPPLY_NONE = 900;        // keine Versorgung ab dieser Distanz
 
-export const DIVISION_LINK = 38;     // Kompanien näher als das bilden eine Division
-export const DIVISION_MAX = 8;       // höchstens so viele Kompanien je Division
 export const DIVISION_ROTATE = 0.25; // darunter tauscht eine Kompanie mit einer frischen
-export const DIVISION_ZOOM = 1.6;    // unterhalb dieser Zoomstufe Divisionen statt Kompanien zeigen
+export const DIVISION_ZOOM = 1.6;    // unterhalb dieser Zoomstufe Verbände statt Kompanien zeigen
 export const ROAD_SPEED = 1.6;   // Tempo auf Straßen (Ebene = 1)
 export const BRIDGE_SPEED = 1;   // Tempo auf Brücken über Wasser
 export const UNIT_VISION = 85;

@@ -1,6 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, DIVISION_ZOOM } from './config.js?v=19';
-import { classify } from './map.js?v=19';
-import { frontBadge } from './fronts.js?v=19';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, DIVISION_ZOOM } from './config.js?v=20';
+import { classify } from './map.js?v=20';
+import { frontBadge } from './fronts.js?v=20';
+import { LEVELS, unitsOf } from './orbat.js?v=20';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -214,21 +215,32 @@ export class Renderer {
     // Einheiten als NATO-Symbole (APP-6); herausgezoomt Divisionen statt Kompanien
     const flash = (game.time * 4) % 1 < 0.5;
     const highlightOf = (u) => (ui.selection.has(u) ? '#fff' : ui.front && u.front === ui.front ? '#f2c94c' : null);
-    this.aggregated = cam.zoom < DIVISION_ZOOM;
+    // Je weiter herausgezoomt, desto höher die Stufe: Regiment, Brigade, Division, Korps, Armee
+    const level = zoomLevel(cam.zoom);
+    this.aggregated = level > 0;
     this.divHits = [];
     const drawn = new Set();
-    if (this.aggregated) {
-      for (const div of game.divisions) {
-        const shown = div.members.filter((u) => u.hp > 0 && visible(u));
-        if (shown.length < 2) continue;
-        const x = shown.reduce((a, u) => a + u.x, 0) / shown.length;
-        const y = shown.reduce((a, u) => a + u.y, 0) / shown.length;
-        const sel = shown.some((u) => ui.selection.has(u));
-        const inFront = ui.front && shown.some((u) => u.front === ui.front);
-        const hw = drawDivisionSymbol(ctx, x, y, shown, div.owner === me, px,
-          sel ? '#fff' : inFront ? '#f2c94c' : null, shown.some((u) => u.starving) && flash);
-        for (const u of shown) drawn.add(u);
-        if (div.owner === me) this.divHits.push({ x, y, r: hw, members: shown });
+    if (this.aggregated && game.orbat) {
+      // Gruppen, die auf dem Bildschirm zusammenfallen würden; höhere Stufen fassen
+      // auch weiter verteilte Truppen in ihrem Raum zusammen
+      const link = Math.max(34 * px, LEVEL_LINK[level]);
+      for (let p = 1; p <= 2; p++) {
+        for (const f of game.orbat[p].all(level)) {
+          const shown = unitsOf(f).filter((u) => visible(u) && !drawn.has(u));
+          // Verteilt stehende Verbände: jede räumliche Gruppe bekommt ein eigenes Symbol
+          for (const group of clusterUnits(shown, link)) {
+            if (group.length < 2) continue;
+            const x = group.reduce((a, u) => a + u.x, 0) / group.length;
+            const y = group.reduce((a, u) => a + u.y, 0) / group.length;
+            const sel = group.some((u) => ui.selection.has(u));
+            const inFront = ui.front && group.some((u) => u.front === ui.front);
+            const hw = drawFormationSymbol(ctx, x, y, group, p === me, px,
+              sel ? '#fff' : inFront ? '#f2c94c' : null, group.some((u) => u.starving) && flash,
+              level, f.name);
+            for (const u of group) drawn.add(u);
+            if (p === me) this.divHits.push({ x, y, r: hw, members: group });
+          }
+        }
       }
     }
     for (const u of game.units) {
@@ -475,19 +487,8 @@ export function drawNatoSymbol(ctx, u, friend, px, highlight, starving) {
   const top = friend ? y - hh : y - d;
   const bottom = friend ? y + hh : y + d;
 
-  // Größenzeichen (I = Kompanie, II = Bataillon) nur bei ausreichendem Zoom
-  if (hw / px > 10) {
-    const n = u.type === 'heavy' ? 2 : 1;
-    const gap = 2.2 * px, h = 3.5 * px;
-    ctx.beginPath();
-    for (let k = 0; k < n; k++) {
-      const lx = x + (k - (n - 1) / 2) * gap;
-      ctx.moveTo(lx, top - 1.5 * px);
-      ctx.lineTo(lx, top - 1.5 * px - h);
-    }
-    ctx.lineWidth = Math.max(0.5, 1.2 * px);
-    ctx.stroke();
-  }
+  // Größenzeichen I (Kompanie) nur bei ausreichendem Zoom
+  if (hw / px > 10) drawEchelon(ctx, x, top, 'I', px);
 
   // Lebensbalken unter dem Symbol
   const frac = u.hp / u.maxHp;
@@ -596,8 +597,8 @@ function drawAxisOfAdvance(ctx, from, to, px, color, planned) {
 
 // Divisionssymbol (APP-6): Größenzeichen XX, Innenzeichen nach Zusammensetzung
 // (X = Infanterie, Oval = Panzer, beides = Panzergrenadiere), Zahl der Kompanien
-function drawDivisionSymbol(ctx, x, y, members, friend, px, highlight, starving) {
-  const hw = 12 * px, hh = hw * 0.68, d = hw * 0.95;
+function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving, level, name) {
+  const hw = (10 + level * 1.2) * px, hh = hw * 0.68, d = hw * 0.95;
   const line = Math.max(0.6, 1.4 * px);
   if (highlight) {
     symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
@@ -629,25 +630,18 @@ function drawDivisionSymbol(ctx, x, y, members, friend, px, highlight, starving)
     ctx.stroke();
   }
 
-  // Größenzeichen XX über dem Rahmen
+  // Größenzeichen der Stufe über dem Rahmen (III, X, XX, XXX, XXXX)
   const top = friend ? y - hh : y - d;
-  const s = 2.6 * px, gap = 3.4 * px, by = top - 2 * px - s;
-  ctx.beginPath();
-  for (const cx of [x - gap, x + gap]) {
-    ctx.moveTo(cx - s, by - s); ctx.lineTo(cx + s, by + s);
-    ctx.moveTo(cx + s, by - s); ctx.lineTo(cx - s, by + s);
-  }
-  ctx.lineWidth = Math.max(0.6, 1.3 * px);
-  ctx.stroke();
+  drawEchelon(ctx, x, top, LEVELS[level].echelon, px);
 
-  // Zahl der Kompanien rechts neben dem Symbol
+  // Name des Verbands rechts neben dem Symbol
   ctx.font = `bold ${10 * px}px system-ui, sans-serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = 3 * px;
   ctx.strokeStyle = 'rgba(255,255,255,0.9)';
   ctx.fillStyle = '#111';
-  const label = String(members.length);
+  const label = name || String(members.length);
   const lx = x + (friend ? hw : d) + 3 * px;
   ctx.strokeText(label, lx, y);
   ctx.fillText(label, lx, y);
@@ -663,4 +657,55 @@ function drawDivisionSymbol(ctx, x, y, members, friend, px, highlight, starving)
   ctx.fillStyle = frac > 0.6 ? '#4cd17a' : frac > 0.3 ? '#f2c94c' : '#ff5b4b';
   ctx.fillRect(x - hw, barY, bw * frac, bh);
   return friend ? hw : d;
+}
+
+// Zoomstufe → angezeigte Gliederungsstufe (0 = einzelne Kompanien)
+const LEVEL_ZOOM = [DIVISION_ZOOM, 1.15, 0.8, 0.56, 0.4];
+const LEVEL_LINK = [0, 40, 60, 110, 260, 520]; // Weltabstand je Stufe
+function zoomLevel(zoom) {
+  let level = 0;
+  for (const z of LEVEL_ZOOM) if (zoom < z) level++;
+  return level;
+}
+
+// Einheiten zu räumlichen Gruppen verbinden (Abstand unter link)
+function clusterUnits(units, link) {
+  const parent = units.map((_, i) => i);
+  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  for (let i = 0; i < units.length; i++) {
+    for (let j = i + 1; j < units.length; j++) {
+      const a = units[i], b = units[j];
+      if (Math.abs(a.x - b.x) < link && Math.abs(a.y - b.y) < link && Math.hypot(a.x - b.x, a.y - b.y) < link) parent[find(i)] = find(j);
+    }
+  }
+  const groups = new Map();
+  units.forEach((u, i) => {
+    const r = find(i);
+    if (!groups.has(r)) groups.set(r, []);
+    groups.get(r).push(u);
+  });
+  return [...groups.values()];
+}
+
+// NATO-Größenzeichen: I als senkrechte Striche, X als kleine Kreuze, mittig über dem Rahmen
+function drawEchelon(ctx, x, top, echelon, px) {
+  const s = 2.9 * px, gapI = 2.8 * px, gapX = 2 * s + 1.4 * px;
+  const widths = [...echelon].map((ch) => (ch === 'I' ? gapI : gapX));
+  const total = widths.reduce((a, b) => a + b, 0);
+  let cx = x - total / 2;
+  const cy = top - 2 * px - s;
+  ctx.beginPath();
+  [...echelon].forEach((ch, k) => {
+    const mid = cx + widths[k] / 2;
+    if (ch === 'I') {
+      ctx.moveTo(mid, cy - s); ctx.lineTo(mid, cy + s);
+    } else {
+      ctx.moveTo(mid - s, cy - s); ctx.lineTo(mid + s, cy + s);
+      ctx.moveTo(mid + s, cy - s); ctx.lineTo(mid - s, cy + s);
+    }
+    cx += widths[k];
+  });
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = Math.max(0.6, 1.3 * px);
+  ctx.stroke();
 }

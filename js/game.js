@@ -1,9 +1,10 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
-  UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_LINK, DIVISION_MAX, DIVISION_ROTATE,
-} from './config.js?v=19';
-import { mulberry32 } from './rng.js?v=19';
+  UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE,
+} from './config.js?v=20';
+import { mulberry32 } from './rng.js?v=20';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=20';
 
 export class Game {
   constructor(map, opts = {}) {
@@ -32,8 +33,11 @@ export class Game {
     this.visionVersion = 0;
     this.stats = [null, { lost: 0, built: 0, captured: 0 }, { lost: 0, built: 0, captured: 0 }];
 
-    for (const c of this.cities) {
-      if (c.owner) for (let k = 0; k < 2; k++) this.spawnUnit(c.owner, 'light', c);
+    // Jede Seite startet mit einer Armee: je eigene Stadt eine Division
+    this.orbat = [null, new OrderOfBattle(1), new OrderOfBattle(2)];
+    for (let p = 1; p <= 2; p++) {
+      const own = this.cities.filter((c) => c.owner === p).sort((a, b) => a.y - b.y);
+      this.orbat[p].createStart(this, own);
     }
     this.partitionTerritory();
     this.updateVision();
@@ -121,11 +125,14 @@ export class Game {
     }
   }
 
-  spawnUnit(owner, type, city) {
+  // slot: feste Aufstellung im Ring um die Stadt (für die Startarmee)
+  spawnUnit(owner, type, city, slot = -1) {
     const ut = UNIT_TYPES[type];
     let x = city.x, y = city.y;
     for (let tries = 0; tries < 20; tries++) {
-      const a = this.rng() * Math.PI * 2, r = 14 + this.rng() * 12;
+      const ring = slot >= 0 ? Math.floor(slot / 6) : 0;
+      const a = slot >= 0 && tries === 0 ? (slot % 6) / 6 * Math.PI * 2 + ring * 0.5 : this.rng() * Math.PI * 2;
+      const r = slot >= 0 ? 22 + ring * 15 + tries * 2 : 14 + this.rng() * 12;
       const px = city.x + Math.cos(a) * r, py = city.y + Math.sin(a) * r;
       if (this.map.passableAt(px, py)) { x = px; y = py; break; }
     }
@@ -383,39 +390,15 @@ export class Game {
     }
   }
 
-  // Benachbarte Kompanien derselben Seite bilden Divisionen (höchstens DIVISION_MAX)
+  // Divisionen aus der festen Gliederung
   updateDivisions() {
     const divs = [];
     for (let p = 1; p <= 2; p++) {
-      const own = this.units.filter((u) => u.owner === p);
-      const parent = own.map((_, i) => i);
-      const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
-      for (let i = 0; i < own.length; i++) {
-        for (let j = i + 1; j < own.length; j++) {
-          const a = own[i], b = own[j];
-          if (Math.abs(a.x - b.x) > DIVISION_LINK || Math.abs(a.y - b.y) > DIVISION_LINK) continue;
-          if (Math.hypot(a.x - b.x, a.y - b.y) <= DIVISION_LINK) parent[find(i)] = find(j);
-        }
-      }
-      const groups = new Map();
-      own.forEach((u, i) => {
-        const r = find(i);
-        if (!groups.has(r)) groups.set(r, []);
-        groups.get(r).push(u);
-      });
-      for (const g of groups.values()) {
-        // Zu große Gruppen entlang ihrer längeren Ausdehnung in gleich große Divisionen teilen
-        const xs = g.map((u) => u.x), ys = g.map((u) => u.y);
-        const wide = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
-        g.sort((a, b) => (wide ? a.x - b.x : a.y - b.y));
-        const parts = Math.ceil(g.length / DIVISION_MAX);
-        const size = Math.ceil(g.length / parts);
-        for (let k = 0; k < g.length; k += size) {
-          const members = g.slice(k, k + size);
-          const div = { owner: p, members };
-          for (const u of members) u.division = div;
-          divs.push(div);
-        }
+      for (const f of this.orbat[p].all(DIVISION)) {
+        const members = unitsOf(f).filter((u) => this.units.includes(u));
+        const div = { owner: p, members, formation: f };
+        for (const u of members) u.division = div;
+        divs.push(div);
       }
     }
     this.divisions = divs;
@@ -436,6 +419,7 @@ export class Game {
         let best = null, bd = Infinity;
         for (const f of fresh) {
           if (f.front !== w.front) continue;
+          if (Math.hypot(f.x - w.x, f.y - w.y) > 150) continue; // nur Reserven in der Nähe
           const d = Math.hypot(f.x - w.x, f.y - w.y);
           if (d < bd) { bd = d; best = f; }
         }
@@ -512,6 +496,7 @@ export class Game {
           if (c.timer >= UNIT_TYPES[c.prodType].buildTime) {
             c.timer = 0;
             const u = this.spawnUnit(c.owner, c.prodType, c);
+            this.orbat[c.owner].assign(u, this);
             unitCount[c.owner]++;
             this.stats[c.owner].built++;
             this.events.push({ type: 'spawn', unit: u, city: c });
