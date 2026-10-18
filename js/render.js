@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=32';
-import { classify } from './map.js?v=32';
-import { frontBadge } from './fronts.js?v=32';
-import { LEVELS, REGIMENT, ARMY, NOMINAL, formationOf } from './orbat.js?v=32';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=33';
+import { classify } from './map.js?v=33';
+import { frontBadge } from './fronts.js?v=33';
+import { LEVELS, REGIMENT, ARMY, NOMINAL, formationOf } from './orbat.js?v=33';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -238,7 +238,7 @@ export class Renderer {
       drawNatoSymbol(ctx, u, u.owner === me, px, highlightOf(u), u.starving && flash);
     }
 
-    // Brigade-HQs hinter der Linie (keine Kampfeinheiten)
+    // Divisions-HQs hinter der Linie (keine Kampfeinheiten)
     if (game.hq) {
       for (const hq of game.hq.hqs) {
         if (hq.owner !== me && !ui.revealAll && !game.isVisible(me, hq.x, hq.y)) continue;
@@ -765,7 +765,7 @@ function drawEchelon(ctx, x, top, echelon, px) {
 }
 
 // Hauptquartier nach APP-6: Rahmen mit Stab, der links unten nach unten zeigt,
-// Größenzeichen der Brigade (X) und "HQ" im Rahmen
+// Größenzeichen der Division (XX) und "HQ" im Rahmen
 function drawHQSymbol(ctx, hq, friend, px) {
   const hw = Math.max(8 * px, 6);
   px = hw / 8;
@@ -792,5 +792,5 @@ function drawHQSymbol(ctx, hq, friend, px) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('HQ', x, y + 0.5 * px);
-  drawEchelon(ctx, x, friend ? y - hh : y - d, 'X', px * 0.85);
+  drawEchelon(ctx, x, friend ? y - hh : y - d, 'XX', px * 0.85);
 }

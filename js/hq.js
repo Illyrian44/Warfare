@@ -1,17 +1,17 @@
-import { unitStrength } from './game.js?v=32';
-import { BRIGADE, unitsOf } from './orbat.js?v=32';
+import { unitStrength } from './game.js?v=33';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=33';
 
-const HQ_BEHIND = 70;        // so weit hinter der Brigade steht das HQ
+const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
 const SUPPORT_RADIUS = 80;   // eigene Kompanien in diesem Umkreis zählen als Unterstützung
 const DONOR_RANGE = 320;     // so weit holt das HQ Verstärkung heran
 const COMMAND_RANGE = 380;   // Durchbrüche in diesem Umkreis um das HQ werden abgeriegelt
 const ORDER_TIME = 14;       // Sekunden, die ein HQ-Befehl Vorrang hat
-const SEAL_COOLDOWN = 20;    // so lange nach einem Abriegeln kein weiteres in derselben Brigade
+const SEAL_COOLDOWN = 20;    // so lange nach einem Abriegeln kein weiteres in derselben Division
 const SEAL_DEPTH = 60;       // so weit muss ein Feind hinter der Linie stehen
 
-// Brigade-Hauptquartiere: stehen hinter der Linie, sind keine Kampfeinheiten und
-// steuern die Kompanien ihrer Brigade in der Verteidigung
+// Divisions-Hauptquartiere: stehen hinter der Linie, sind keine Kampfeinheiten und
+// steuern die Kompanien ihrer Division in der Verteidigung
 export class HQManager {
   constructor(game) {
     this.game = game;
@@ -22,7 +22,7 @@ export class HQManager {
   get hqs() {
     const out = [];
     for (let p = 1; p <= 2; p++) {
-      for (const f of this.game.orbat[p].all(BRIGADE)) if (f.hq && f.hq.alive) out.push(f.hq);
+      for (const f of this.game.orbat[p].all(DIVISION)) if (f.hq && f.hq.alive) out.push(f.hq);
     }
     return out;
   }
@@ -34,12 +34,12 @@ export class HQManager {
     if (this.cmdTimer <= 0) { this.cmdTimer = 2; this.command(); }
   }
 
-  // HQ hinter den Schwerpunkt der Brigade setzen, Richtung nächste eigene Stadt
+  // HQ hinter den Schwerpunkt der Division setzen, Richtung nächste eigene Stadt
   place() {
     const g = this.game;
     for (let p = 1; p <= 2; p++) {
       const cities = g.cities.filter((c) => c.owner === p);
-      for (const f of g.orbat[p].all(BRIGADE)) {
+      for (const f of g.orbat[p].all(DIVISION)) {
         const units = unitsOf(f).filter((u) => g.units.includes(u));
         if (!units.length || !cities.length) { if (f.hq) f.hq.alive = false; continue; }
         const cx = units.reduce((a, u) => a + u.x, 0) / units.length;
@@ -76,7 +76,7 @@ export class HQManager {
     const g = this.game;
     for (let p = 1; p <= 2; p++) {
       const enemies = g.units.filter((e) => e.owner !== p && g.isVisible(p, e.x, e.y));
-      for (const f of g.orbat[p].all(BRIGADE)) {
+      for (const f of g.orbat[p].all(DIVISION)) {
         const hq = f.hq;
         if (!hq || !hq.alive) continue;
         const units = unitsOf(f).filter((u) => g.units.includes(u));
@@ -87,7 +87,7 @@ export class HQManager {
   }
 
   // Durchbruch: ein Feind steht näher an unserer Stadt als unsere Kompanien in seiner Nähe,
-  // ist also an ihnen vorbei -> nächstes freies Regiment der Brigade riegelt ab
+  // ist also an ihnen vorbei -> nächstes freies Regiment der Division riegelt ab
   sealBreakthrough(p, f, hq, units, enemies) {
     const g = this.game;
     const cities = g.cities.filter((c) => c.owner === p);
@@ -110,7 +110,7 @@ export class HQManager {
     }
     if (!target) return false;
     let best = null, bestD = Infinity;
-    for (const reg of f.children) {
+    for (const reg of regimentsOf(f)) {
       const comps = reg.units.filter((u) => u.hp > 0 && g.units.includes(u));
       if (!comps.length || !comps.every((u) => this.controllable(u))) continue;
       // Nur Regimenter ohne Feinddruck: sonst reißt das Abriegeln neue Lücken
@@ -146,8 +146,8 @@ export class HQManager {
     });
     let moves = 0;
     for (const hot of rated.filter((r) => r.gap > 0.8).sort((a, b) => b.gap - a.gap)) {
-      if (moves >= 2) break;
-      // Ruhige Kompanie (kein Druck) in Reichweite suchen
+      if (moves >= 3) break;
+      // Ruhige Kompanie der Division (kein Druck) in Reichweite suchen
       let donor = null, dd = Infinity;
       for (const r of rated) {
         if (r === hot || r.pressure > 0 || !this.controllable(r.u)) continue;
@@ -178,4 +178,9 @@ export class HQManager {
     // Die Front übernimmt die neue Stellung als Platz der Kompanie
     if (u.front) u.frontGoal = { x, y };
   }
+}
+
+function regimentsOf(f) {
+  if (f.level === REGIMENT) return [f];
+  return f.children.flatMap(regimentsOf);
 }
