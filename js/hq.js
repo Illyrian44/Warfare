@@ -1,5 +1,5 @@
-import { unitStrength } from './game.js?v=31';
-import { BRIGADE, unitsOf } from './orbat.js?v=31';
+import { unitStrength } from './game.js?v=32';
+import { BRIGADE, unitsOf } from './orbat.js?v=32';
 
 const HQ_BEHIND = 70;        // so weit hinter der Brigade steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie

@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=31';
-import { classify } from './map.js?v=31';
-import { frontBadge } from './fronts.js?v=31';
-import { LEVELS, REGIMENT, ARMY, NOMINAL, formationOf } from './orbat.js?v=31';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=32';
+import { classify } from './map.js?v=32';
+import { frontBadge } from './fronts.js?v=32';
+import { LEVELS, REGIMENT, ARMY, NOMINAL, formationOf } from './orbat.js?v=32';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -596,7 +596,13 @@ function drawAxisOfAdvance(ctx, from, to, px, color, planned) {
 // Divisionssymbol (APP-6): Größenzeichen XX, Innenzeichen nach Zusammensetzung
 // (X = Infanterie, Oval = Panzer, beides = Panzergrenadiere), Zahl der Kompanien
 function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving, level, name) {
-  const hw = (10 + level * 1.2) * px, hh = hw * 0.68, d = hw * 0.95;
+  // Mindestens etwas größer als eine Kompanie; beim Hineinzoomen wächst das Symbol mit
+  // der Karte, und Linien, Schrift und Größenzeichen skalieren proportional mit
+  const base = 10 + level * 1.2;
+  const company = Math.max(...members.map((u) => companyHalfWidth(u, px)));
+  const hw = Math.max(base * px, company * 1.15);
+  px = hw / base;
+  const hh = hw * 0.68, d = hw * 0.95;
   const line = Math.max(0.6, 1.4 * px);
   if (highlight) {
     symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
@@ -707,14 +713,14 @@ function groupByOverlap(units, px) {
   }
   // Gruppen zusammenführen, solange sich ihre Symbole überdecken
   // Gruppensymbol inkl. Größenzeichen darüber und Rand: etwa 17 px nach jeder Seite
-  const symbolHalf = 17 * px;
+  const symbolHalf = (g) => Math.max(17 * px, Math.max(...g.members.map((u) => companyHalfWidth(u, px))) * 1.5);
   for (let changed = true, guard = 0; changed && guard < 8; guard++) {
     changed = false;
     outer: for (let i = 0; i < groups.length; i++) {
       for (let j = i + 1; j < groups.length; j++) {
         const a = groups[i], b = groups[j];
-        const ra = a.members.length > 1 ? symbolHalf : companyHalfWidth(a.members[0], px);
-        const rb = b.members.length > 1 ? symbolHalf : companyHalfWidth(b.members[0], px);
+        const ra = a.members.length > 1 ? symbolHalf(a) : companyHalfWidth(a.members[0], px);
+        const rb = b.members.length > 1 ? symbolHalf(b) : companyHalfWidth(b.members[0], px);
         if (Math.abs(a.x - b.x) < ra + rb && Math.abs(a.y - b.y) < ra + rb) {
           groups[i] = makeGroup(a.members.concat(b.members));
           groups.splice(j, 1);
@@ -761,7 +767,9 @@ function drawEchelon(ctx, x, top, echelon, px) {
 // Hauptquartier nach APP-6: Rahmen mit Stab, der links unten nach unten zeigt,
 // Größenzeichen der Brigade (X) und "HQ" im Rahmen
 function drawHQSymbol(ctx, hq, friend, px) {
-  const hw = 8 * px, hh = hw * 0.68, d = hw * 0.95;
+  const hw = Math.max(8 * px, 6);
+  px = hw / 8;
+  const hh = hw * 0.68, d = hw * 0.95;
   const { x, y } = hq;
   const line = Math.max(0.5, 1.1 * px);
   symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
