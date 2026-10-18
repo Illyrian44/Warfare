@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, DIVISION_ZOOM } from './config.js?v=24';
-import { classify } from './map.js?v=24';
-import { frontBadge } from './fronts.js?v=24';
-import { LEVELS, REGIMENT, BRIGADE, DIVISION, CORPS, ARMY, formationOf } from './orbat.js?v=24';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, DIVISION_ZOOM } from './config.js?v=25';
+import { classify } from './map.js?v=25';
+import { frontBadge } from './fronts.js?v=25';
+import { LEVELS, REGIMENT, ARMY, NOMINAL, formationOf } from './orbat.js?v=25';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -652,11 +652,12 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
   return friend ? hw : d;
 }
 
-// Stufe nach Größe der Gruppe, Name nach dem Verband, zu dem die meisten Kompanien gehören
-// (im Gefecht mischen sich Verbände; sonst stünde an kleinen Gruppen schnell "Armee")
+// Stufe nach Stärke: die höchste Stufe, deren Sollstärke die Gruppe erreicht
+// (Division erst ab 8 Kompanien usw.). Name nach dem Verband, zu dem die meisten gehören.
 function labelFor(members) {
   const n = members.length;
-  const level = n <= 2 ? REGIMENT : n <= 4 ? BRIGADE : n <= 8 ? DIVISION : n <= 16 ? CORPS : ARMY;
+  let level = REGIMENT;
+  for (let l = REGIMENT + 1; l <= ARMY; l++) if (n >= NOMINAL[l]) level = l;
   const count = new Map();
   for (const u of members) {
     const f = formationOf(u, level);

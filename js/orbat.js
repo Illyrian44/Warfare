@@ -14,6 +14,11 @@ export const REGIMENT = 1, BRIGADE = 2, DIVISION = 3, CORPS = 4, ARMY = 5;
 // Sollstärke: Kinder je Verband (Regiment: Kompanien)
 const SIZE = { [REGIMENT]: 2, [BRIGADE]: 2, [DIVISION]: 2, [CORPS]: 2 };
 
+// Sollstärke in Kompanien je Stufe (Regiment 2, Brigade 4, Division 8, Korps 16, Armee 32)
+export const NOMINAL = {};
+NOMINAL[REGIMENT] = SIZE[REGIMENT];
+for (let l = BRIGADE; l <= ARMY; l++) NOMINAL[l] = NOMINAL[l - 1] * (SIZE[l] || 2);
+
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 
 export class OrderOfBattle {
