@@ -1,10 +1,10 @@
-import { generateMap } from './map.js?v=21';
-import { Game } from './game.js?v=21';
-import { AI } from './ai.js?v=21';
-import { Renderer } from './render.js?v=21';
-import { Input } from './input.js?v=21';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=21';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=21';
+import { generateMap } from './map.js?v=22';
+import { Game } from './game.js?v=22';
+import { AI } from './ai.js?v=22';
+import { Renderer } from './render.js?v=22';
+import { Input } from './input.js?v=22';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=22';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=22';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -53,7 +53,7 @@ const app = {
     const { worldW, worldH } = this.game.map;
     const vw = canvas.clientWidth, vh = canvas.clientHeight;
     const fit = Math.min(vw / worldW, vh / worldH);
-    this.cam.min = fit * 0.6;
+    this.cam.min = Math.min(fit * 0.6, 0.15); // weit genug für Korps- und Armeeansicht
     this.cam.max = 8;
     // Auf die eigene Seite zoomen, wenn der Bildschirm klein ist
     const mine = this.game.citiesOf(this.human);

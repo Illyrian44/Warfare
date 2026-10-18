@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, DIVISION_ZOOM } from './config.js?v=21';
-import { classify } from './map.js?v=21';
-import { frontBadge } from './fronts.js?v=21';
-import { LEVELS, unitsOf } from './orbat.js?v=21';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, DIVISION_ZOOM } from './config.js?v=22';
+import { classify } from './map.js?v=22';
+import { frontBadge } from './fronts.js?v=22';
+import { LEVELS, unitsOf } from './orbat.js?v=22';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -660,7 +660,10 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
 }
 
 // Zoomstufe → angezeigte Gliederungsstufe (0 = einzelne Kompanien)
-const LEVEL_ZOOM = [DIVISION_ZOOM, 1.15, 0.8, 0.56, 0.4];
+// Kompanien ab 1,6; Regiment und Brigade nur in schmalen Bereichen beim Hineinzoomen;
+// Division über den ganzen üblichen Bereich (auch Startansicht); Korps und Armee erst
+// beim Herauszoomen über die ganze Karte hinaus
+const LEVEL_ZOOM = [DIVISION_ZOOM, 1.35, 1.1, 0.3, 0.2];
 const LEVEL_LINK = [0, 40, 60, 110, 260, 520]; // Weltabstand je Stufe
 function zoomLevel(zoom) {
   let level = 0;
