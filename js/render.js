@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=35';
-import { classify } from './map.js?v=35';
-import { frontBadge } from './fronts.js?v=35';
-import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=35';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=38';
+import { classify } from './map.js?v=38';
+import { frontBadge, pointAt } from './fronts.js?v=38';
+import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=38';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -347,6 +347,39 @@ export class Renderer {
       const to = polylineMid(order.line);
       if (from && to && Math.hypot(to.x - from.x, to.y - from.y) > 50 * px) {
         drawAxisOfAdvance(ctx, from, to, px, color, planned);
+      }
+    }
+
+    // Grenzen der Divisionsabschnitte als Querstriche, darunter Farbband der Division
+    if (!fogged && f.sections && f.sections.length) {
+      for (const sec of f.sections) {
+        if (!sec.div) continue;
+        ctx.beginPath();
+        const steps = Math.max(2, Math.ceil((sec.to - sec.from) / 6));
+        let lx = null, ly = null;
+        for (let k = 0; k <= steps; k++) {
+          const p = pointAt(f.chains, sec.from + (sec.to - sec.from) * k / steps);
+          const off = -7 * px; // hinter der Linie
+          const x = p.x + (p.nx || 0) * off, y = p.y + (p.ny || 0) * off;
+          // Sprung zwischen getrennten Teillinien nicht verbinden
+          if (lx === null || Math.hypot(x - lx, y - ly) > 20) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          lx = x; ly = y;
+        }
+        ctx.strokeStyle = divisionColor(sec.div);
+        ctx.lineWidth = 4 * px;
+        ctx.stroke();
+      }
+      for (let i = 1; i < f.sections.length; i++) {
+        const p = pointAt(f.chains, f.sections[i].from);
+        ctx.beginPath();
+        ctx.moveTo(p.x - (p.nx || 0) * 13 * px, p.y - (p.ny || 0) * 13 * px);
+        ctx.lineTo(p.x + (p.nx || 0) * 9 * px, p.y + (p.ny || 0) * 9 * px);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3 * px;
+        ctx.stroke();
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1.4 * px;
+        ctx.stroke();
       }
     }
 

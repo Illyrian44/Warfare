@@ -1,5 +1,5 @@
-import { unitStrength } from './game.js?v=35';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=35';
+import { unitStrength } from './game.js?v=38';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=38';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -110,7 +110,13 @@ export class HQManager {
     }
     if (!target) return false;
     let best = null, bestD = Infinity;
-    for (const reg of regimentsOf(f)) {
+    // Erst eigene Regimenter, sonst darf ein Nachbar aushelfen (kehrt danach zurück)
+    const own = regimentsOf(f);
+    const neighbors = g.orbat[p].all(f.level).filter((o) => o !== f && o.hq && o.hq.alive &&
+      Math.hypot(o.hq.x - hq.x, o.hq.y - hq.y) < COMMAND_RANGE).flatMap(regimentsOf);
+    let helper = false;
+    for (const reg of own.concat(neighbors)) {
+      if (best && !helper && !own.includes(reg)) break; // eigenes Regiment gefunden
       const comps = reg.units.filter((u) => u.hp > 0 && g.units.includes(u));
       if (!comps.length || !comps.every((u) => this.controllable(u))) continue;
       // Nur Regimenter ohne Feinddruck: sonst reißt das Abriegeln neue Lücken
@@ -118,7 +124,7 @@ export class HQManager {
       const cx = comps.reduce((a, u) => a + u.x, 0) / comps.length;
       const cy = comps.reduce((a, u) => a + u.y, 0) / comps.length;
       const d = Math.hypot(cx - target.x, cy - target.y);
-      if (d < bestD) { bestD = d; best = comps; }
+      if (d < bestD) { bestD = d; best = comps; helper = !own.includes(reg); }
     }
     if (!best) return false;
     // Sperrstellung zwischen Durchbrecher und Stadt beziehen, quer zur Stoßrichtung
@@ -128,7 +134,7 @@ export class HQManager {
     const bx = target.x + ux * Math.min(45, cd * 0.5), by = target.y + uy * Math.min(45, cd * 0.5);
     best.forEach((u, k) => {
       const off = (k - (best.length - 1) / 2) * 16;
-      this.send(u, bx - uy * off, by + ux * off, 'abriegeln');
+      this.send(u, bx - uy * off, by + ux * off, 'abriegeln', helper);
     });
     f.sealUntil = g.time + SEAL_COOLDOWN;
     g.events.push({ type: 'hqOrder', owner: p, kind: 'seal', formation: f });
@@ -168,7 +174,8 @@ export class HQManager {
     }
   }
 
-  send(u, x, y, task) {
+  // helper: Regiment eines Nachbarn; behält seinen Frontplatz und kehrt nach dem Befehl zurück
+  send(u, x, y, task, helper = false) {
     const g = this.game;
     u.path = g.map.findPath(u.x, u.y, x, y) || [];
     u.stuck = 0;
@@ -176,7 +183,7 @@ export class HQManager {
     u.hqTask = task;
     if (u.ai) u.ai = null;
     // Die Front übernimmt die neue Stellung als Platz der Kompanie
-    if (u.front) u.frontGoal = { x, y };
+    if (u.front && !helper) u.frontGoal = { x, y };
   }
 }
 

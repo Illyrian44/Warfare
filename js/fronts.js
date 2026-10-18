@@ -1,4 +1,5 @@
-import { TERRAIN_INFO, CELL } from './config.js?v=35';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=38';
+import { DIVISION, formationOf } from './orbat.js?v=38';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -170,14 +171,10 @@ export class FrontManager {
       if (!u.rotating) active.push(u);
     }
 
-    const slots = distribute(f.chains, active.length);
+    // Divisionsabschnitte: jede Division bekommt einen zusammenhängenden Abschnitt der
+    // Front, Länge nach ihrer Stärke. Kompanien bleiben in ihrem Abschnitt.
+    const { slots, ordered } = this.sectionSlots(f, active);
     if (!slots.length) return;
-    // Reihenfolge entlang der Linie beibehalten: Einheiten werden nach ihrer Lage
-    // auf der Front sortiert, so rücken bei Ausfällen nur Nachbarn seitlich nach
-    const ordered = active
-      .map((u) => ({ u, t: projectOnChains(f.chains, u) }))
-      .sort((a, b) => a.t - b.t)
-      .map((o) => o.u);
     let budget = PATH_BUDGET;
     let pending = false;
     const shared = new Map(); // Wege für nebeneinander stehende Einheiten mit ähnlichem Ziel teilen
@@ -194,8 +191,11 @@ export class FrontManager {
       // (kleine Verschiebungen ignorieren, bei echtem Durchbruch geordnet zurück)
       // Feindkontakt: Stellung halten wie in HOI4. Nur wer bereits an der Front steht
       // und nicht abgeschnitten im Feindgebiet ist, bleibt; Lücken füllen andere auf.
+      // Seitliche Verschiebung in den eigenen Divisionsabschnitt ist erlaubt (hinter der
+      // Linie), nur ein Rückzug weg vom Feind wird unterbunden.
+      const back = s.nx === undefined ? 0 : -((s.x - u.x) * s.nx + (s.y - u.y) * s.ny);
       if (!f.attack && u.frontGoal && Math.hypot(u.x - u.frontGoal.x, u.y - u.frontGoal.y) < 80 &&
-          this.enemyNear(u, 160) && !this.cutOff(u)) {
+          back > 15 && this.enemyNear(u, 160) && !this.cutOff(u)) {
         if (u.path.length && this.pathLeadsBack(u)) u.path = [];
         continue;
       }
@@ -266,6 +266,52 @@ export class FrontManager {
       if (o.owner !== this.owner && Math.abs(o.x - u.x) < r && Math.abs(o.y - u.y) < r && Math.hypot(o.x - u.x, o.y - u.y) < r) return true;
     }
     return false;
+  }
+
+  sectionSlots(f, active) {
+    const total = f.length || 0;
+    if (!active.length || total < 1) return { slots: distribute(f.chains, active.length), ordered: active };
+    // Lage jeder Kompanie auf der Linie: bevorzugt ihr bisheriger Platz (stabile Reihenfolge)
+    const posOf = (u) => projectOnChains(f.chains, u.frontGoal && u.front === f ? u.frontGoal : u);
+    const groups = new Map();
+    for (const u of active) {
+      const d = formationOf(u, DIVISION) || null;
+      if (!groups.has(d)) groups.set(d, []);
+      groups.get(d).push({ u, t: posOf(u) });
+    }
+    const divs = [...groups.entries()].map(([div, list]) => {
+      list.sort((a, b) => a.t - b.t);
+      const strength = list.reduce((s, o) => s + UNIT_TYPES[o.u.type].strength * (0.4 + 0.6 * o.u.hp / o.u.maxHp), 0);
+      // Bekannte Divisionen behalten ihre Reihenfolge (Mitte ihres bisherigen Abschnitts),
+      // neue reihen sich nach ihrer Lage ein
+      const old = (f.sections || []).find((x) => x.div === div);
+      const mean = old ? (old.from + old.to) / 2 : list.reduce((s, o) => s + o.t, 0) / list.length;
+      return { div, list, strength, mean };
+    }).sort((a, b) => a.mean - b.mean);
+    // Anteile langsam angleichen, damit Abschnitte bei kleinen Verlusten nicht springen
+    const prev = f.shares || new Map();
+    const rawSum = divs.reduce((s, d) => s + d.strength, 0) || 1;
+    for (const d of divs) {
+      const target = d.strength / rawSum;
+      const old = prev.get(d.div);
+      d.strength = old === undefined ? target : old * 0.85 + target * 0.15;
+    }
+    f.shares = new Map(divs.map((d) => [d.div, d.strength]));
+    const sum = divs.reduce((s, d) => s + d.strength, 0) || 1;
+    const slots = [], ordered = [];
+    f.sections = [];
+    let start = 0;
+    for (const d of divs) {
+      const len = total * d.strength / sum;
+      const n = d.list.length;
+      for (let k = 0; k < n; k++) {
+        slots.push(pointAt(f.chains, start + (k + 0.5) * len / n));
+        ordered.push(d.list[k].u);
+      }
+      f.sections.push({ div: d.div, from: start, to: start + len });
+      start += len;
+    }
+    return { slots, ordered };
   }
 
   nearestCity(u) {
@@ -471,7 +517,7 @@ function withNormals(line, facing) {
 }
 
 // Bogenlänge des nächstgelegenen Punkts auf den (aneinandergehängten) Teillinien
-function projectOnChains(chains, p) {
+export function projectOnChains(chains, p) {
   let best = Infinity, bestT = 0, acc = 0;
   for (const c of chains) {
     for (let i = 1; i < c.length; i++) {
@@ -495,6 +541,24 @@ export function chainLength(c) {
 }
 
 // n Plätze gleichmäßig über alle Teillinien verteilen
+// Punkt bei Bogenlänge t über alle Teillinien
+export function pointAt(chains, t) {
+  let acc = 0;
+  for (const c of chains) {
+    for (let i = 1; i < c.length; i++) {
+      const a = c[i - 1], b = c[i];
+      const seg = Math.hypot(b.x - a.x, b.y - a.y);
+      if (t <= acc + seg) {
+        const k = seg ? (t - acc) / seg : 0;
+        return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, nx: a.nx, ny: a.ny };
+      }
+      acc += seg;
+    }
+  }
+  const c = chains[chains.length - 1];
+  return { ...c[c.length - 1] };
+}
+
 function distribute(chains, n) {
   if (!n || !chains.length) return [];
   const total = chains.reduce((a, c) => a + chainLength(c), 0);
