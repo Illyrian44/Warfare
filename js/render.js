@@ -1,6 +1,6 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=16';
-import { classify } from './map.js?v=16';
-import { frontBadge } from './fronts.js?v=16';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, DIVISION_ZOOM } from './config.js?v=17';
+import { classify } from './map.js?v=17';
+import { frontBadge } from './fronts.js?v=17';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -211,12 +211,29 @@ export class Renderer {
       ctx.stroke();
     }
 
-    // Einheiten als NATO-Symbole (APP-6)
+    // Einheiten als NATO-Symbole (APP-6); herausgezoomt Divisionen statt Kompanien
     const flash = (game.time * 4) % 1 < 0.5;
+    const highlightOf = (u) => (ui.selection.has(u) ? '#fff' : ui.front && u.front === ui.front ? '#f2c94c' : null);
+    this.aggregated = cam.zoom < DIVISION_ZOOM;
+    this.divHits = [];
+    const drawn = new Set();
+    if (this.aggregated) {
+      for (const div of game.divisions) {
+        const shown = div.members.filter((u) => u.hp > 0 && visible(u));
+        if (shown.length < 2) continue;
+        const x = shown.reduce((a, u) => a + u.x, 0) / shown.length;
+        const y = shown.reduce((a, u) => a + u.y, 0) / shown.length;
+        const sel = shown.some((u) => ui.selection.has(u));
+        const inFront = ui.front && shown.some((u) => u.front === ui.front);
+        const hw = drawDivisionSymbol(ctx, x, y, shown, div.owner === me, px,
+          sel ? '#fff' : inFront ? '#f2c94c' : null, shown.some((u) => u.starving) && flash);
+        for (const u of shown) drawn.add(u);
+        if (div.owner === me) this.divHits.push({ x, y, r: hw, members: shown });
+      }
+    }
     for (const u of game.units) {
-      if (!visible(u)) continue;
-      const highlight = ui.selection.has(u) ? '#fff' : ui.front && u.front === ui.front ? '#f2c94c' : null;
-      drawNatoSymbol(ctx, u, u.owner === me, px, highlight, u.starving && flash);
+      if (drawn.has(u) || !visible(u)) continue;
+      drawNatoSymbol(ctx, u, u.owner === me, px, highlightOf(u), u.starving && flash);
     }
 
     // Weg oder Front, die gerade gezeichnet wird
@@ -575,4 +592,75 @@ function drawAxisOfAdvance(ctx, from, to, px, color, planned) {
   haloStroke(ctx, px, color, 2.2 * px, planned);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+}
+
+// Divisionssymbol (APP-6): Größenzeichen XX, Innenzeichen nach Zusammensetzung
+// (X = Infanterie, Oval = Panzer, beides = Panzergrenadiere), Zahl der Kompanien
+function drawDivisionSymbol(ctx, x, y, members, friend, px, highlight, starving) {
+  const hw = 12 * px, hh = hw * 0.68, d = hw * 0.95;
+  const line = Math.max(0.6, 1.4 * px);
+  if (highlight) {
+    symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
+    ctx.strokeStyle = highlight;
+    ctx.lineWidth = line * 4;
+    ctx.stroke();
+  }
+  symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
+  ctx.fillStyle = friend ? NATO_FRIEND : NATO_HOSTILE;
+  ctx.fill();
+  ctx.strokeStyle = starving ? '#ffd23f' : '#000';
+  ctx.lineWidth = starving ? line * 2 : line;
+  ctx.stroke();
+
+  const heavy = members.filter((u) => u.type === 'heavy').length;
+  const share = heavy / members.length;
+  const ix = friend ? hw : d / 2, iy = friend ? hh : d / 2;
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = line;
+  ctx.beginPath();
+  if (share < 0.67) {
+    ctx.moveTo(x - ix, y - iy); ctx.lineTo(x + ix, y + iy);
+    ctx.moveTo(x + ix, y - iy); ctx.lineTo(x - ix, y + iy);
+  }
+  ctx.stroke();
+  if (share > 0.33) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, ix * 0.62, iy * 0.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Größenzeichen XX über dem Rahmen
+  const top = friend ? y - hh : y - d;
+  const s = 2.6 * px, gap = 3.4 * px, by = top - 2 * px - s;
+  ctx.beginPath();
+  for (const cx of [x - gap, x + gap]) {
+    ctx.moveTo(cx - s, by - s); ctx.lineTo(cx + s, by + s);
+    ctx.moveTo(cx + s, by - s); ctx.lineTo(cx - s, by + s);
+  }
+  ctx.lineWidth = Math.max(0.6, 1.3 * px);
+  ctx.stroke();
+
+  // Zahl der Kompanien rechts neben dem Symbol
+  ctx.font = `bold ${10 * px}px system-ui, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3 * px;
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillStyle = '#111';
+  const label = String(members.length);
+  const lx = x + (friend ? hw : d) + 3 * px;
+  ctx.strokeText(label, lx, y);
+  ctx.fillText(label, lx, y);
+
+  // Gemeinsamer Lebensbalken
+  let hp = 0, max = 0;
+  for (const u of members) { hp += u.hp; max += u.maxHp; }
+  const frac = hp / max;
+  const bottom = friend ? y + hh : y + d;
+  const bw = hw * 2, bh = Math.max(1, 2.4 * px), barY = bottom + 1.8 * px;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(x - hw, barY, bw, bh);
+  ctx.fillStyle = frac > 0.6 ? '#4cd17a' : frac > 0.3 ? '#f2c94c' : '#ff5b4b';
+  ctx.fillRect(x - hw, barY, bw * frac, bh);
+  return friend ? hw : d;
 }

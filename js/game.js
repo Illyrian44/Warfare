@@ -1,9 +1,9 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
-  UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER,
-} from './config.js?v=16';
-import { mulberry32 } from './rng.js?v=16';
+  UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_LINK, DIVISION_MAX, DIVISION_ROTATE,
+} from './config.js?v=17';
+import { mulberry32 } from './rng.js?v=17';
 
 export class Game {
   constructor(map, opts = {}) {
@@ -26,6 +26,8 @@ export class Game {
     this.terrTimer = 0;
     this.visTimer = 0;
     this.starveTimer = 0;
+    this.divisions = [];
+    this.divTimer = 0;
     this.territoryVersion = 0;
     this.visionVersion = 0;
     this.stats = [null, { lost: 0, built: 0, captured: 0 }, { lost: 0, built: 0, captured: 0 }];
@@ -266,6 +268,8 @@ export class Game {
     // Versorgung und Gesundheit
     this.starveTimer -= dt;
     if (this.starveTimer <= 0) { this.updateStarvation(); this.starveTimer = 0.5; }
+    this.divTimer -= dt;
+    if (this.divTimer <= 0) { this.divTimer = 0.5; this.updateDivisions(); this.rotateDivisions(); }
     for (const u of U) {
       let regen;
       if (u.starving) regen = -3;
@@ -335,7 +339,7 @@ export class Game {
       const dx = p.x - u.x, dy = p.y - u.y;
       const d = Math.hypot(dx, dy);
       // Front-Einheiten im Gefecht weichen nicht zurück: kein Marsch vom Feind weg
-      const retreating = u.front && !u.rotating && u.target &&
+      const retreating = u.front && !u.rotating && !(u.swapUntil > this.time) && u.target &&
         dx * (u.target.x - u.x) + dy * (u.target.y - u.y) < 0;
       // Bei Feindkontakt stehen bleiben statt den Gegner wegzuschieben
       const pressing = u.target && u.td <= u.r + u.target.r + ENEMY_GAP + 3 &&
@@ -370,6 +374,77 @@ export class Game {
         u.path.length = 0; u.stuck = 0;
       } else if (u.stuck > 1.2) {
         u.path.shift(); u.stuck = 0;
+      }
+    }
+  }
+
+  // Benachbarte Kompanien derselben Seite bilden Divisionen (höchstens DIVISION_MAX)
+  updateDivisions() {
+    const divs = [];
+    for (let p = 1; p <= 2; p++) {
+      const own = this.units.filter((u) => u.owner === p);
+      const parent = own.map((_, i) => i);
+      const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+      for (let i = 0; i < own.length; i++) {
+        for (let j = i + 1; j < own.length; j++) {
+          const a = own[i], b = own[j];
+          if (Math.abs(a.x - b.x) > DIVISION_LINK || Math.abs(a.y - b.y) > DIVISION_LINK) continue;
+          if (Math.hypot(a.x - b.x, a.y - b.y) <= DIVISION_LINK) parent[find(i)] = find(j);
+        }
+      }
+      const groups = new Map();
+      own.forEach((u, i) => {
+        const r = find(i);
+        if (!groups.has(r)) groups.set(r, []);
+        groups.get(r).push(u);
+      });
+      for (const g of groups.values()) {
+        // Zu große Gruppen entlang ihrer längeren Ausdehnung in gleich große Divisionen teilen
+        const xs = g.map((u) => u.x), ys = g.map((u) => u.y);
+        const wide = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
+        g.sort((a, b) => (wide ? a.x - b.x : a.y - b.y));
+        const parts = Math.ceil(g.length / DIVISION_MAX);
+        const size = Math.ceil(g.length / parts);
+        for (let k = 0; k < g.length; k += size) {
+          const members = g.slice(k, k + size);
+          const div = { owner: p, members };
+          for (const u of members) u.division = div;
+          divs.push(div);
+        }
+      }
+    }
+    this.divisions = divs;
+  }
+
+  // Rotation innerhalb der Division: eine angeschlagene Kompanie im Gefecht tauscht
+  // den Platz mit einer frischen Kompanie derselben Division, die nicht kämpft
+  rotateDivisions() {
+    for (const div of this.divisions) {
+      if (div.members.length < 2) continue;
+      const busy = (u) => u.swapUntil > this.time || u.rotating;
+      const wounded = div.members
+        .filter((u) => u.target && !busy(u) && u.hp < u.maxHp * DIVISION_ROTATE)
+        .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp);
+      if (!wounded.length) continue;
+      const fresh = div.members.filter((u) => !u.target && !busy(u) && u.hp > u.maxHp * 0.6);
+      for (const w of wounded) {
+        let best = null, bd = Infinity;
+        for (const f of fresh) {
+          if (f.front !== w.front) continue;
+          const d = Math.hypot(f.x - w.x, f.y - w.y);
+          if (d < bd) { bd = d; best = f; }
+        }
+        if (!best) continue;
+        fresh.splice(fresh.indexOf(best), 1);
+        const a = { x: w.x, y: w.y }, b = { x: best.x, y: best.y };
+        w.path = [b];
+        best.path = [a];
+        w.stuck = best.stuck = 0;
+        w.swapUntil = best.swapUntil = this.time + 10;
+        const goal = w.frontGoal;
+        w.frontGoal = best.frontGoal;
+        best.frontGoal = goal;
+        this.events.push({ type: 'divisionSwap', out: w, in: best });
       }
     }
   }

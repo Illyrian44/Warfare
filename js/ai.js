@@ -1,7 +1,7 @@
-import { DIFFICULTY } from './config.js?v=16';
-import { unitStrength } from './game.js?v=16';
-import { mulberry32 } from './rng.js?v=16';
-import { FrontManager } from './fronts.js?v=16';
+import { DIFFICULTY } from './config.js?v=17';
+import { unitStrength } from './game.js?v=17';
+import { mulberry32 } from './rng.js?v=17';
+import { FrontManager } from './fronts.js?v=17';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -47,6 +47,7 @@ export class AI {
   }
 
   order(u, x, y, role, tag) {
+    if (u.swapUntil > this.game.time) return; // Platztausch innerhalb der Division läuft
     if (u.ai && u.ai.role === role && u.ai.tag === tag && u.path.length) return;
     const path = this.pathFor(u, x, y);
     if (!path) return; // Rechenbudget erschöpft, nächster Denkschritt

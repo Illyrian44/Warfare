@@ -1,4 +1,4 @@
-import { CITY_RADIUS } from './config.js?v=16';
+import { CITY_RADIUS } from './config.js?v=17';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -32,6 +32,18 @@ export class Input {
       if (u.owner !== human) continue;
       const d = Math.hypot(u.x - w.x, u.y - w.y) - u.r;
       if (d < tol && d < bd) { bd = d; best = u; }
+    }
+    return best;
+  }
+
+  // Herausgezoomt: ganze Division unter dem Finger
+  pickOwnDivision(w) {
+    const r = this.app.renderer;
+    if (!r || !r.aggregated || !r.divHits) return null;
+    let best = null, bd = Infinity;
+    for (const h of r.divHits) {
+      const d = Math.hypot(h.x - w.x, h.y - w.y);
+      if (d < h.r * 1.4 && d < bd) { bd = d; best = h; }
     }
     return best;
   }
@@ -71,9 +83,10 @@ export class Input {
       return;
     }
     const badge = this.app.pickFrontBadge(w);
-    const u = badge ? null : this.pickOwnUnit(w);
+    const div = badge ? null : this.pickOwnDivision(w);
+    const u = badge ? null : div ? div.members[0] : this.pickOwnUnit(w);
     if (u) {
-      this.gesture = { kind: 'path', unit: u, moved: false, shift: e.shiftKey };
+      this.gesture = { kind: 'path', unit: u, members: div ? div.members : null, moved: false, shift: e.shiftKey };
       this.ui.drawPath = [{ x: u.x, y: u.y }];
       return;
     }
@@ -130,14 +143,16 @@ export class Input {
       const path = this.ui.drawPath || [];
       this.ui.drawPath = null;
       if (!g.moved || path.length < 2) {
-        // Antippen einer Einheit: Auswahl umschalten
-        if (sel.has(g.unit)) sel.delete(g.unit);
+        // Antippen einer Einheit oder Division: Auswahl umschalten
+        const tapped = g.members || [g.unit];
+        if (tapped.every((u) => sel.has(u))) for (const u of tapped) sel.delete(u);
         else {
           if (e.pointerType === 'mouse' && !g.shift) sel.clear();
-          sel.add(g.unit);
+          for (const u of tapped) sel.add(u);
         }
       } else {
-        const group = sel.has(g.unit) && sel.size > 1 ? [...sel] : [g.unit];
+        const own = g.members || [g.unit];
+        const group = own.some((u) => sel.has(u)) && sel.size > 1 ? [...new Set([...sel, ...own])] : own;
         for (const u of group) {
           this.app.release(u);
           const ox = u.x - g.unit.x, oy = u.y - g.unit.y;
