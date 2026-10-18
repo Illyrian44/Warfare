@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, DIVISION_ZOOM } from './config.js?v=22';
-import { classify } from './map.js?v=22';
-import { frontBadge } from './fronts.js?v=22';
-import { LEVELS, unitsOf } from './orbat.js?v=22';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, DIVISION_ZOOM } from './config.js?v=24';
+import { classify } from './map.js?v=24';
+import { frontBadge } from './fronts.js?v=24';
+import { LEVELS, REGIMENT, BRIGADE, DIVISION, CORPS, ARMY, formationOf } from './orbat.js?v=24';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -215,31 +215,24 @@ export class Renderer {
     // Einheiten als NATO-Symbole (APP-6); herausgezoomt Divisionen statt Kompanien
     const flash = (game.time * 4) % 1 < 0.5;
     const highlightOf = (u) => (ui.selection.has(u) ? '#fff' : ui.front && u.front === ui.front ? '#f2c94c' : null);
-    // Je weiter herausgezoomt, desto höher die Stufe: Regiment, Brigade, Division, Korps, Armee
-    const level = zoomLevel(cam.zoom);
-    this.aggregated = level > 0;
+    // Ganz nah: einzelne Kompanien. Sonst entscheidet die Dichte vor Ort: Symbole, die sich
+    // überlappen würden, werden entlang der Gliederung zusammengefasst
+    this.aggregated = cam.zoom < DIVISION_ZOOM;
     this.divHits = [];
     const drawn = new Set();
     if (this.aggregated && game.orbat) {
-      // Gruppen, die auf dem Bildschirm zusammenfallen würden; höhere Stufen fassen
-      // auch weiter verteilte Truppen in ihrem Raum zusammen
-      const link = Math.max(34 * px, LEVEL_LINK[level]);
+      const overlap = 30 * px; // so nah stehende Symbole würden sich auf dem Bildschirm überdecken
       for (let p = 1; p <= 2; p++) {
-        for (const f of game.orbat[p].all(level)) {
-          const shown = unitsOf(f).filter((u) => visible(u) && !drawn.has(u));
-          // Verteilt stehende Verbände: jede räumliche Gruppe bekommt ein eigenes Symbol
-          for (const group of clusterUnits(shown, link)) {
-            if (group.length < 2) continue;
-            const x = group.reduce((a, u) => a + u.x, 0) / group.length;
-            const y = group.reduce((a, u) => a + u.y, 0) / group.length;
-            const sel = group.some((u) => ui.selection.has(u));
-            const inFront = ui.front && group.some((u) => u.front === ui.front);
-            const hw = drawFormationSymbol(ctx, x, y, group, p === me, px,
-              sel ? '#fff' : inFront ? '#f2c94c' : null, group.some((u) => u.starving) && flash,
-              level, f.name);
-            for (const u of group) drawn.add(u);
-            if (p === me) this.divHits.push({ x, y, r: hw, members: group });
-          }
+        for (const group of groupFormation(game.orbat[p].army, visible, overlap)) {
+          if (group.members.length < 2) continue;
+          const sel = group.members.some((u) => ui.selection.has(u));
+          const inFront = ui.front && group.members.some((u) => u.front === ui.front);
+          const label = labelFor(group.members);
+          const hw = drawFormationSymbol(ctx, group.x, group.y, group.members, p === me, px,
+            sel ? '#fff' : inFront ? '#f2c94c' : null, group.members.some((u) => u.starving) && flash,
+            label.level, label.name);
+          for (const u of group.members) drawn.add(u);
+          if (p === me) this.divHits.push({ x: group.x, y: group.y, r: hw, members: group.members });
         }
       }
     }
@@ -659,35 +652,65 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
   return friend ? hw : d;
 }
 
-// Zoomstufe → angezeigte Gliederungsstufe (0 = einzelne Kompanien)
-// Kompanien ab 1,6; Regiment und Brigade nur in schmalen Bereichen beim Hineinzoomen;
-// Division über den ganzen üblichen Bereich (auch Startansicht); Korps und Armee erst
-// beim Herauszoomen über die ganze Karte hinaus
-const LEVEL_ZOOM = [DIVISION_ZOOM, 1.35, 1.1, 0.3, 0.2];
-const LEVEL_LINK = [0, 40, 60, 110, 260, 520]; // Weltabstand je Stufe
-function zoomLevel(zoom) {
-  let level = 0;
-  for (const z of LEVEL_ZOOM) if (zoom < z) level++;
-  return level;
+// Stufe nach Größe der Gruppe, Name nach dem Verband, zu dem die meisten Kompanien gehören
+// (im Gefecht mischen sich Verbände; sonst stünde an kleinen Gruppen schnell "Armee")
+function labelFor(members) {
+  const n = members.length;
+  const level = n <= 2 ? REGIMENT : n <= 4 ? BRIGADE : n <= 8 ? DIVISION : n <= 16 ? CORPS : ARMY;
+  const count = new Map();
+  for (const u of members) {
+    const f = formationOf(u, level);
+    if (f) count.set(f, (count.get(f) || 0) + 1);
+  }
+  let best = null, bc = -1;
+  for (const [f, c] of count) if (c > bc) { bc = c; best = f; }
+  return { level, name: best ? best.name : '' };
 }
 
-// Einheiten zu räumlichen Gruppen verbinden (Abstand unter link)
-function clusterUnits(units, link) {
-  const parent = units.map((_, i) => i);
-  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
-  for (let i = 0; i < units.length; i++) {
-    for (let j = i + 1; j < units.length; j++) {
-      const a = units[i], b = units[j];
-      if (Math.abs(a.x - b.x) < link && Math.abs(a.y - b.y) < link && Math.hypot(a.x - b.x, a.y - b.y) < link) parent[find(i)] = find(j);
-    }
+// Gruppen von unten nach oben bilden: innerhalb eines Verbands werden Gruppen
+// verschmolzen, deren Mittelpunkte näher als `overlap` liegen. Eine verschmolzene
+// Gruppe trägt Stufe und Namen dieses Verbands; alles andere bleibt getrennt.
+function groupFormation(f, visible, overlap) {
+  let groups;
+  if (f.level === REGIMENT) {
+    groups = f.units.filter((u) => u.hp > 0 && visible(u))
+      .map((u) => ({ members: [u], x: u.x, y: u.y, formation: null }));
+  } else {
+    groups = [];
+    for (const c of f.children) groups.push(...groupFormation(c, visible, overlap));
   }
-  const groups = new Map();
-  units.forEach((u, i) => {
-    const r = find(i);
-    if (!groups.has(r)) groups.set(r, []);
-    groups.get(r).push(u);
-  });
-  return [...groups.values()];
+  for (let pass = 0; pass < 3; pass++) {
+    const parent = groups.map((_, i) => i);
+    const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+    let merged = false;
+    for (let i = 0; i < groups.length; i++) {
+      for (let j = i + 1; j < groups.length; j++) {
+        const a = groups[i], b = groups[j];
+        if (Math.abs(a.x - b.x) < overlap && Math.abs(a.y - b.y) < overlap && find(i) !== find(j)) {
+          parent[find(i)] = find(j);
+          merged = true;
+        }
+      }
+    }
+    if (!merged) break;
+    const byRoot = new Map();
+    groups.forEach((g, i) => {
+      const r = find(i);
+      if (!byRoot.has(r)) byRoot.set(r, []);
+      byRoot.get(r).push(g);
+    });
+    groups = [...byRoot.values()].map((parts) => {
+      if (parts.length === 1) return parts[0];
+      const members = parts.flatMap((g) => g.members);
+      return {
+        members,
+        x: members.reduce((a, u) => a + u.x, 0) / members.length,
+        y: members.reduce((a, u) => a + u.y, 0) / members.length,
+        formation: f,
+      };
+    });
+  }
+  return groups;
 }
 
 // NATO-Größenzeichen: I als senkrechte Striche, X als kleine Kreuze, mittig über dem Rahmen
