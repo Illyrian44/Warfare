@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, DIVISION_ZOOM } from './config.js?v=25';
-import { classify } from './map.js?v=25';
-import { frontBadge } from './fronts.js?v=25';
-import { LEVELS, REGIMENT, ARMY, NOMINAL, formationOf } from './orbat.js?v=25';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=26';
+import { classify } from './map.js?v=26';
+import { frontBadge } from './fronts.js?v=26';
+import { LEVELS, REGIMENT, ARMY, NOMINAL, formationOf } from './orbat.js?v=26';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -215,25 +215,22 @@ export class Renderer {
     // Einheiten als NATO-Symbole (APP-6); herausgezoomt Divisionen statt Kompanien
     const flash = (game.time * 4) % 1 < 0.5;
     const highlightOf = (u) => (ui.selection.has(u) ? '#fff' : ui.front && u.front === ui.front ? '#f2c94c' : null);
-    // Ganz nah: einzelne Kompanien. Sonst entscheidet die Dichte vor Ort: Symbole, die sich
-    // überlappen würden, werden entlang der Gliederung zusammengefasst
-    this.aggregated = cam.zoom < DIVISION_ZOOM;
+    // Gruppierung nur nach Überlappung auf dem Bildschirm, unabhängig vom Zoom:
+    // Kompanien, deren Symbole sich überdecken würden, werden zu einem Verband zusammengefasst
     this.divHits = [];
     const drawn = new Set();
-    if (this.aggregated && game.orbat) {
-      const overlap = 30 * px; // so nah stehende Symbole würden sich auf dem Bildschirm überdecken
-      for (let p = 1; p <= 2; p++) {
-        for (const group of groupFormation(game.orbat[p].army, visible, overlap)) {
-          if (group.members.length < 2) continue;
-          const sel = group.members.some((u) => ui.selection.has(u));
-          const inFront = ui.front && group.members.some((u) => u.front === ui.front);
-          const label = labelFor(group.members);
-          const hw = drawFormationSymbol(ctx, group.x, group.y, group.members, p === me, px,
-            sel ? '#fff' : inFront ? '#f2c94c' : null, group.members.some((u) => u.starving) && flash,
-            label.level, label.name);
-          for (const u of group.members) drawn.add(u);
-          if (p === me) this.divHits.push({ x: group.x, y: group.y, r: hw, members: group.members });
-        }
+    for (let p = 1; p <= 2; p++) {
+      const units = game.units.filter((u) => u.owner === p && visible(u));
+      for (const group of groupByOverlap(units, px)) {
+        if (group.members.length < 2) continue;
+        const label = labelFor(group.members);
+        const sel = group.members.some((u) => ui.selection.has(u));
+        const inFront = ui.front && group.members.some((u) => u.front === ui.front);
+        const hw = drawFormationSymbol(ctx, group.x, group.y, group.members, p === me, px,
+          sel ? '#fff' : inFront ? '#f2c94c' : null, group.members.some((u) => u.starving) && flash,
+          label.level, label.name);
+        for (const u of group.members) drawn.add(u);
+        if (p === me) this.divHits.push({ x: group.x, y: group.y, r: hw, members: group.members });
       }
     }
     for (const u of game.units) {
@@ -668,50 +665,66 @@ function labelFor(members) {
   return { level, name: best ? best.name : '' };
 }
 
-// Gruppen von unten nach oben bilden: innerhalb eines Verbands werden Gruppen
-// verschmolzen, deren Mittelpunkte näher als `overlap` liegen. Eine verschmolzene
-// Gruppe trägt Stufe und Namen dieses Verbands; alles andere bleibt getrennt.
-function groupFormation(f, visible, overlap) {
-  let groups;
-  if (f.level === REGIMENT) {
-    groups = f.units.filter((u) => u.hp > 0 && visible(u))
-      .map((u) => ({ members: [u], x: u.x, y: u.y, formation: null }));
-  } else {
-    groups = [];
-    for (const c of f.children) groups.push(...groupFormation(c, visible, overlap));
+// Halbe Breite eines Kompaniesymbols auf dem Bildschirm (wie in drawNatoSymbol)
+function companyHalfWidth(u, px) {
+  return Math.max(u.r * 1.45, 7 * px * (u.type === 'heavy' ? 1.25 : 1));
+}
+
+// Kompakte Gruppen um dichte Kerne bilden, dann Gruppen verschmelzen, deren Symbole
+// sich überdecken. Lange Fronten zerfallen so in mehrere Gruppen statt einer Kette.
+function groupByOverlap(units, px) {
+  const n = units.length;
+  if (!n) return [];
+  const touch = (a, b) => {
+    const lim = companyHalfWidth(a, px) + companyHalfWidth(b, px) + 2 * px;
+    return Math.abs(a.x - b.x) < lim && Math.abs(a.y - b.y) < lim * 0.75;
+  };
+  // Nachbarn je Einheit
+  const nb = units.map(() => []);
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (touch(units[i], units[j])) { nb[i].push(j); nb[j].push(i); }
+    }
   }
-  for (let pass = 0; pass < 3; pass++) {
-    const parent = groups.map((_, i) => i);
-    const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
-    let merged = false;
-    for (let i = 0; i < groups.length; i++) {
+  // Kerne: Einheiten mit den meisten Nachbarn zuerst
+  const order = units.map((_, i) => i).sort((a, b) => nb[b].length - nb[a].length);
+  const taken = new Uint8Array(n);
+  let groups = [];
+  for (const i of order) {
+    if (taken[i]) continue;
+    taken[i] = 1;
+    const members = [units[i]];
+    for (const j of nb[i]) if (!taken[j]) { taken[j] = 1; members.push(units[j]); }
+    groups.push(makeGroup(members));
+  }
+  // Gruppen zusammenführen, solange sich ihre Symbole überdecken
+  // Gruppensymbol inkl. Größenzeichen darüber und Rand: etwa 17 px nach jeder Seite
+  const symbolHalf = 17 * px;
+  for (let changed = true, guard = 0; changed && guard < 8; guard++) {
+    changed = false;
+    outer: for (let i = 0; i < groups.length; i++) {
       for (let j = i + 1; j < groups.length; j++) {
         const a = groups[i], b = groups[j];
-        if (Math.abs(a.x - b.x) < overlap && Math.abs(a.y - b.y) < overlap && find(i) !== find(j)) {
-          parent[find(i)] = find(j);
-          merged = true;
+        const ra = a.members.length > 1 ? symbolHalf : companyHalfWidth(a.members[0], px);
+        const rb = b.members.length > 1 ? symbolHalf : companyHalfWidth(b.members[0], px);
+        if (Math.abs(a.x - b.x) < ra + rb && Math.abs(a.y - b.y) < ra + rb) {
+          groups[i] = makeGroup(a.members.concat(b.members));
+          groups.splice(j, 1);
+          changed = true;
+          break outer;
         }
       }
     }
-    if (!merged) break;
-    const byRoot = new Map();
-    groups.forEach((g, i) => {
-      const r = find(i);
-      if (!byRoot.has(r)) byRoot.set(r, []);
-      byRoot.get(r).push(g);
-    });
-    groups = [...byRoot.values()].map((parts) => {
-      if (parts.length === 1) return parts[0];
-      const members = parts.flatMap((g) => g.members);
-      return {
-        members,
-        x: members.reduce((a, u) => a + u.x, 0) / members.length,
-        y: members.reduce((a, u) => a + u.y, 0) / members.length,
-        formation: f,
-      };
-    });
   }
   return groups;
+}
+
+function makeGroup(members) {
+  return {
+    members,
+    x: members.reduce((a, u) => a + u.x, 0) / members.length,
+    y: members.reduce((a, u) => a + u.y, 0) / members.length,
+  };
 }
 
 // NATO-Größenzeichen: I als senkrechte Striche, X als kleine Kreuze, mittig über dem Rahmen

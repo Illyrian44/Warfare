@@ -39,7 +39,6 @@ export const SUPPLY_FULL = 200;        // volle Versorgung bis zu dieser Distanz
 export const SUPPLY_NONE = 900;        // keine Versorgung ab dieser Distanz
 
 export const DIVISION_ROTATE = 0.25; // darunter tauscht eine Kompanie mit einer frischen
-export const DIVISION_ZOOM = 1.6;    // unterhalb dieser Zoomstufe Verbände statt Kompanien zeigen
 export const ROAD_SPEED = 1.6;   // Tempo auf Straßen (Ebene = 1)
 export const BRIDGE_SPEED = 1;   // Tempo auf Brücken über Wasser
 export const UNIT_VISION = 85;

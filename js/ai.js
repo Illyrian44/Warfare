@@ -1,7 +1,7 @@
-import { DIFFICULTY } from './config.js?v=25';
-import { unitStrength } from './game.js?v=25';
-import { mulberry32 } from './rng.js?v=25';
-import { FrontManager } from './fronts.js?v=25';
+import { DIFFICULTY } from './config.js?v=26';
+import { unitStrength } from './game.js?v=26';
+import { mulberry32 } from './rng.js?v=26';
+import { FrontManager } from './fronts.js?v=26';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;

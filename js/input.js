@@ -1,4 +1,4 @@
-import { CITY_RADIUS } from './config.js?v=25';
+import { CITY_RADIUS } from './config.js?v=26';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -39,7 +39,7 @@ export class Input {
   // Herausgezoomt: ganze Division unter dem Finger
   pickOwnDivision(w) {
     const r = this.app.renderer;
-    if (!r || !r.aggregated || !r.divHits) return null;
+    if (!r || !r.divHits || !r.divHits.length) return null;
     let best = null, bd = Infinity;
     for (const h of r.divHits) {
       const d = Math.hypot(h.x - w.x, h.y - w.y);
