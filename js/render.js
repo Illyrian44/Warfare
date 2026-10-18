@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=38';
-import { classify } from './map.js?v=38';
-import { frontBadge, pointAt } from './fronts.js?v=38';
-import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=38';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=40';
+import { classify } from './map.js?v=40';
+import { frontBadge, pointAt } from './fronts.js?v=40';
+import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=40';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -240,6 +240,21 @@ export class Renderer {
 
     // Divisions-HQs hinter der Linie (keine Kampfeinheiten)
     if (game.hq) {
+      // Funkverkehr: gestrichelte Verbindung zwischen sprechenden HQs, verblasst nach 3 s
+      for (const m of game.hq.messages) {
+        const age = game.time - m.time;
+        if (age > 3 || m.from === m.to || (m.owner !== me && !ui.revealAll)) continue;
+        ctx.globalAlpha = 1 - age / 3;
+        ctx.setLineDash([5 * px, 4 * px]);
+        ctx.beginPath();
+        ctx.moveTo(m.from.x, m.from.y);
+        ctx.lineTo(m.to.x, m.to.y);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2 * px;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
       for (const hq of game.hq.hqs) {
         if (hq.owner !== me && !ui.revealAll && !game.isVisible(me, hq.x, hq.y)) continue;
         drawHQSymbol(ctx, hq, hq.owner === me, px);

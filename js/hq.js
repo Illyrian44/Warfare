@@ -1,5 +1,6 @@
-import { unitStrength } from './game.js?v=38';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=38';
+import { unitStrength } from './game.js?v=40';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=40';
+import { pointAt } from './fronts.js?v=40';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -7,6 +8,8 @@ const SUPPORT_RADIUS = 80;   // eigene Kompanien in diesem Umkreis zählen als U
 const DONOR_RANGE = 320;     // so weit holt das HQ Verstärkung heran
 const COMMAND_RANGE = 380;   // Durchbrüche in diesem Umkreis um das HQ werden abgeriegelt
 const ORDER_TIME = 14;       // Sekunden, die ein HQ-Befehl Vorrang hat
+const LOAN_TIME = 30;        // so lange hilft eine Kompanie im Nachbarabschnitt aus
+const GAP_COVER = 45;        // ein Frontpunkt gilt als besetzt, wenn eine Kompanie so nah steht
 const SEAL_COOLDOWN = 20;    // so lange nach einem Abriegeln kein weiteres in derselben Division
 const SEAL_DEPTH = 60;       // so weit muss ein Feind hinter der Linie stehen
 
@@ -17,6 +20,15 @@ export class HQManager {
     this.game = game;
     this.timer = 1;
     this.cmdTimer = 2;
+    this.messages = []; // Funkverkehr zwischen HQs (zum Anzeigen)
+  }
+
+  // Nachricht zwischen zwei HQs festhalten
+  radio(from, to, text) {
+    const g = this.game;
+    this.messages.push({ from, to, text, time: g.time, owner: from.owner });
+    if (this.messages.length > 40) this.messages.shift();
+    g.events.push({ type: 'hqRadio', owner: from.owner, from, to, text });
   }
 
   get hqs() {
@@ -82,6 +94,60 @@ export class HQManager {
         const units = unitsOf(f).filter((u) => g.units.includes(u));
         if (units.length < 2) continue;
         if (!this.sealBreakthrough(p, f, hq, units, enemies)) this.balance(p, units, enemies);
+      }
+      this.coverGaps(p, enemies);
+    }
+  }
+
+  // HQs sprechen sich ab: ist ein Divisionsabschnitt (weitgehend) leer, fordert das HQ
+  // bei den Nachbar-HQs Hilfe an; der Nachbar mit Reserven schickt Kompanien hinüber,
+  // bis die eigene Division den Abschnitt wieder besetzen kann
+  coverGaps(p, enemies) {
+    const g = this.game;
+    const own = g.units.filter((u) => u.owner === p && !u.rotating);
+    const fronts = new Set(own.map((u) => u.front).filter((f) => f && f.sections && f.sections.length > 1 && !f.attack));
+    for (const f of fronts) {
+      const secs = f.sections;
+      for (let i = 0; i < secs.length; i++) {
+        const sec = secs[i];
+        if (!sec.div) continue;
+        const gaps = [];
+        let total = 0;
+        for (let t = sec.from + 15; t < sec.to; t += 30) {
+          total++;
+          const pt = pointAt(f.chains, t);
+          if (!own.some((u) => Math.abs(u.x - pt.x) < GAP_COVER && Math.abs(u.y - pt.y) < GAP_COVER &&
+            Math.hypot(u.x - pt.x, u.y - pt.y) < GAP_COVER)) gaps.push(pt);
+        }
+        if (!total || gaps.length / total < 0.5) continue; // Abschnitt ausreichend besetzt
+        if ((sec.div.helpUntil || 0) > g.time) continue;   // Hilfe ist schon unterwegs
+        const asker = sec.div.hq;
+        // Nachbarn links und rechts fragen, den mit den meisten freien Kompanien nehmen
+        let best = null;
+        for (const j of [i - 1, i + 1]) {
+          const nb = secs[j];
+          if (!nb || !nb.div || !nb.div.hq || !nb.div.hq.alive) continue;
+          const free = unitsOf(nb.div).filter((u) => g.units.includes(u) && this.controllable(u) &&
+            !enemies.some((e) => Math.hypot(e.x - u.x, e.y - u.y) < PRESSURE_RADIUS));
+          if (!best || free.length > best.free.length) best = { sec: nb, free };
+        }
+        if ((sec.div.askUntil || 0) > g.time) continue; // nicht ständig neu funken
+        sec.div.askUntil = g.time + 8;
+        if (asker && asker.alive && best) this.radio(asker, best.sec.div.hq, `${sec.div.name} bittet um Unterstützung`);
+        if (!best || best.free.length < 2) continue; // Nachbar hat selbst keine Reserven
+        const send = Math.min(Math.ceil(gaps.length / 2), Math.floor(best.free.length / 2), 3);
+        for (let k = 0; k < send; k++) {
+          const pt = gaps[Math.floor((k + 0.5) * gaps.length / send)];
+          let u = null, bd = Infinity;
+          for (const c of best.free) { const d = Math.hypot(c.x - pt.x, c.y - pt.y); if (d < bd) { bd = d; u = c; } }
+          if (!u) break;
+          best.free.splice(best.free.indexOf(u), 1);
+          this.send(u, pt.x, pt.y, 'aushelfen', true, LOAN_TIME);
+        }
+        if (send > 0) {
+          sec.div.helpUntil = g.time + LOAN_TIME;
+          this.radio(best.sec.div.hq, asker && asker.alive ? asker : best.sec.div.hq, `${best.sec.div.name} übernimmt Abschnitt (${send} Kp.)`);
+        }
       }
     }
   }
@@ -175,11 +241,11 @@ export class HQManager {
   }
 
   // helper: Regiment eines Nachbarn; behält seinen Frontplatz und kehrt nach dem Befehl zurück
-  send(u, x, y, task, helper = false) {
+  send(u, x, y, task, helper = false, duration = ORDER_TIME) {
     const g = this.game;
     u.path = g.map.findPath(u.x, u.y, x, y) || [];
     u.stuck = 0;
-    u.hqOrder = g.time + ORDER_TIME;
+    u.hqOrder = g.time + duration;
     u.hqTask = task;
     if (u.ai) u.ai = null;
     // Die Front übernimmt die neue Stellung als Platz der Kompanie
