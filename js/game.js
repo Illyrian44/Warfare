@@ -2,8 +2,8 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_LINK, DIVISION_MAX, DIVISION_ROTATE,
-} from './config.js?v=17';
-import { mulberry32 } from './rng.js?v=17';
+} from './config.js?v=18';
+import { mulberry32 } from './rng.js?v=18';
 
 export class Game {
   constructor(map, opts = {}) {
@@ -231,7 +231,9 @@ export class Game {
         const nx = dx / d, ny = dy / d;
         if (a.owner === b.owner) {
           const min = a.r + b.r + 2;
-          if (d < min) {
+          // Kompanien im Platztausch schleusen sich durch die eigenen Reihen
+          const passing = (a.swapUntil > this.time && a.path.length) || (b.swapUntil > this.time && b.path.length);
+          if (d < min && !passing) {
             const push = (min - d) * 0.5;
             a.px -= nx * push; a.py -= ny * push;
             b.px += nx * push; b.py += ny * push;
@@ -287,7 +289,10 @@ export class Game {
     }
 
     // Bewegung
-    for (const u of U) this.moveUnit(u, dt);
+    for (const u of U) {
+      this.moveUnit(u, dt);
+      if (u.swapUntil > this.time && !u.path.length) u.swapUntil = 0; // Platztausch abgeschlossen
+    }
 
     // Tote entfernen
     const alive = [];
@@ -437,8 +442,14 @@ export class Game {
         if (!best) continue;
         fresh.splice(fresh.indexOf(best), 1);
         const a = { x: w.x, y: w.y }, b = { x: best.x, y: best.y };
-        w.path = [b];
-        best.path = [a];
+        // Versetzt aneinander vorbei: jede Kompanie nimmt ihre Seite der Strecke
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const side = 9;
+        const ox = -dy / len * side, oy = dx / len * side;
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        w.path = [{ x: mid.x + ox, y: mid.y + oy }, b];
+        best.path = [{ x: mid.x - ox, y: mid.y - oy }, a];
         w.stuck = best.stuck = 0;
         w.swapUntil = best.swapUntil = this.time + 10;
         const goal = w.frontGoal;
