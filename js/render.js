@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=46';
-import { classify } from './map.js?v=46';
-import { frontBadge, pointAt } from './fronts.js?v=46';
-import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=46';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=48';
+import { classify } from './map.js?v=48';
+import { frontBadge, pointAt } from './fronts.js?v=48';
+import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=48';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -220,15 +220,27 @@ export class Renderer {
     this.divHits = [];
     const drawn = new Set();
     for (let p = 1; p <= 2; p++) {
-      const units = game.units.filter((u) => u.owner === p && visible(u));
-      for (const group of groupByOverlap(units, px)) {
+      // Nur innerhalb derselben Division zusammenfassen; marschierende Kompanien bleiben einzeln
+      const byDiv = new Map();
+      for (const u of game.units) {
+        if (u.owner !== p || !visible(u) || marching(u)) continue;
+        const d = formationOf(u, DIVISION);
+        if (!byDiv.has(d)) byDiv.set(d, []);
+        byDiv.get(d).push(u);
+      }
+      const groups = [];
+      for (const list of byDiv.values()) groups.push(...groupByOverlap(list, px));
+      // Gruppenzugehörigkeit merken (Hysterese im nächsten Bild)
+      let gid = 0;
+      for (const g of groups) { gid++; for (const u of g.members) u.drawGroup = g.members.length > 1 ? p * 100000 + gid : 0; }
+      for (const group of groups) {
         if (group.members.length < 2) continue;
         const label = labelFor(group.members);
         const sel = group.members.some((u) => ui.selection.has(u));
         const inFront = ui.front && group.members.some((u) => u.front === ui.front);
         const hw = drawFormationSymbol(ctx, group.x, group.y, group.members, p === me, px,
           sel ? '#fff' : inFront ? '#f2c94c' : null, group.members.some((u) => u.starving) && flash,
-          label.level, label.name);
+          label.level, label.name, label.count);
         for (const u of group.members) drawn.add(u);
         if (p === me) this.divHits.push({ x: group.x, y: group.y, r: hw, members: group.members });
       }
@@ -657,7 +669,7 @@ function drawAxisOfAdvance(ctx, from, to, px, color, planned) {
 
 // Divisionssymbol (APP-6): Größenzeichen XX, Innenzeichen nach Zusammensetzung
 // (X = Infanterie, Oval = Panzer, beides = Panzergrenadiere), Zahl der Kompanien
-function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving, level, name) {
+function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving, level, name, count = '') {
   // Mindestens etwas größer als eine Kompanie; beim Hineinzoomen wächst das Symbol mit
   // der Karte, und Linien, Schrift und Größenzeichen skalieren proportional mit
   const base = 10 + level * 1.2;
@@ -711,6 +723,12 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
   const lx = x + (friend ? hw : d) + 3 * px;
   ctx.strokeText(label, lx, y);
   ctx.fillText(label, lx, y);
+  if (count) {
+    // Stärke anwesend/Soll unter dem Namen
+    ctx.font = `${8 * px}px system-ui, sans-serif`;
+    ctx.strokeText(count, lx, y + 9 * px);
+    ctx.fillText(count, lx, y + 9 * px);
+  }
 
   // Gemeinsamer Lebensbalken
   let hp = 0, max = 0;
@@ -727,18 +745,28 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
 
 // Stufe nach Stärke: die höchste Stufe, deren Sollstärke die Gruppe erreicht
 // (Division erst ab 8 Kompanien usw.). Name nach dem Verband, zu dem die meisten gehören.
+// Stufe und Name aus der Gliederung: kleinster gemeinsamer Verband der Kompanien
+// (Regiment, Brigade oder Division), dazu ein Zähler anwesend/Sollstärke
 function labelFor(members) {
-  const n = members.length;
-  let level = REGIMENT;
-  for (let l = REGIMENT + 1; l <= ARMY; l++) if (n >= NOMINAL[l]) level = l;
-  const count = new Map();
-  for (const u of members) {
-    const f = formationOf(u, level);
-    if (f) count.set(f, (count.get(f) || 0) + 1);
-  }
-  let best = null, bc = -1;
-  for (const [f, c] of count) if (c > bc) { bc = c; best = f; }
-  return { level, name: best ? best.name : '' };
+  let f = members[0].regiment;
+  while (f && f.level < ARMY && !members.every((u) => isIn(u, f))) f = f.parent;
+  if (!f) return { level: REGIMENT, name: '', count: '' };
+  return { level: f.level, name: f.name, count: `${members.length}/${NOMINAL[f.level]}` };
+}
+
+function isIn(u, f) {
+  for (let g = u.regiment; g; g = g.parent) if (g === f) return true;
+  return false;
+}
+
+// Verlegt die Kompanie gerade (unterwegs, nicht im Gefecht, Ziel noch nicht nah)?
+// Mit Hysterese: gilt als marschierend ab 40 bis zum Ziel, wieder stehend erst unter 15
+function marching(u) {
+  if (u.target || !u.path.length) return (u.isMarching = false);
+  const end = u.path[u.path.length - 1];
+  const d = Math.hypot(end.x - u.x, end.y - u.y);
+  u.isMarching = u.isMarching ? d > 15 : d > 40;
+  return u.isMarching;
 }
 
 // Halbe Breite eines Kompaniesymbols auf dem Bildschirm (wie in drawNatoSymbol)
@@ -751,8 +779,11 @@ function companyHalfWidth(u, px) {
 function groupByOverlap(units, px) {
   const n = units.length;
   if (!n) return [];
+  // Hysterese: wer schon im letzten Bild zusammen war, trennt sich erst bei deutlich
+  // größerem Abstand
   const touch = (a, b) => {
-    const lim = companyHalfWidth(a, px) + companyHalfWidth(b, px) + 2 * px;
+    const k = a.drawGroup && a.drawGroup === b.drawGroup ? 2 : 1;
+    const lim = (companyHalfWidth(a, px) + companyHalfWidth(b, px) + 2 * px) * k;
     return Math.abs(a.x - b.x) < lim && Math.abs(a.y - b.y) < lim * 0.75;
   };
   // Nachbarn je Einheit
@@ -783,7 +814,8 @@ function groupByOverlap(units, px) {
         const a = groups[i], b = groups[j];
         const ra = a.members.length > 1 ? symbolHalf(a) : companyHalfWidth(a.members[0], px);
         const rb = b.members.length > 1 ? symbolHalf(b) : companyHalfWidth(b.members[0], px);
-        if (Math.abs(a.x - b.x) < ra + rb && Math.abs(a.y - b.y) < ra + rb) {
+        const was = a.members.some((u) => u.drawGroup && b.members.some((v) => v.drawGroup === u.drawGroup)) ? 1.4 : 1;
+        if (Math.abs(a.x - b.x) < (ra + rb) * was && Math.abs(a.y - b.y) < (ra + rb) * was) {
           groups[i] = makeGroup(a.members.concat(b.members));
           groups.splice(j, 1);
           changed = true;
