@@ -1,7 +1,7 @@
-import { DIFFICULTY } from './config.js?v=14';
-import { unitStrength } from './game.js?v=14';
-import { mulberry32 } from './rng.js?v=14';
-import { FrontManager } from './fronts.js?v=14';
+import { DIFFICULTY } from './config.js?v=16';
+import { unitStrength } from './game.js?v=16';
+import { mulberry32 } from './rng.js?v=16';
+import { FrontManager } from './fronts.js?v=16';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -31,7 +31,7 @@ export class AI {
     if (this.timer > 0) return;
     this.timer = this.cfg.interval * (0.8 + this.rng() * 0.4);
     this.pathCache.clear();
-    this.budget = 8;
+    this.budget = 5;
     this.think();
   }
 

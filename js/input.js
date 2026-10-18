@@ -1,4 +1,4 @@
-import { CITY_RADIUS } from './config.js?v=14';
+import { CITY_RADIUS } from './config.js?v=16';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 

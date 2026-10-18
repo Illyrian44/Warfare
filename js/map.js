@@ -1,5 +1,5 @@
-import { CELL, T, TERRAIN_INFO, MAP_SIZES } from './config.js?v=14';
-import { mulberry32, makeNoise, fbm } from './rng.js?v=14';
+import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=16';
+import { mulberry32, makeNoise, fbm } from './rng.js?v=16';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -28,6 +28,22 @@ export class GameMap {
     this.cells = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) this.cells[i] = classify(height[i], forest[i]);
     this.cities = [];
+    this.roads = new Uint8Array(w * h); // 1 = Straße bzw. Brücke
+    this.roadLines = [];                // Straßenverläufe in Weltkoordinaten (zum Zeichnen)
+  }
+
+  // Bewegungstempo einer Zelle, Straßen eingerechnet
+  cellSpeed(i) {
+    const t = this.cells[i];
+    if (this.roads[i] && TERRAIN_INFO[t].passable) return t === T.WATER ? BRIDGE_SPEED : ROAD_SPEED;
+    return TERRAIN_INFO[t].speed;
+  }
+
+  speedAt(wx, wy) {
+    const t = this.terrainAt(wx, wy);
+    if (!TERRAIN_INFO[t].passable) return 0;
+    if (this.roads[this.cellIndex(wx, wy)]) return t === T.WATER ? BRIDGE_SPEED : ROAD_SPEED;
+    return TERRAIN_INFO[t].speed;
   }
 
   // Bilineare Interpolation; Zellmittelpunkte liegen bei (i + 0.5) * CELL
@@ -84,7 +100,8 @@ export class GameMap {
     const gx = goal % w, gy = Math.floor(goal / w);
     const heur = (i) => {
       const dx = Math.abs(i % w - gx), dy = Math.abs(Math.floor(i / w) - gy);
-      return Math.max(dx, dy) + 0.41421356 * Math.min(dx, dy);
+      // Untere Schranke: so schnell wie auf der Straße, sonst übersieht A* Straßenumwege
+      return (Math.max(dx, dy) + 0.41421356 * Math.min(dx, dy)) / ROAD_SPEED;
     };
     g[start] = 0;
     heap.push(start, heur(start));
@@ -96,14 +113,14 @@ export class GameMap {
       if (cur === goal) { found = true; break; }
       closed[cur] = 1;
       const cx = cur % w, cy = Math.floor(cur / w);
-      const curSpeed = TERRAIN_INFO[this.cells[cur]].speed || 0.5;
+      const curSpeed = this.cellSpeed(cur) || 0.5;
       for (const [dx, dy, len] of dirs) {
         const nx = cx + dx, ny = cy + dy;
         if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
         const ni = ny * w + nx;
         if (closed[ni] || !this.cellPassable(ni)) continue;
         if (dx && dy && (!this.cellPassable(cy * w + nx) || !this.cellPassable(ny * w + cx))) continue;
-        const sp = (TERRAIN_INFO[this.cells[ni]].speed + curSpeed) / 2;
+        const sp = (this.cellSpeed(ni) + curSpeed) / 2;
         const ng = g[cur] + len / sp + (opts && opts.cost ? len * opts.cost(ni) : 0);
         if (ng < g[ni]) {
           g[ni] = ng;
@@ -140,11 +157,11 @@ export class GameMap {
     const dx = b.x - a.x, dy = b.y - a.y;
     const d = Math.hypot(dx, dy);
     const steps = Math.ceil(d / 4);
-    const t0 = this.terrainAt(a.x, a.y), t1 = this.terrainAt(b.x, b.y);
-    const minSpeed = Math.min(TERRAIN_INFO[t0].speed || 1, TERRAIN_INFO[t1].speed || 1, 0.8);
+    const s0 = this.speedAt(a.x, a.y) || 1, s1 = this.speedAt(b.x, b.y) || 1;
+    // Liegen beide Enden auf einer Straße, muss auch die Abkürzung auf der Straße bleiben
+    const minSpeed = s0 > 1 && s1 > 1 ? Math.min(s0, s1) : Math.min(s0, s1, 0.8);
     for (let s = 1; s < steps; s++) {
-      const t = this.terrainAt(a.x + dx * s / steps, a.y + dy * s / steps);
-      if (TERRAIN_INFO[t].speed < minSpeed) return false;
+      if (this.speedAt(a.x + dx * s / steps, a.y + dy * s / steps) < minSpeed) return false;
       if (safe && !safe(a.x + dx * s / steps, a.y + dy * s / steps)) return false;
     }
     return true;
@@ -308,5 +325,150 @@ function tryGenerate(seed, cfg, sizeKey) {
     map.cities.push({ x: (c.cx + 0.5) * CELL, y: (c.cy + 0.5) * CELL, owner: neutral ? 0 : 1 });
     map.cities.push({ x: (w - 1 - c.cx + 0.5) * CELL, y: (h - 1 - c.cy + 0.5) * CELL, owner: neutral ? 0 : 2 });
   });
+  buildRoads(map);
   return map;
+}
+
+// Straßennetz: Städte werden nach dem Relative Neighborhood Graph verbunden
+// (jede Stadt mit ihren natürlichen Nachbarn, keine überflüssigen Querverbindungen).
+// Die Trassen meiden Hügel und Wald, führen nie über Gebirge und bündeln sich mit
+// bestehenden Straßen. Gespiegelte Paare bekommen gespiegelte Straßen.
+function buildRoads(map) {
+  const { w, h, cities } = map;
+  const n = w * h;
+  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const edges = [];
+  for (let i = 0; i < cities.length; i++) {
+    for (let j = i + 1; j < cities.length; j++) {
+      const dij = d(cities[i], cities[j]);
+      let blocked = false;
+      for (let k = 0; k < cities.length && !blocked; k++) {
+        if (k === i || k === j) continue;
+        if (Math.max(d(cities[i], cities[k]), d(cities[j], cities[k])) < dij) blocked = true;
+      }
+      if (!blocked) edges.push([i, j, dij]);
+    }
+  }
+  edges.sort((a, b) => a[2] - b[2]);
+  const mirror = (k) => k ^ 1; // Städte liegen als Spiegelpaare hintereinander
+  const done = new Set();
+  const key = (a, b) => (a < b ? a + ':' + b : b + ':' + a);
+  const adj = new Map();
+  const link = (a, b) => {
+    if (a === b) return;
+    if (!adj.has(a)) adj.set(a, new Set());
+    if (!adj.has(b)) adj.set(b, new Set());
+    adj.get(a).add(b);
+    adj.get(b).add(a);
+  };
+  const stepCost = (i) => {
+    const t = map.cells[i];
+    if (t === T.DEEP || t === T.MOUNTAIN) return Infinity;
+    if (map.roads[i]) return 0.35;
+    return t === T.WATER ? 6 : t === T.HILL ? 3 : t === T.FOREST ? 1.8 : 1;
+  };
+  for (const [a, b] of edges) {
+    if (done.has(key(a, b))) continue;
+    done.add(key(a, b));
+    done.add(key(mirror(a), mirror(b)));
+    const route = routeRoad(map, map.cellIndex(cities[a].x, cities[a].y), map.cellIndex(cities[b].x, cities[b].y), stepCost);
+    if (!route) continue;
+    const mirrored = route.map((i) => n - 1 - i);
+    for (const r of [route, mirrored]) {
+      for (let k = 0; k < r.length; k++) {
+        map.roads[r[k]] = 1;
+        // Diagonale Schritte schließen, damit die Straße lückenlos befahrbar ist
+        if (k > 0) {
+          const p = r[k - 1], c = r[k];
+          if (p % w !== c % w && ((p / w) | 0) !== ((c / w) | 0)) {
+            const corner = ((p / w) | 0) * w + (c % w);
+            if (TERRAIN_INFO[map.cells[corner]].passable) map.roads[corner] = 1;
+          }
+        }
+      }
+      for (let k = 1; k < r.length; k++) link(r[k - 1], r[k]);
+    }
+  }
+
+  // Netz einmal zeichnen: Abschnitte von Kreuzung zu Kreuzung, damit gemeinsame
+  // Trassen nicht doppelt und leicht versetzt erscheinen
+  const center = (i) => ({ x: (i % w + 0.5) * CELL, y: (((i / w) | 0) + 0.5) * CELL });
+  const used = new Set();
+  const ekey = (a, b) => (a < b ? a * n + b : b * n + a);
+  const walk = (start, next) => {
+    const chain = [start, next];
+    used.add(ekey(start, next));
+    let prev = start, cur = next;
+    while (adj.get(cur).size === 2) {
+      let nxt = -1;
+      for (const o of adj.get(cur)) if (o !== prev) nxt = o;
+      if (nxt < 0 || used.has(ekey(cur, nxt))) break;
+      used.add(ekey(cur, nxt));
+      chain.push(nxt);
+      prev = cur; cur = nxt;
+    }
+    map.roadLines.push(chaikin(chain.map(center), 2));
+  };
+  for (const [node, nb] of adj) {
+    if (nb.size === 2) continue;
+    for (const o of nb) if (!used.has(ekey(node, o))) walk(node, o);
+  }
+  for (const [node, nb] of adj) {
+    for (const o of nb) if (!used.has(ekey(node, o))) walk(node, o); // reine Ringe
+  }
+}
+
+function routeRoad(map, start, goal, stepCost) {
+  const { w, h } = map;
+  const n = w * h;
+  const g = new Float64Array(n).fill(Infinity);
+  const parent = new Int32Array(n).fill(-1);
+  const closed = new Uint8Array(n);
+  const heap = new MinHeap();
+  const gx = goal % w, gy = (goal / w) | 0;
+  const heur = (i) => {
+    const dx = Math.abs(i % w - gx), dy = Math.abs(((i / w) | 0) - gy);
+    return (Math.max(dx, dy) + 0.41421356 * Math.min(dx, dy)) * 0.35;
+  };
+  g[start] = 0;
+  heap.push(start, heur(start));
+  const dirs = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.4142], [1, -1, 1.4142], [-1, 1, 1.4142], [-1, -1, 1.4142]];
+  while (heap.size) {
+    const cur = heap.pop();
+    if (closed[cur]) continue;
+    if (cur === goal) break;
+    closed[cur] = 1;
+    const cx = cur % w, cy = (cur / w) | 0;
+    for (const [dx, dy, len] of dirs) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const ni = ny * w + nx;
+      if (closed[ni]) continue;
+      const c = stepCost(ni);
+      if (c === Infinity) continue;
+      const ng = g[cur] + len * c;
+      if (ng < g[ni]) { g[ni] = ng; parent[ni] = cur; heap.push(ni, ng + heur(ni)); }
+    }
+  }
+  if (g[goal] === Infinity) return null;
+  const out = [];
+  for (let c = goal; c !== -1; c = parent[c]) out.push(c);
+  return out.reverse();
+}
+
+// Ecken abrunden, damit Straßen geschwungen statt treppig aussehen
+function chaikin(pts, iterations) {
+  let p = pts;
+  for (let it = 0; it < iterations; it++) {
+    if (p.length < 3) return p;
+    const out = [p[0]];
+    for (let i = 0; i < p.length - 1; i++) {
+      const a = p[i], b = p[i + 1];
+      out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
+      out.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+    }
+    out.push(p[p.length - 1]);
+    p = out;
+  }
+  return p;
 }

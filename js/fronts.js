@@ -1,4 +1,4 @@
-import { TERRAIN_INFO, CELL } from './config.js?v=14';
+import { TERRAIN_INFO, CELL } from './config.js?v=16';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -7,7 +7,7 @@ const ROTATE_AT = 0.35;     // Verwundete ziehen sich darunter zurück
 const ROTATE_AT_ATTACK = 0.2; // während eines Angriffs erst später
 const RETURN_AT = 0.9;      // und kehren ab hier zurück
 const CODENAMES = ['ADLER', 'FALKE', 'WOLF', 'LUCHS', 'BÄR', 'HABICHT', 'KRANICH', 'ELCH', 'DACHS', 'MARDER', 'BUSSARD', 'STIER'];
-const PATH_BUDGET = 6;      // A*-Suchen pro Neuberechnung
+const PATH_BUDGET = 4;      // A*-Suchen pro Neuberechnung
 const DANGER_RADIUS = 45;   // so viel Abstand halten Verschiebungen zu Feinden
 
 // Fronten wie in Hearts of Iron: Einheiten werden einer Linie zugewiesen,

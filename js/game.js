@@ -2,8 +2,8 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER,
-} from './config.js?v=14';
-import { mulberry32 } from './rng.js?v=14';
+} from './config.js?v=16';
+import { mulberry32 } from './rng.js?v=16';
 
 export class Game {
   constructor(map, opts = {}) {
@@ -326,7 +326,7 @@ export class Game {
     const map = this.map;
     const ut = UNIT_TYPES[u.type];
     const terr = map.terrainAt(u.x, u.y);
-    let spd = ut.speed * (TERRAIN_INFO[terr].speed || 0.5);
+    let spd = ut.speed * (map.speedAt(u.x, u.y) || 0.5);
     if (u.target) spd *= ENGAGED_SPEED;
     let mx = 0, my = 0;
     let wantMove = 0;

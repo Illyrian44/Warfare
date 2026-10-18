@@ -1,6 +1,6 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=14';
-import { classify } from './map.js?v=14';
-import { frontBadge } from './fronts.js?v=14';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=16';
+import { classify } from './map.js?v=16';
+import { frontBadge } from './fronts.js?v=16';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -76,6 +76,42 @@ export class Renderer {
     return c;
   }
 
+  // Straßen als Vektorpfade vorbereiten, damit sie in jeder Zoomstufe scharf bleiben
+  buildRoads() {
+    const map = this.game.map;
+    this.roadPath = new Path2D();
+    this.bridgePath = new Path2D();
+    for (const line of map.roadLines) {
+      if (line.length < 2) continue;
+      this.roadPath.moveTo(line[0].x, line[0].y);
+      for (const p of line) this.roadPath.lineTo(p.x, p.y);
+      for (let i = 1; i < line.length; i++) {
+        const a = line[i - 1], b = line[i];
+        const t = map.terrainAt((a.x + b.x) / 2, (a.y + b.y) / 2);
+        if (t !== T.WATER && t !== T.DEEP) continue;
+        this.bridgePath.moveTo(a.x, a.y);
+        this.bridgePath.lineTo(b.x, b.y);
+      }
+    }
+  }
+
+  drawRoads(px) {
+    const { ctx } = this;
+    if (!this.roadPath) this.buildRoads();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = '#4a3b2c';
+    ctx.lineWidth = Math.max(8, 3.5 * px);
+    ctx.stroke(this.bridgePath);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(70,52,30,0.6)';
+    ctx.lineWidth = Math.max(5, 2.6 * px);
+    ctx.stroke(this.roadPath);
+    ctx.strokeStyle = '#e6d6a8';
+    ctx.lineWidth = Math.max(3, 1.4 * px);
+    ctx.stroke(this.roadPath);
+  }
+
   updateOverlays() {
     const g = this.game;
     const { w, h } = g.map;
@@ -136,6 +172,7 @@ export class Renderer {
     const { worldW, worldH } = game.map;
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.terrain, 0, 0, worldW, worldH);
+    this.drawRoads(1 / cam.zoom);
     this.updateOverlays();
     ctx.drawImage(this.terrCanvas, 0, 0, worldW, worldH);
     ctx.drawImage(this.fogCanvas, 0, 0, worldW, worldH);
