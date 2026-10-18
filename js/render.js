@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=33';
-import { classify } from './map.js?v=33';
-import { frontBadge } from './fronts.js?v=33';
-import { LEVELS, REGIMENT, ARMY, NOMINAL, formationOf } from './orbat.js?v=33';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=35';
+import { classify } from './map.js?v=35';
+import { frontBadge } from './fronts.js?v=35';
+import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=35';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -432,6 +432,18 @@ function hash(x, y) {
 const NATO_FRIEND = '#80e0ff';
 const NATO_HOSTILE = '#ff8080';
 
+// Füllfarbe nach Division der Kompanie(n): Farbe der häufigsten Division
+function fillFor(members, friend) {
+  const count = new Map();
+  for (const u of members) {
+    const f = formationOf(u, DIVISION);
+    if (f) count.set(f, (count.get(f) || 0) + 1);
+  }
+  let best = null, bc = 0;
+  for (const [f, c] of count) if (c > bc) { bc = c; best = f; }
+  return best ? divisionColor(best) : friend ? NATO_FRIEND : NATO_HOSTILE;
+}
+
 // Rahmen nach APP-6: Rechteck für eigene, Raute für feindliche Einheiten
 function symbolPath(ctx, x, y, hw, hh, friend) {
   ctx.beginPath();
@@ -463,7 +475,7 @@ export function drawNatoSymbol(ctx, u, friend, px, highlight, starving) {
   }
 
   symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
-  ctx.fillStyle = friend ? NATO_FRIEND : NATO_HOSTILE;
+  ctx.fillStyle = fillFor([u], friend);
   ctx.fill();
   ctx.strokeStyle = starving ? '#ffd23f' : '#000';
   ctx.lineWidth = starving ? line * 2 : line;
@@ -611,7 +623,7 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
     ctx.stroke();
   }
   symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
-  ctx.fillStyle = friend ? NATO_FRIEND : NATO_HOSTILE;
+  ctx.fillStyle = fillFor(members, friend);
   ctx.fill();
   ctx.strokeStyle = starving ? '#ffd23f' : '#000';
   ctx.lineWidth = starving ? line * 2 : line;
@@ -773,7 +785,7 @@ function drawHQSymbol(ctx, hq, friend, px) {
   const { x, y } = hq;
   const line = Math.max(0.5, 1.1 * px);
   symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
-  ctx.fillStyle = friend ? NATO_FRIEND : NATO_HOSTILE;
+  ctx.fillStyle = hq.formation ? divisionColor(hq.formation) : friend ? NATO_FRIEND : NATO_HOSTILE;
   ctx.globalAlpha = 0.9;
   ctx.fill();
   ctx.globalAlpha = 1;

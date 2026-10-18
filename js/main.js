@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=33';
-import { Game } from './game.js?v=33';
-import { AI } from './ai.js?v=33';
-import { Renderer } from './render.js?v=33';
-import { Input } from './input.js?v=33';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=33';
-import { DIVISION, unitsOf } from './orbat.js?v=33';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=33';
+import { generateMap } from './map.js?v=35';
+import { Game } from './game.js?v=35';
+import { AI } from './ai.js?v=35';
+import { Renderer } from './render.js?v=35';
+import { Input } from './input.js?v=35';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=35';
+import { DIVISION, unitsOf, divisionColor } from './orbat.js?v=35';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=35';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -311,12 +311,12 @@ const app = {
         for (const reg of brig.children) {
           const alive = reg.units.filter((u) => g.units.includes(u));
           const armor = reg.units.some((u) => u.type === 'heavy');
-          regs.push(natoIcon(armor ? 1 : 0, 16, 11, alive.length ? 0.35 + 0.65 * alive.length / 2 : 0.15));
+          regs.push(natoIcon(armor ? 1 : 0, 16, 11, alive.length ? 0.35 + 0.65 * alive.length / 2 : 0.15, '', divisionColor(d.f)));
         }
       }
       const sel = d.units.some((u) => this.ui.selection.has(u)) ? ' sel' : '';
       return `<button class="divcard${sel}" data-id="${d.f.id}" title="${d.f.name}: ${d.units.length} Kompanien">` +
-        `<span class="sym">${natoIcon(heavy, 26, 18, 1, 'XX')}</span>` +
+        `<span class="sym">${natoIcon(heavy, 26, 18, 1, 'XX', divisionColor(d.f))}</span>` +
         `<span class="name">${d.f.name}</span>` +
         `<span class="str"><i style="width:${Math.round(strengthOf(d.units) * 100)}%"></i></span>` +
         `<span class="regs">${regs.join('')}</span></button>`;
@@ -488,7 +488,7 @@ function strengthOf(units) {
 }
 
 // Kleines NATO-Symbol als SVG: X = Infanterie, Oval = Panzer, beides bei gemischten Verbänden
-function natoIcon(armorShare, w, h, opacity = 1, echelon = '') {
+function natoIcon(armorShare, w, h, opacity = 1, echelon = '', fill = '#80e0ff') {
   const top = echelon ? 6 : 1;
   const H = h + top;
   const inf = armorShare < 0.67, arm = armorShare > 0.33;
@@ -501,5 +501,5 @@ function natoIcon(armorShare, w, h, opacity = 1, echelon = '') {
     for (const cx of [w / 2 - 3, w / 2 + 3]) ech += `<path d="M${cx - 2} 0.5L${cx + 2} 4.5M${cx + 2} 0.5L${cx - 2} 4.5" stroke="#fff" stroke-width="1"/>`;
   }
   return `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" style="opacity:${opacity.toFixed(2)}">${ech}` +
-    `<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" fill="#80e0ff" stroke="#000" stroke-width="1"/>${inner}</svg>`;
+    `<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" fill="${fill}" stroke="#000" stroke-width="1"/>${inner}</svg>`;
 }

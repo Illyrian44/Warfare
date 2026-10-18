@@ -7,7 +7,7 @@
   <meta name="description" content="War of Dots im Browser: minimalistisches Echtzeit-Strategiespiel gegen eine KI.">
   <title>War of Dots</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=33">
+  <link rel="stylesheet" href="css/style.css?v=35">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -87,7 +87,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 33</small>
+      <small id="version" class="muted">Version 35</small>
     </div>
   </div>
 
@@ -122,7 +122,7 @@
         <li><b>Straßen</b> verbinden die Städte. Auf Straßen sind Einheiten 60&nbsp;% schneller, Brücken führen über Seen und Flüsse. Die Wegfindung nutzt Straßen automatisch – ideal für Nachschub und schnelle Verlegungen.</li>
         <li><b>Gliederung:</b> Jede Seite startet mit einer Armee: Kompanie (I) → Regiment (III, 2 Kompanien) → Brigade (X, 2 Regimenter) → Division (XX, 2 Brigaden) → Korps (XXX, 2 Divisionen) → Armee (XXXX). Ganz nah siehst du einzelne Kompanien. Sonst werden Truppen zusammengefasst, sobald sich ihre Symbole überdecken würden – die Stufe richtet sich nach der Größe der Gruppe nach Sollstärke (ab 2 Kompanien Regiment, ab 4 Brigade, ab 8 Division, ab 16 Korps, ab 32 Armee), der Name nach dem Verband, zu dem die meisten gehören. Verteilt stehende Truppen bleiben einzeln sichtbar. Antippen wählt die gezeigte Gruppe, Ziehen bewegt sie. Neue Kompanien werden automatisch dem schwächsten Regiment zugeteilt. Fällt eine Kompanie im Gefecht unter 25&nbsp;%, tauscht sie den Platz mit einer frischen Kompanie ihrer Division in der Nähe.</li>
         <li><b>Divisions-HQs</b> (Symbol mit Stab, „HQ“ und XX) stehen hinter der Linie und zählen nicht als Einheiten. In der Verteidigung schicken sie ruhige Kompanien dorthin, wo der Feind überlegen ist, und riegeln Durchbrüche mit einem freien Regiment ab. Angriffe, Rotation und deine eigenen Befehle haben Vorrang bzw. werden nicht gestört.</li>
-        <li><b>Divisionsleiste</b> unten: eine Karte je Division mit Symbol, Stärke und den Regimentern als Icons. Antippen wählt die Division aus und zeigt sie auf der Karte. Neue Kompanien und Divisionen erscheinen dort automatisch.</li>
+        <li><b>Divisionsfarben:</b> Jede Division hat einen eigenen Blauton (beim Gegner Rottöne) – auf der Karte, beim HQ und in der Leiste. <b>Divisionsleiste</b> unten: eine Karte je Division mit Symbol, Stärke und den Regimentern als Icons. Antippen wählt die Division aus und zeigt sie auf der Karte. Neue Kompanien und Divisionen erscheinen dort automatisch.</li>
         <li><b>Einheiten:</b> Leichte (Infanterie) sind schnell und günstig. Schwere (Panzer) halten mehr aus und schlagen härter zu – am besten auf offener Ebene.</li>
         <li><b>Versorgung:</b> Einheiten heilen in eigenem Gebiet nahe Städten. Weit im Feindesland verlieren sie Leben. Verwundete zurückziehen und frische nachschieben!</li>
         <li><b>Städte</b> produzieren Einheiten und versorgen je 10. Gibt es mehr Einheiten als Versorgung, hungern die überzähligen (gelb blinkend).</li>
@@ -145,6 +145,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=33"></script>
+  <script type="module" src="js/main.js?v=35"></script>
 </body>
 </html>

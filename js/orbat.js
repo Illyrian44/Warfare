@@ -19,6 +19,19 @@ export const NOMINAL = {};
 NOMINAL[REGIMENT] = SIZE[REGIMENT];
 for (let l = BRIGADE; l <= ARMY; l++) NOMINAL[l] = NOMINAL[l - 1] * (SIZE[l] || 2);
 
+// Farbtöne je Division: Blautöne für Blau, Rottöne für Rot (gut unterscheidbar,
+// hell genug für die schwarzen NATO-Zeichen)
+export const DIVISION_COLORS = [
+  null,
+  ['#7fe3ff', '#5aa8ff', '#b4a8ff', '#6fe0cf', '#d4f1ff', '#7f86f5', '#9cc3dc', '#3f8fd9'],
+  ['#ff8080', '#ffa36b', '#ff6f9c', '#ffbfae', '#e8735f', '#ff9fd0', '#d99a8c', '#ffc27a'],
+];
+
+export function divisionColor(f) {
+  const pal = DIVISION_COLORS[f.owner];
+  return pal[(f.colorIndex || 0) % pal.length];
+}
+
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 
 export class OrderOfBattle {
@@ -36,6 +49,7 @@ export class OrderOfBattle {
       id: ++OrderOfBattle.nextId, level, owner: this.owner, parent, children: [], units: [],
       name: level === CORPS ? `${ROMAN[n] || n}. Korps` : `${n}. ${LEVELS[level].short}`,
     };
+    if (level === DIVISION) f.colorIndex = n - 1;
     if (parent) parent.children.push(f);
     return f;
   }
