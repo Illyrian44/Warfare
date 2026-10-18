@@ -1,4 +1,4 @@
-import { TERRAIN_INFO, CELL } from './config.js?v=18';
+import { TERRAIN_INFO, CELL } from './config.js?v=19';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -179,11 +179,13 @@ export class FrontManager {
       .sort((a, b) => a.t - b.t)
       .map((o) => o.u);
     let budget = PATH_BUDGET;
+    let pending = false;
+    const shared = new Map(); // Wege für nebeneinander stehende Einheiten mit ähnlichem Ziel teilen
     for (let k = 0; k < slots.length && k < ordered.length; k++) {
       const s = slots[k];
       const u = ordered[k];
       const goalMoved = !u.frontGoal || Math.hypot(u.frontGoal.x - s.x, u.frontGoal.y - s.y) > 20;
-      if (!goalMoved && !force && u.path.length) continue;
+      if (!goalMoved && u.path.length) continue; // schon unterwegs: Budget den Wartenden lassen
       if (!goalMoved && Math.hypot(u.x - s.x, u.y - s.y) < 10) continue;
       if (u.target) continue; // im Gefecht die Stellung halten, keine neuen Marschbefehle
       if (u.swapUntil > g.time) continue; // Platztausch innerhalb der Division läuft
@@ -202,12 +204,26 @@ export class FrontManager {
       if (g.map.clearLine(u, s, opts && opts.safe)) {
         u.path = [{ x: s.x, y: s.y }];
       } else {
-        if (budget <= 0) continue;
-        budget--;
-        u.path = g.map.findPath(u.x, u.y, s.x, s.y, opts) || [];
+        const key = (u.x / 30 | 0) + ',' + (u.y / 30 | 0) + '>' + (s.x / 30 | 0) + ',' + (s.y / 30 | 0);
+        let base = shared.get(key);
+        if (base === undefined) {
+          if (budget <= 0) { pending = true; continue; }
+          budget--;
+          base = g.map.findPath(u.x, u.y, s.x, s.y, opts) || [];
+          shared.set(key, base);
+        }
+        u.path = base.map((q) => ({ x: q.x, y: q.y }));
+        if (u.path.length) u.path[u.path.length - 1] = { x: s.x, y: s.y };
       }
       u.frontGoal = { x: s.x, y: s.y };
       u.stuck = 0;
+    }
+
+    // Noch Wege offen: gleich im nächsten Frame weiterrechnen statt bis zur
+    // nächsten regulären Neuberechnung zu warten
+    if (pending) {
+      f.force = true;
+      this.timer = Math.min(this.timer, 0.03);
     }
 
     // Angriff abgeschlossen, sobald die meisten Einheiten ihre Plätze erreicht haben

@@ -2,8 +2,8 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_LINK, DIVISION_MAX, DIVISION_ROTATE,
-} from './config.js?v=18';
-import { mulberry32 } from './rng.js?v=18';
+} from './config.js?v=19';
+import { mulberry32 } from './rng.js?v=19';
 
 export class Game {
   constructor(map, opts = {}) {
