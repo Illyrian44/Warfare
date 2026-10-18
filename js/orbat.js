@@ -22,6 +22,8 @@ for (let l = BRIGADE; l <= ARMY; l++) NOMINAL[l] = NOMINAL[l - 1] * (SIZE[l] || 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 
 export class OrderOfBattle {
+  static nextId = 0;
+
   constructor(owner) {
     this.owner = owner;
     this.counters = [0, 0, 0, 0, 0, 0];
@@ -31,7 +33,7 @@ export class OrderOfBattle {
   make(level, parent) {
     const n = ++this.counters[level];
     const f = {
-      level, owner: this.owner, parent, children: [], units: [],
+      id: ++OrderOfBattle.nextId, level, owner: this.owner, parent, children: [], units: [],
       name: level === CORPS ? `${ROMAN[n] || n}. Korps` : `${n}. ${LEVELS[level].short}`,
     };
     if (parent) parent.children.push(f);

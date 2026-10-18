@@ -132,7 +132,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 #version { text-align: center; font-size: 11px; }
 #frontBanner {
   position: fixed;
-  bottom: calc(120px + env(safe-area-inset-bottom));
+  bottom: calc(128px + env(safe-area-inset-bottom));
   color: #fff;
   left: 50%;
   transform: translateX(-50%);
@@ -155,7 +155,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(64px + env(safe-area-inset-bottom));
+  bottom: calc(128px + env(safe-area-inset-bottom));
   width: min(94vw, 520px);
   background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -253,10 +253,53 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   #seedLabel { display: none; }
   .bar.bottom { align-items: flex-end; }
   .bar.bottom button { font-size: 14px; }
-  #frontPanel { bottom: calc(108px + env(safe-area-inset-bottom)); }
+  #frontPanel { bottom: calc(220px + env(safe-area-inset-bottom)); }
+  #frontBanner { bottom: calc(220px + env(safe-area-inset-bottom)); }
 }
 
 .legend { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 4px; }
 .legend svg { justify-self: center; }
 
 .frontButtons button.attack { background: #c0392b; border-color: #e0412f; font-weight: 600; }
+
+/* Divisionsleiste unten (wie die Armee-Leiste in HOI4) */
+#divBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(60px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px max(10px, env(safe-area-inset-left));
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+#divBar::-webkit-scrollbar { display: none; }
+#divBar:empty { display: none; }
+.divcard {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto auto;
+  column-gap: 6px;
+  align-items: center;
+  min-width: 112px;
+  min-height: 0;
+  padding: 4px 8px 5px 6px;
+  background: var(--panel);
+  border-radius: 10px;
+  font-size: 12px;
+  text-align: left;
+}
+.divcard.sel { border-color: #fff; box-shadow: 0 0 0 1px #fff inset; }
+.divcard .sym { grid-row: 1 / span 2; }
+.divcard .name { font-weight: 700; white-space: nowrap; }
+.divcard .str { display: block; height: 3px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
+.divcard .str i { display: block; height: 100%; background: var(--good); }
+.divcard .regs { grid-column: 1 / span 2; display: flex; gap: 2px; margin-top: 3px; }
+.divcard .regs svg { display: block; }
+
+@media (max-width: 560px) {
+  #divBar { bottom: calc(150px + env(safe-area-inset-bottom)); }
+}

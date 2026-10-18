@@ -2,9 +2,10 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE,
-} from './config.js?v=26';
-import { mulberry32 } from './rng.js?v=26';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=26';
+} from './config.js?v=31';
+import { mulberry32 } from './rng.js?v=31';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=31';
+import { HQManager } from './hq.js?v=31';
 
 export class Game {
   constructor(map, opts = {}) {
@@ -40,6 +41,8 @@ export class Game {
       this.orbat[p].createStart(this, own);
     }
     this.partitionTerritory();
+    this.hq = new HQManager(this);
+    this.hq.place();
     this.updateVision();
   }
 
@@ -277,6 +280,7 @@ export class Game {
     // Versorgung und Gesundheit
     this.starveTimer -= dt;
     if (this.starveTimer <= 0) { this.updateStarvation(); this.starveTimer = 0.5; }
+    this.hq.update(dt);
     this.divTimer -= dt;
     if (this.divTimer <= 0) { this.divTimer = 0.5; this.updateDivisions(); this.rotateDivisions(); }
     for (const u of U) {

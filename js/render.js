@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=26';
-import { classify } from './map.js?v=26';
-import { frontBadge } from './fronts.js?v=26';
-import { LEVELS, REGIMENT, ARMY, NOMINAL, formationOf } from './orbat.js?v=26';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=31';
+import { classify } from './map.js?v=31';
+import { frontBadge } from './fronts.js?v=31';
+import { LEVELS, REGIMENT, ARMY, NOMINAL, formationOf } from './orbat.js?v=31';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -236,6 +236,14 @@ export class Renderer {
     for (const u of game.units) {
       if (drawn.has(u) || !visible(u)) continue;
       drawNatoSymbol(ctx, u, u.owner === me, px, highlightOf(u), u.starving && flash);
+    }
+
+    // Brigade-HQs hinter der Linie (keine Kampfeinheiten)
+    if (game.hq) {
+      for (const hq of game.hq.hqs) {
+        if (hq.owner !== me && !ui.revealAll && !game.isVisible(me, hq.x, hq.y)) continue;
+        drawHQSymbol(ctx, hq, hq.owner === me, px);
+      }
     }
 
     // Weg oder Front, die gerade gezeichnet wird
@@ -748,4 +756,33 @@ function drawEchelon(ctx, x, top, echelon, px) {
   ctx.strokeStyle = '#000';
   ctx.lineWidth = Math.max(0.6, 1.3 * px);
   ctx.stroke();
+}
+
+// Hauptquartier nach APP-6: Rahmen mit Stab, der links unten nach unten zeigt,
+// Größenzeichen der Brigade (X) und "HQ" im Rahmen
+function drawHQSymbol(ctx, hq, friend, px) {
+  const hw = 8 * px, hh = hw * 0.68, d = hw * 0.95;
+  const { x, y } = hq;
+  const line = Math.max(0.5, 1.1 * px);
+  symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
+  ctx.fillStyle = friend ? NATO_FRIEND : NATO_HOSTILE;
+  ctx.globalAlpha = 0.9;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = line;
+  ctx.stroke();
+  // Stab
+  const sx = friend ? x - hw : x - d, sy = friend ? y + hh : y;
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx, sy + 9 * px);
+  ctx.lineWidth = Math.max(0.6, 1.5 * px);
+  ctx.stroke();
+  ctx.fillStyle = '#000';
+  ctx.font = `bold ${6.5 * px}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('HQ', x, y + 0.5 * px);
+  drawEchelon(ctx, x, friend ? y - hh : y - d, 'X', px * 0.85);
 }

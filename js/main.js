@@ -1,10 +1,11 @@
-import { generateMap } from './map.js?v=26';
-import { Game } from './game.js?v=26';
-import { AI } from './ai.js?v=26';
-import { Renderer } from './render.js?v=26';
-import { Input } from './input.js?v=26';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=26';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=26';
+import { generateMap } from './map.js?v=31';
+import { Game } from './game.js?v=31';
+import { AI } from './ai.js?v=31';
+import { Renderer } from './render.js?v=31';
+import { Input } from './input.js?v=31';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=31';
+import { DIVISION, unitsOf } from './orbat.js?v=31';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=31';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -37,6 +38,7 @@ const app = {
     this.current = { seed, size, difficulty };
     this.settings = { size, difficulty };
     saveSettings(this.settings);
+    this.divBarSig = null;
     this.fitCamera();
     $('menu').hidden = true;
     $('end').hidden = true;
@@ -291,8 +293,56 @@ const app = {
     $('end').hidden = false;
   },
 
+  // Divisionsleiste: je eigene Division eine Karte mit Symbol, Name, Stärke und Regimentern
+  updateDivBar() {
+    const g = this.game;
+    const bar = $('divBar');
+    const divs = g.orbat[this.human].all(DIVISION)
+      .map((f) => ({ f, units: unitsOf(f).filter((u) => g.units.includes(u)) }))
+      .filter((d) => d.units.length);
+    const sig = divs.map((d) => d.f.id + ':' + d.units.length + ':' + Math.round(strengthOf(d.units) * 20) + ':' +
+      (d.units.some((u) => this.ui.selection.has(u)) ? 1 : 0)).join('|');
+    if (sig === this.divBarSig) return;
+    this.divBarSig = sig;
+    bar.innerHTML = divs.map((d) => {
+      const heavy = d.units.filter((u) => u.type === 'heavy').length / d.units.length;
+      const regs = [];
+      for (const brig of d.f.children) {
+        for (const reg of brig.children) {
+          const alive = reg.units.filter((u) => g.units.includes(u));
+          const armor = reg.units.some((u) => u.type === 'heavy');
+          regs.push(natoIcon(armor ? 1 : 0, 16, 11, alive.length ? 0.35 + 0.65 * alive.length / 2 : 0.15));
+        }
+      }
+      const sel = d.units.some((u) => this.ui.selection.has(u)) ? ' sel' : '';
+      return `<button class="divcard${sel}" data-id="${d.f.id}" title="${d.f.name}: ${d.units.length} Kompanien">` +
+        `<span class="sym">${natoIcon(heavy, 26, 18, 1, 'XX')}</span>` +
+        `<span class="name">${d.f.name}</span>` +
+        `<span class="str"><i style="width:${Math.round(strengthOf(d.units) * 100)}%"></i></span>` +
+        `<span class="regs">${regs.join('')}</span></button>`;
+    }).join('');
+  },
+
+  selectDivision(id) {
+    const g = this.game;
+    const f = g.orbat[this.human].all(DIVISION).find((d) => d.id === id);
+    if (!f) return;
+    const units = unitsOf(f).filter((u) => g.units.includes(u));
+    if (!units.length) return;
+    this.ui.selection.clear();
+    for (const u of units) this.ui.selection.add(u);
+    this.updateSelectionInfo();
+    const cx = units.reduce((a, u) => a + u.x, 0) / units.length;
+    const cy = units.reduce((a, u) => a + u.y, 0) / units.length;
+    this.cam.x = cx - canvas.clientWidth / 2 / this.cam.zoom;
+    this.cam.y = cy - canvas.clientHeight / 2 / this.cam.zoom;
+    this.clampCamera();
+    this.divBarSig = null;
+  },
+
   updateHud() {
     const g = this.game;
+    this.updateDivBar();
     const myC = g.citiesOf(this.human).length, aiC = g.citiesOf(2).length;
     const neutral = g.cities.length - myC - aiC;
     const myU = g.unitsOf(this.human).length;
@@ -382,6 +432,10 @@ $('menuBtn').onclick = () => {
 $('resumeBtn').onclick = () => { $('menu').hidden = true; if (app.paused) app.togglePause(); };
 $('selectBtn').onclick = () => app.setSelectMode(!app.ui.selectMode);
 $('allBtn').onclick = () => app.selectAll();
+$('divBar').onclick = (e) => {
+  const card = e.target.closest('.divcard');
+  if (card) app.selectDivision(+card.dataset.id);
+};
 $('frontBtn').onclick = () => app.setFrontMode(app.ui.frontMode ? null : 'new');
 $('borderBtn').onclick = () => app.borderFront();
 $('planBtn').onclick = () => app.setFrontMode({ plan: app.ui.front });
@@ -425,4 +479,27 @@ function segDist(p, a, b) {
   const l2 = dx * dx + dy * dy;
   const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
   return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
+}
+
+function strengthOf(units) {
+  let hp = 0, max = 0;
+  for (const u of units) { hp += u.hp; max += u.maxHp; }
+  return max ? hp / max : 0;
+}
+
+// Kleines NATO-Symbol als SVG: X = Infanterie, Oval = Panzer, beides bei gemischten Verbänden
+function natoIcon(armorShare, w, h, opacity = 1, echelon = '') {
+  const top = echelon ? 6 : 1;
+  const H = h + top;
+  const inf = armorShare < 0.67, arm = armorShare > 0.33;
+  const rx = 1, ry = top, rw = w - 2, rh = h - 2;
+  let inner = '';
+  if (inf) inner += `<path d="M${rx} ${ry}L${rx + rw} ${ry + rh}M${rx + rw} ${ry}L${rx} ${ry + rh}" stroke="#000" stroke-width="1"/>`;
+  if (arm) inner += `<ellipse cx="${w / 2}" cy="${ry + rh / 2}" rx="${rw * 0.31}" ry="${rh * 0.25}" fill="none" stroke="#000" stroke-width="1"/>`;
+  let ech = '';
+  if (echelon === 'XX') {
+    for (const cx of [w / 2 - 3, w / 2 + 3]) ech += `<path d="M${cx - 2} 0.5L${cx + 2} 4.5M${cx + 2} 0.5L${cx - 2} 4.5" stroke="#fff" stroke-width="1"/>`;
+  }
+  return `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" style="opacity:${opacity.toFixed(2)}">${ech}` +
+    `<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" fill="#80e0ff" stroke="#000" stroke-width="1"/>${inner}</svg>`;
 }

@@ -1,4 +1,4 @@
-import { TERRAIN_INFO, CELL } from './config.js?v=26';
+import { TERRAIN_INFO, CELL } from './config.js?v=31';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -189,6 +189,7 @@ export class FrontManager {
       if (!goalMoved && Math.hypot(u.x - s.x, u.y - s.y) < 10) continue;
       if (u.target) continue; // im Gefecht die Stellung halten, keine neuen Marschbefehle
       if (u.swapUntil > g.time) continue; // Platztausch innerhalb der Division läuft
+      if (u.hqOrder > g.time) continue;   // Befehl des Brigade-HQ hat Vorrang
       // Mit Feind in der Nähe nicht zurückweichen, nur weil sich die Grenze verschoben hat
       // (kleine Verschiebungen ignorieren, bei echtem Durchbruch geordnet zurück)
       // Feindkontakt: Stellung halten wie in HOI4. Nur wer bereits an der Front steht
