@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=50';
-import { Game } from './game.js?v=50';
-import { AI } from './ai.js?v=50';
-import { Renderer } from './render.js?v=50';
-import { Input } from './input.js?v=50';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=50';
-import { DIVISION, REGIMENT_MAX, unitsOf, divisionColor } from './orbat.js?v=50';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=50';
+import { generateMap } from './map.js?v=51';
+import { Game } from './game.js?v=51';
+import { AI } from './ai.js?v=51';
+import { Renderer } from './render.js?v=51';
+import { Input } from './input.js?v=51';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=51';
+import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=51';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=51';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -36,9 +36,6 @@ const app = {
     $('menuError').hidden = true;
     this.game = new Game(map);
     this.ai = new AI(this.game, 2, difficulty);
-    // Übergang, bis der Spieler selbst Divisionen bildet: Startkompanien automatisch einteilen
-    this.game.orbat[this.human].autoOrganize(this.game.units);
-    this.game.hq.place();
     this.fronts = new FrontManager(this.game, this.human);
     this.ui.frontMode = null;
     this.ui.front = null;
@@ -62,6 +59,7 @@ const app = {
     $('seedLabel').textContent = `Karte #${seed} · ${DIFFICULTY[difficulty].name}`;
     this.updateSelectionInfo();
     this.toast('Ziehe von einer deiner Einheiten aus einen Weg. Erobere alle Städte!');
+    this.toast('Deine Kompanien haben noch keine Division: auswählen und „＋ Neue Division“ – oder unten „Auto-Gliederung“.');
   },
 
   fitCamera() {
@@ -218,6 +216,84 @@ const app = {
     $('addBtn').hidden = !this.ui.selection.size;
   },
 
+  // Eigene, lebende Einheiten der Auswahl
+  ownSelection() {
+    return [...this.ui.selection].filter((u) => u.owner === this.human && this.game.units.includes(u));
+  },
+
+  newDivision() {
+    const units = this.ownSelection();
+    if (!units.length) return;
+    const div = this.game.orbat[this.human].createDivision(units);
+    this.afterOrbatChange();
+    this.toast(units.length > DIVISION_MAX
+      ? `${div.name} gebildet – nur ${DIVISION_MAX} Kompanien passen hinein`
+      : `${div.name} gebildet (${strength(div)} Kompanien)`);
+  },
+
+  addToDivision(id) {
+    const ob = this.game.orbat[this.human];
+    const div = ob.all(DIVISION).find((d) => d.id === id);
+    if (!div) return;
+    const units = this.ownSelection().filter((u) => divisionOf(u) !== div);
+    if (!units.length) return;
+    const n = ob.add(div, units);
+    this.afterOrbatChange();
+    this.toast(n < units.length
+      ? `${n} von ${units.length} Kompanien zur ${div.name} – die Division ist voll (${DIVISION_MAX})`
+      : `${n} Kompanien zur ${div.name}`);
+  },
+
+  removeFromDivision() {
+    const units = this.ownSelection().filter((u) => u.regiment);
+    if (!units.length) return;
+    this.game.orbat[this.human].remove(units);
+    this.afterOrbatChange();
+    this.toast(`${units.length} Kompanien ohne Division`);
+  },
+
+  autoOrganize() {
+    const made = this.game.orbat[this.human].autoOrganize(this.game.units);
+    this.afterOrbatChange();
+    const loose = this.game.units.filter((u) => u.owner === this.human && !u.regiment).length;
+    this.toast(`Auto-Gliederung: ${made.length} neue Divisionen` + (loose ? ` · ${loose} Kompanien bleiben ohne Division` : ''));
+  },
+
+  toggleRefill(id) {
+    const div = this.game.orbat[this.human].all(DIVISION).find((d) => d.id === id);
+    if (!div) return;
+    div.refill = !div.refill;
+    this.afterOrbatChange();
+    this.toast(div.refill ? `${div.name} wird mit neuen Kompanien aufgefüllt` : `${div.name}: Auffüllen aus`);
+  },
+
+  afterOrbatChange() {
+    this.game.hq.place();
+    this.divBarSig = null;
+    this.updateSelectionInfo();
+  },
+
+  // „Auffüllen“: neue Kompanie geht an die nächste Division mit freiem Platz und rückt
+  // zu ihr (oder an ihre Front) nach
+  refill(u) {
+    const ob = this.game.orbat[this.human];
+    const div = ob.refillFor(u);
+    if (!div) return false;
+    const mates = unitsOf(div).filter((o) => o !== u && this.game.units.includes(o));
+    ob.add(div, [u]);
+    const fronts = new Map();
+    for (const o of mates) if (o.front) fronts.set(o.front, (fronts.get(o.front) || 0) + 1);
+    const front = [...fronts].sort((a, b) => b[1] - a[1])[0];
+    if (front) this.fronts.add(front[0], [u]);
+    else if (mates.length) {
+      const cx = mates.reduce((a, o) => a + o.x, 0) / mates.length;
+      const cy = mates.reduce((a, o) => a + o.y, 0) / mates.length;
+      u.path = this.game.map.findPath(u.x, u.y, cx, cy) || [];
+    }
+    this.divBarSig = null;
+    return true;
+  },
+
   setSelectMode(on) {
     this.ui.selectMode = on;
     $('selectBtn').classList.toggle('active', on);
@@ -254,10 +330,19 @@ const app = {
 
   updateSelectionInfo() {
     const n = this.ui.selection.size;
-    $('selInfo').textContent = n ? `${n} ausgewählt` : '';
+    let info = n ? `${n} ausgewählt` : '';
+    if (n && this.game) {
+      const divs = new Set(this.ownSelection().map(divisionOf));
+      if (divs.size === 1) {
+        const div = [...divs][0];
+        info += div ? ` · ${div.name}` : ' · ohne Division';
+      }
+    }
+    $('selInfo').textContent = info;
     $('deselectBtn').hidden = !n;
     $('haltBtn').hidden = !n;
     if (this.fronts) this.updateFrontPanel();
+    if (this.game) this.updateDivBar();
   },
 
   toast(msg, kind = '') {
@@ -279,7 +364,7 @@ const app = {
       } else if (ev.type === 'hqRadio' && ev.owner === this.human && ev.text.includes('übernimmt')) {
         this.toast('📻 ' + ev.text);
       } else if (ev.type === 'spawn' && ev.unit.owner === this.human) {
-        this.fronts.onSpawn(ev.unit);
+        if (!this.refill(ev.unit)) this.fronts.onSpawn(ev.unit);
       }
       else if (ev.type === 'capture') {
         if (ev.owner === this.human) this.toast(ev.old ? 'Feindliche Stadt erobert!' : 'Neutrale Stadt eingenommen!', 'good');
@@ -308,25 +393,41 @@ const app = {
     $('end').hidden = false;
   },
 
-  // Divisionsleiste: je eigene Division eine Karte mit Symbol, Name, Stärke und Regimentern
+  // Divisionsleiste: Werkzeuge zur Gliederung, dann je eigene Division eine Karte mit
+  // Symbol, Name, Stärke und Regimentern
   updateDivBar() {
     const g = this.game;
     const bar = $('divBar');
     const divs = g.orbat[this.human].all(DIVISION)
       .map((f) => ({ f, units: unitsOf(f).filter((u) => g.units.includes(u)) }))
       .filter((d) => d.units.length);
+    const sel = this.ownSelection();
+    const selDivs = new Set(sel.map(divisionOf));
+    const single = selDivs.size === 1 ? [...selDivs][0] : null; // ganze Auswahl in einer Division
+    const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
+    const canAdd = (d) => strength(d.f) < DIVISION_MAX && sel.some((u) => divisionOf(u) !== d.f);
     const sig = divs.map((d) => d.f.id + ':' + d.units.length + ':' + Math.round(strengthOf(d.units) * 20) + ':' +
-      (d.units.some((u) => this.ui.selection.has(u)) ? 1 : 0)).join('|');
+      (d.units.some((u) => this.ui.selection.has(u)) ? 1 : 0) + (canAdd(d) ? 1 : 0) + (d.f.refill ? 1 : 0)).join('|') +
+      `#${sel.length}:${loose}:${single ? single.id : '-'}:${sel.some((u) => u.regiment) ? 1 : 0}`;
     if (sig === this.divBarSig) return;
     this.divBarSig = sig;
-    bar.innerHTML = divs.map((d) => {
+    const tools = [];
+    if (sel.length) tools.push('<button class="divtool" data-act="new" title="Neue Division aus der Auswahl (D)">＋ Neue Division</button>');
+    if (sel.some((u) => u.regiment)) tools.push('<button class="divtool" data-act="remove" title="Auswahl aus ihrer Division nehmen (Umschalt+D)">− Aus Division</button>');
+    if (single) {
+      tools.push(`<button class="divtool${single.refill ? ' active' : ''}" data-act="refill" data-id="${single.id}" ` +
+        `title="Neue Kompanien aus der nächsten Stadt füllen ${single.name} bis ${DIVISION_MAX} Kompanien auf">Auffüllen</button>`);
+    }
+    if (loose) tools.push(`<button class="divtool" data-act="auto" title="Kompanien ohne Division nach ihrer Lage zu Divisionen zusammenfassen">Auto-Gliederung (${loose})</button>`);
+    bar.innerHTML = tools.join('') + divs.map((d) => {
       const heavy = d.units.filter((u) => u.type === 'heavy').length / d.units.length;
       const regs = d.f.children.map((reg) => {
         const alive = reg.units.filter((u) => g.units.includes(u)).length;
         return natoIcon(reg.type === 'heavy' ? 1 : 0, 16, 11, alive ? 0.35 + 0.65 * alive / REGIMENT_MAX : 0.15, '', divisionColor(d.f));
       });
-      const sel = d.units.some((u) => this.ui.selection.has(u)) ? ' sel' : '';
-      return `<button class="divcard${sel}" data-id="${d.f.id}" title="${d.f.name}: ${d.units.length} Kompanien">` +
+      const chosen = d.units.some((u) => this.ui.selection.has(u)) ? ' sel' : '';
+      const add = canAdd(d) ? `<span class="add" data-act="add" data-id="${d.f.id}" title="Auswahl zur ${d.f.name} hinzufügen">＋</span>` : '';
+      return `<button class="divcard${chosen}${d.f.refill ? ' refill' : ''}" data-id="${d.f.id}" title="${d.f.name}: ${d.units.length} Kompanien">${add}` +
         `<span class="sym">${natoIcon(heavy, 26, 18, 1, 'XX', divisionColor(d.f))}</span>` +
         `<span class="name">${d.f.name}</span>` +
         `<span class="str"><i style="width:${Math.round(strengthOf(d.units) * 100)}%"></i></span>` +
@@ -454,6 +555,17 @@ $('resumeBtn').onclick = () => { $('menu').hidden = true; if (app.paused) app.to
 $('selectBtn').onclick = () => app.setSelectMode(!app.ui.selectMode);
 $('allBtn').onclick = () => app.selectAll();
 $('divBar').onclick = (e) => {
+  const tool = e.target.closest('[data-act]');
+  if (tool) {
+    const id = +tool.dataset.id;
+    const act = tool.dataset.act;
+    if (act === 'new') app.newDivision();
+    else if (act === 'remove') app.removeFromDivision();
+    else if (act === 'add') app.addToDivision(id);
+    else if (act === 'refill') app.toggleRefill(id);
+    else if (act === 'auto') app.autoOrganize();
+    return;
+  }
   const card = e.target.closest('.divcard');
   if (card) app.selectDivision(+card.dataset.id);
 };

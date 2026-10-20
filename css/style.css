@@ -294,6 +294,33 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   text-align: left;
 }
 .divcard.sel { border-color: #fff; box-shadow: 0 0 0 1px #fff inset; }
+.divcard { position: relative; }
+.divcard.refill { border-left: 4px solid var(--good); } /* Auffüllen eingeschaltet */
+.divcard .add {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+}
+.divtool {
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 4px 10px;
+  background: var(--panel);
+  border-radius: 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.divtool.active { background: var(--good); border-color: var(--good); color: #10241a; }
 .divcard .sym { grid-row: 1 / span 2; }
 .divcard .name { font-weight: 700; white-space: nowrap; }
 .divcard .str { display: block; height: 3px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }

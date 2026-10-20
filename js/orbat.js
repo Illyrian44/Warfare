@@ -48,7 +48,7 @@ export class OrderOfBattle {
     const n = this.freeNumber(this.divisions);
     const div = {
       id: ++OrderOfBattle.nextId, level: DIVISION, owner: this.owner, parent: null, children: [],
-      number: n, colorIndex: n - 1, name: `${n}. Div.`,
+      number: n, colorIndex: n - 1, name: `${n}. Div.`, refill: false,
     };
     this.divisions.push(div);
     this.divisions.sort((a, b) => a.number - b.number);
@@ -195,6 +195,18 @@ export class OrderOfBattle {
       made.push(this.createDivision(group));
     }
     return made;
+  }
+
+  // „Auffüllen“: nächstgelegene Division mit eingeschaltetem Auffüllen und freiem Platz
+  refillFor(u) {
+    let best = null, bd = Infinity;
+    for (const div of this.divisions) {
+      if (!div.refill || strength(div) >= DIVISION_MAX) continue;
+      const c = centerOf(div);
+      const d = c ? Math.hypot(c.x - u.x, c.y - u.y) : Infinity;
+      if (d < bd) { bd = d; best = div; }
+    }
+    return best;
   }
 
   nearestWithSpace(p, maxDist) {
