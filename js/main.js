@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=57';
-import { Game } from './game.js?v=57';
-import { AI } from './ai.js?v=57';
-import { Renderer, isFrontShown } from './render.js?v=57';
-import { Input } from './input.js?v=57';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=57';
-import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=57';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=57';
+import { generateMap } from './map.js?v=62';
+import { Game } from './game.js?v=62';
+import { AI } from './ai.js?v=62';
+import { Renderer, isFrontShown } from './render.js?v=62';
+import { Input } from './input.js?v=62';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=62';
+import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=62';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY } from './config.js?v=62';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -16,7 +16,7 @@ const app = {
   renderer: null,
   human: 1,
   cam: { x: 0, y: 0, zoom: 1, min: 0.2, max: 6 },
-  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null, showFronts: false },
+  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null, showFronts: false, showSupply: false },
   paused: false,
   speed: 1,
   settings: loadSettings(),
@@ -45,6 +45,8 @@ const app = {
     this.ui.revealAll = false;
     this.ui.showFronts = false;
     $('showFrontsBtn').classList.remove('active');
+    this.ui.showSupply = false;
+    $('supplyBtn').classList.remove('active');
     this.paused = false;
     this.setSpeed(1);
     this.current = { seed, size, difficulty };
@@ -211,6 +213,12 @@ const app = {
   selectFront(f) {
     this.ui.front = f;
     this.updateFrontPanel();
+  },
+
+  // Kartenebene „Nachschub“ ein- oder ausblenden
+  toggleSupply() {
+    this.ui.showSupply = !this.ui.showSupply;
+    $('supplyBtn').classList.toggle('active', this.ui.showSupply);
   },
 
   // Alle eigenen Fronten ein- oder ausblenden
@@ -462,7 +470,9 @@ const app = {
     const single = selDivs.size === 1 ? [...selDivs][0] : null; // ganze Auswahl in einer Division
     const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
     const canAdd = (d) => strength(d.f) < DIVISION_MAX && sel.some((u) => divisionOf(u) !== d.f);
-    const sig = divs.map((d) => d.f.id + ':' + d.units.length + ':' + Math.round(strengthOf(d.units) * 20) + ':' +
+    const supplyOf = (units) => units.reduce((s, u) => s + u.supply, 0) / units.length;
+    const orgOf = (units) => units.reduce((s, u) => s + u.org, 0) / units.reduce((s, u) => s + u.maxOrg, 0);
+    const sig = divs.map((d) => d.f.id + ':' + d.units.length + ':' + Math.round(strengthOf(d.units) * 20) + ':' + Math.round(supplyOf(d.units) * 20) + ':' + Math.round(orgOf(d.units) * 20) + ':' +
       (d.units.some((u) => this.ui.selection.has(u)) ? 1 : 0) + (canAdd(d) ? 1 : 0) + (d.f.refill ? 1 : 0) + (d.f.front ? 1 : 0)).join('|') +
       `#${sel.length}:${loose}:${single ? single.id : '-'}:${sel.some((u) => u.regiment) ? 1 : 0}`;
     if (sig === this.divBarSig) return;
@@ -486,7 +496,9 @@ const app = {
       return `<button class="divcard${chosen}${d.f.refill ? ' refill' : ''}${add ? ' can-add' : ''}" data-id="${d.f.id}" title="${d.f.name}: ${d.units.length} Kompanien">${add}` +
         `<span class="sym">${natoIcon(heavy, 26, 18, 1, 'XX', divisionColor(d.f))}</span>` +
         `<span class="name">${d.f.name}${d.f.front ? ' <span class="fr" title="hält eine Front">〰</span>' : ''}</span>` +
-        `<span class="str"><i style="width:${Math.round(strengthOf(d.units) * 100)}%"></i></span>` +
+        `<span class="str" title="Stärke"><i style="width:${Math.round(strengthOf(d.units) * 100)}%"></i></span>` +
+        `<span class="org" title="Organisation ${Math.round(orgOf(d.units) * 100)} %"><i style="width:${Math.round(orgOf(d.units) * 100)}%"></i></span>` +
+        `<span class="sup${supplyOf(d.units) < SUPPLY.warnBelow ? ' low' : ''}" title="Nachschub ${Math.round(supplyOf(d.units) * 100)} %"><i style="width:${Math.round(supplyOf(d.units) * 100)}%"></i></span>` +
         `<span class="regs">${regs.join('')}</span></button>`;
     }).join('');
   },
@@ -629,6 +641,7 @@ $('divBar').onclick = (e) => {
 };
 $('frontBtn').onclick = () => app.toggleFrontMode();
 $('showFrontsBtn').onclick = () => app.toggleShowFronts();
+$('supplyBtn').onclick = () => app.toggleSupply();
 $('borderBtn').onclick = () => app.borderFront();
 $('planBtn').onclick = () => app.setFrontMode({ plan: app.ui.front });
 $('attackBtn').onclick = () => {

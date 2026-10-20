@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=57';
-import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=57';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=62';
+import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=62';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -30,6 +30,7 @@ export class FrontManager {
     this.codename = owner === 1 ? 0 : 7;
     // Löst sich eine Division auf, verschwindet ihre Front sofort
     game.orbat[owner].onDissolve.push((div) => { if (this.fronts.includes(div.front)) this.remove(div.front); });
+    this.key({ x: 0, y: 0 }); // Achse aus der Startaufstellung festlegen (siehe key())
   }
 
   // Front einer Division anlegen oder ihre bestehende Front neu ausrichten
@@ -54,11 +55,13 @@ export class FrontManager {
     return f;
   }
 
-  // Grenzlinien höchstens alle 0,5 s neu berechnen; alle Abschnitte teilen sie sich
+  // Grenzlinien je festem Zeitfenster von 0,5 s einmal berechnen; alle Abschnitte teilen sie
+  // sich. Feste Fenster statt „0,5 s nach der letzten Abfrage“: so ändert eine zusätzliche
+  // Abfrage (Anzeige, Test) nichts am Spielverlauf
   border() {
-    const g = this.game;
-    if (!this.borderCache || g.time - this.borderCache.time >= 0.5) {
-      this.borderCache = { time: g.time, chains: this.borderChains(), segs: null };
+    const slot = Math.floor(this.game.time / 0.5);
+    if (!this.borderCache || this.borderCache.slot !== slot) {
+      this.borderCache = { slot, chains: this.borderChains(), segs: null };
     }
     return this.borderCache.chains;
   }
@@ -67,7 +70,7 @@ export class FrontManager {
   // werden über ihre Lage auf dieser Achse abgegrenzt: der Wert eines Ankerpunkts bleibt fest,
   // auch wenn die Grenze zerfällt oder ihre Teilstücke die Reihenfolge wechseln. Benachbarte
   // Abschnitte teilen sich einen Ankerpunkt und damit genau einen Wert: keine Lücke, keine
-  // Überlappung.
+  // Überlappung. Die Achse entsteht einmal aus der Startaufstellung der Städte.
   key(p) {
     if (!this.axis) {
       const g = this.game;
@@ -277,7 +280,8 @@ export class FrontManager {
   uncovered() {
     const g = this.game;
     const sig = this.fronts.map((f) => f.id + f.kind + (f.anchors ? f.anchors.map((a) => (a ? a.x : '-')).join() : '')).join('|');
-    if (this.gapCache && g.time - this.gapCache.time < 0.5 && this.gapCache.sig === sig) return this.gapCache.parts;
+    const slot = Math.floor(g.time / 0.5);
+    if (this.gapCache && this.gapCache.slot === slot && this.gapCache.sig === sig) return this.gapCache.parts;
     const chains = this.border();
     const parts = [];
     if (chains.length) {
@@ -291,7 +295,7 @@ export class FrontManager {
       }
       if (this.lenBelow(kmax) - this.lenBelow(k) > MIN_SECTION) parts.push(...sliceByKey(chains, key, k, kmax));
     }
-    this.gapCache = { time: g.time, sig, parts };
+    this.gapCache = { slot, sig, parts };
     return parts;
   }
 
@@ -404,7 +408,8 @@ export class FrontManager {
   // Wird höchstens alle 0,5 s neu berechnet.
   safeRouting() {
     const g = this.game;
-    if (this.routing && g.time - this.routing.time < 0.5) return this.routing.opts;
+    const slot = Math.floor(g.time / 0.5);
+    if (this.routing && this.routing.slot === slot) return this.routing.opts;
     const { w, h } = g.map;
     const danger = this.danger || (this.danger = new Uint8Array(w * h));
     danger.fill(0);
@@ -428,11 +433,12 @@ export class FrontManager {
         return !danger[i] && tr[i] === me;
       },
     };
-    this.routing = { time: g.time, opts };
+    this.routing = { slot, opts };
     return opts;
   }
 
   update(dt) {
+    this.border(); // Grenzlinie zu festem Zeitpunkt im Durchgang auffrischen (siehe border())
     this.timer -= dt;
     if (this.timer > 0) return;
     this.timer = REFRESH;
@@ -493,7 +499,7 @@ export class FrontManager {
         }
       }
       if (u.rotating && (frac >= RETURN_AT || !f.rotate)) u.rotating = false;
-      if (!u.rotating) active.push(u);
+      if (!u.rotating && !u.broken) active.push(u); // Zerschlagene kehren erst erholt zurück
     }
 
     // Divisionsabschnitte: jede Division bekommt einen zusammenhängenden Abschnitt der

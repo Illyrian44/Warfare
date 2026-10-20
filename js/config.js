@@ -2,6 +2,13 @@
 
 export const CELL = 10; // Weltgröße einer Gitterzelle
 
+// Maßstab: 1 Zelle = 1 km (1 Welteinheit = 100 m); Zeitraffer bei Tempo 1×:
+// 1 Spielsekunde = 6 Minuten. Die mittlere Insel misst damit 160 × 96 km.
+export const KM = CELL;              // Welteinheiten je Kilometer
+export const HOURS_PER_SECOND = 0.1; // Spielstunden je Spielsekunde
+// km/h -> Welteinheiten je Spielsekunde
+export const kmh = (v) => v * KM * HOURS_PER_SECOND;
+
 export const T = { DEEP: 0, WATER: 1, PLAINS: 2, FOREST: 3, HILL: 4, MOUNTAIN: 5 };
 
 export const TERRAIN_INFO = [
@@ -13,16 +20,31 @@ export const TERRAIN_INFO = [
   { name: 'Gebirge', speed: 0, attack: 0, vision: 1, passable: false },
 ];
 
+// speed: Marschtempo auf offener Ebene (Straße ×1,6, Gelände bremst, siehe TERRAIN_INFO)
 // terrainAttack: zusätzlicher Faktor je Gelände (Index wie T)
 export const UNIT_TYPES = {
   light: {
-    name: 'Leicht', hp: 100, speed: 22, dps: 6, radius: 5, buildTime: 15,
+    name: 'Leicht', hp: 100, speed: kmh(10), dps: 6, radius: 5, buildTime: 15,
     terrainAttack: [0, 1, 1, 1, 1, 0], strength: 1,
   },
   heavy: {
-    name: 'Schwer', hp: 165, speed: 14, dps: 10, radius: 7, buildTime: 26,
+    name: 'Schwer', hp: 165, speed: kmh(18), dps: 10, radius: 7, buildTime: 26,
     terrainAttack: [0, 0.7, 1.25, 0.7, 0.85, 0], strength: 1.7,
   },
+};
+
+// Organisation wie in HOI4: Kampfbereitschaft einer Kompanie. Schaden trifft sie stärker
+// als die Lebenspunkte; bei 0 ist die Kompanie zerschlagen, zieht sich zurück und kämpft
+// nicht, bis sie wieder returnAt erreicht hat. Erholung nur außerhalb des Gefechts.
+export const ORG = {
+  max: { light: 60, heavy: 35 },  // Infanterie hält länger durch, Panzer brechen schneller ein
+  damage: 2,                      // Organisationsverlust relativ zum Lebenspunkteverlust
+  hpShare: 0.6,                   // Anteil des Schadens, der Lebenspunkte kostet
+  recoverPerHour: 0.15,           // Erholung je Stunde (Anteil des Maximums) bei vollem Nachschub
+  march: 0.5,                     // beim Marschieren nur halb so schnell
+  starvePerHour: 0.05,            // ohne Nachschub (Vorrat unter 15 %) sinkt sie so schnell
+  returnAt: 0.5,                  // zerschlagene Kompanien sind ab hier wieder einsatzbereit
+  retreatKm: 6,                   // so weit ziehen sie sich vom Feind zurück
 };
 
 export const ATTACK_RANGE = 24;        // plus beide Radien
@@ -35,8 +57,30 @@ export const CITY_CAPTURE_RADIUS = 20;
 export const CAPTURE_TIME = 4;         // Sekunden
 export const UNITS_PER_CITY = 10;
 
-export const SUPPLY_FULL = 200;        // volle Versorgung bis zu dieser Distanz
-export const SUPPLY_NONE = 900;        // keine Versorgung ab dieser Distanz
+// Versorgung: jede eigene Stadt ist ein Depot und beliefert die Kompanien, die sie über
+// eigenes Gebiet am schnellsten erreicht. LKW fahren auf Straßen schnell; Feindgebiet
+// sperrt, Feindnähe bremst. Mengen in Grundlasten (1 = voller Vorrat einer Kompanie).
+export const SUPPLY = {
+  roadKmh: 50,                       // LKW auf Straßen und Brücken
+  truckKmh: [0, 4, 20, 12, 10, 0],   // LKW abseits von Straßen, je Gelände (Index wie T)
+  fullHours: 3,                      // bis zu dieser Fahrzeit kommt alles an
+  noneHours: 8,                      // ab dieser Fahrzeit kommt nichts mehr an
+  enemyKm: 2,                        // in diesem Umkreis um Feinde ...
+  enemySlow: 4,                      // ... dauert der Transport so viel länger
+  reach: 3,                          // Zellen: Kompanien am Rand des eigenen Gebiets nutzen das nächste erreichbare Feld
+  usePerHour: 1 / 6,                 // Verbrauch je Stunde (ein voller Vorrat reicht 6 h)
+  combatUse: 2,                      // im Gefecht doppelt so viel
+  refillPerHour: 0.5,                // so schnell wird ein leerer Vorrat höchstens aufgefüllt
+  demand: { light: 1, heavy: 1.5 },  // Panzer brauchen zusätzlich Treibstoff
+  depotPerHour: UNITS_PER_CITY / 6 * 1.25, // Lieferleistung je Stadt (Grundlasten je Stunde)
+  interval: 2,                       // Sekunden zwischen Neuberechnungen des Netzes je Seite
+  tick: 0.5,                         // Sekunden zwischen zwei Lieferungen
+  convoys: false,                    // vorbereitet: LKW-Kolonnen statt Sofortlieferung (noch nicht eingebaut)
+  combatMin: 0.5,                    // Kampfkraft mit leerem Vorrat (volle ab halbem Vorrat)
+  fuelLow: 0.3,                      // darunter fehlt Panzern der Treibstoff ...
+  fuelMinSpeed: 0.35,                // ... und sie fahren mit leerem Tank nur noch so schnell
+  warnBelow: 0.35,                   // Warnzeichen am Symbol
+};
 
 export const DIVISION_ROTATE = 0.25; // darunter tauscht eine Kompanie mit einer frischen
 export const ROAD_SPEED = 1.6;   // Tempo auf Straßen (Ebene = 1)

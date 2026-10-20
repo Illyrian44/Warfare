@@ -1,5 +1,5 @@
-import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=57';
-import { mulberry32, makeNoise, fbm } from './rng.js?v=57';
+import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=62';
+import { mulberry32, makeNoise, fbm } from './rng.js?v=62';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -236,7 +236,7 @@ export class GameMap {
   }
 }
 
-class MinHeap {
+export class MinHeap {
   constructor() { this.items = []; this.prio = []; }
   get size() { return this.items.length; }
   clear() { this.items.length = 0; this.prio.length = 0; }

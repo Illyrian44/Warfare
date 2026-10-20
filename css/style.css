@@ -282,7 +282,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto auto;
+  grid-template-rows: auto auto auto auto auto;
   column-gap: 6px;
   align-items: center;
   min-width: 112px;
@@ -322,11 +322,16 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   white-space: nowrap;
 }
 .divtool.active { background: var(--good); border-color: var(--good); color: #10241a; }
-.divcard .sym { grid-row: 1 / span 2; }
+.divcard .sym { grid-row: 1 / span 4; }
 .divcard .name { font-weight: 700; white-space: nowrap; }
 .divcard .fr { font-weight: 400; color: var(--accent); }
 .divcard .str { display: block; height: 3px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
 .divcard .str i { display: block; height: 100%; background: var(--good); }
+.divcard .org { grid-column: 2; display: block; height: 3px; margin-top: 2px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
+.divcard .org i { display: block; height: 100%; background: #5ab4ff; }
+.divcard .sup { grid-column: 2; display: block; height: 3px; margin-top: 2px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
+.divcard .sup i { display: block; height: 100%; background: #e0a43a; }
+.divcard .sup.low i { background: var(--bad); }
 .divcard .regs { grid-column: 1 / span 2; display: flex; gap: 2px; margin-top: 3px; }
 .divcard .regs svg { display: block; }
 

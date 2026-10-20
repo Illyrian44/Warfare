@@ -19,8 +19,21 @@ let failed = 0;
 const fail = (msg) => { failed++; console.error('  FEHLER: ' + msg); };
 
 const overlapSince = new Map();
+const brokenStuck = new Map(); // zerschlagene Kompanien, die ohne Rückzugsweg im Gefecht stehen
 
 function checkState(g, label, ais) {
+  // Versorgung: Vorrat und Lieferquote im gültigen Bereich
+  for (const u of g.units) {
+    if (!(u.supply >= 0 && u.supply <= 1)) fail(`${label}: Kompanie ${u.id} hat Vorrat ${u.supply}`);
+    if (!(u.supplyEff >= 0 && u.supplyEff <= 1)) fail(`${label}: Kompanie ${u.id} hat Lieferquote ${u.supplyEff}`);
+    if (!(u.org >= 0 && u.org <= u.maxOrg)) fail(`${label}: Kompanie ${u.id} hat Organisation ${u.org}`);
+    if (u.broken && u.org >= u.maxOrg * 0.5) fail(`${label}: Kompanie ${u.id} ist zerschlagen trotz Organisation ${u.org.toFixed(1)}`);
+    // (ausgenommen: eingeschlossen in der letzten eigenen Stadt, es gibt keinen Rückzugsort)
+    const trapped = g.cities.filter((c) => c.owner === u.owner).length <= 1;
+    if (u.broken && u.path.length === 0 && u.target && !trapped) brokenStuck.set(u, (brokenStuck.get(u) || 0) + 1);
+    else brokenStuck.delete(u);
+    if (brokenStuck.get(u) === 6) fail(`${label}: zerschlagene Kompanie ${u.id} steht seit 5 s ohne Rückzugsweg im Gefecht`);
+  }
   // Keine Einheit dauerhaft auf unbegehbarem Gelände
   for (const u of g.units) {
     const t = g.map.cellTerrainAt(u.x, u.y);
@@ -91,9 +104,8 @@ for (const [seed, size] of CASES) {
     while (!g.winner && g.time < MAX_TIME) {
       const t = performance.now();
       for (const ai of ais) ai.update(STEP);
-      g.step(STEP);
-      g.events.length = 0;
-      worst = Math.max(worst, performance.now() - t);
+      // Prüfen zwischen KI und Spielschritt: dann sind alle Zwischenspeicher dieses Schritts
+      // schon berechnet, und die Prüfung verändert den Spielverlauf nicht
       if (++steps % 30 === 0) {
         checkState(g, label, ais);
         maxDivs = Math.max(maxDivs, g.orbat[1].all(DIVISION).length + g.orbat[2].all(DIVISION).length);
@@ -103,6 +115,9 @@ for (const [seed, size] of CASES) {
           if (ais[p - 1].fronts.fronts.some((f) => f.attack)) attacks[p]++;
         }
       }
+      g.step(STEP);
+      g.events.length = 0;
+      worst = Math.max(worst, performance.now() - t);
     }
     if (!g.winner) fail(`${label}: nach ${MAX_TIME / 60} Minuten Spielzeit noch kein Sieger`);
     // Die KI bildet Divisionen für ihre Fronten und behält eine Reserve ohne Division

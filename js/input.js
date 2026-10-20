@@ -1,4 +1,4 @@
-import { CITY_RADIUS } from './config.js?v=57';
+import { CITY_RADIUS } from './config.js?v=62';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -227,6 +227,7 @@ export class Input {
     } else if (k === 'f') app.toggleFrontMode();
     else if (k === 'g') app.borderFront();
     else if (k === 'v') app.toggleShowFronts();
+    else if (k === 'n') app.toggleSupply();
     else if (k === 'd') {
       if (e.shiftKey) app.removeFromDivision();
       else app.newDivision();
