@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=55';
-import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=55';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=56';
+import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=56';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -7,7 +7,7 @@ const ROTATE_AT = 0.35;     // Verwundete ziehen sich darunter zurück
 const ROTATE_AT_ATTACK = 0.2; // während eines Angriffs erst später
 const RETURN_AT = 0.9;      // und kehren ab hier zurück
 const CODENAMES = ['ADLER', 'FALKE', 'WOLF', 'LUCHS', 'BÄR', 'HABICHT', 'KRANICH', 'ELCH', 'DACHS', 'MARDER', 'BUSSARD', 'STIER'];
-const PATH_BUDGET = 4;      // A*-Suchen pro Neuberechnung
+const PATH_BUDGET = 2;      // A*-Suchen je Durchgang, für alle Fronten einer Seite zusammen
 const DANGER_RADIUS = 45;   // so viel Abstand halten Verschiebungen zu Feinden
 const SNAP_DIST = 60;       // so nah an der Grenze rastet eine gezeichnete Linie ein
 const NEIGHBOR_DIST = 70;   // Fronten, deren Enden so nah beieinander liegen, sind Nachbarn
@@ -17,13 +17,14 @@ const MIN_SECTION = 30;     // kürzere Reste eines Grenzabschnitts zählen nich
 // Kompanien verteilen sich gleichmäßig auf der Linie und halten sie selbstständig.
 // Arten: 'line' (frei gezeichnet), 'border' (ganze Grenze) und 'segment' (Grenzabschnitt
 // zwischen zwei Ankerpunkten; null = bis zum Ende der Grenze). Abschnitte wandern mit
-// der Grenze, benachbarte teilen sich ihre Ankerpunkte.
+// der Grenze, benachbarte teilen sich ihre Ankerpunkte (siehe key()).
 export class FrontManager {
   constructor(game, owner) {
     this.game = game;
     this.owner = owner;
     this.fronts = [];
     this.timer = owner === 1 ? 0 : REFRESH / 2; // Spieler versetzt rechnen
+    this.pathBudget = PATH_BUDGET;
     this.nextId = 1;
     this.events = [];
     this.codename = owner === 1 ? 0 : 7;
@@ -47,7 +48,7 @@ export class FrontManager {
     f.attack = null;
     f.plan = null;
     this.rejoin(f);
-    this.refresh(f, true);
+    this.prepare(f);
     if (claim && kind !== 'line') this.claim(f);
     this.updateNeighbors();
     return f;
@@ -57,34 +58,107 @@ export class FrontManager {
   border() {
     const g = this.game;
     if (!this.borderCache || g.time - this.borderCache.time >= 0.5) {
-      this.borderCache = { time: g.time, chains: this.borderChains() };
+      this.borderCache = { time: g.time, chains: this.borderChains(), segs: null };
     }
     return this.borderCache.chains;
   }
 
-  // Ankerpunkte in Richtung der Grenzlinie ordnen (vorderer zuerst)
+  // Achse quer zur Stoßrichtung (von den eigenen zu den feindlichen Städten). Grenzabschnitte
+  // werden über ihre Lage auf dieser Achse abgegrenzt: der Wert eines Ankerpunkts bleibt fest,
+  // auch wenn die Grenze zerfällt oder ihre Teilstücke die Reihenfolge wechseln. Benachbarte
+  // Abschnitte teilen sich einen Ankerpunkt und damit genau einen Wert: keine Lücke, keine
+  // Überlappung.
+  key(p) {
+    if (!this.axis) {
+      const g = this.game;
+      const mid = (list) => (list.length
+        ? { x: list.reduce((a, c) => a + c.x, 0) / list.length, y: list.reduce((a, c) => a + c.y, 0) / list.length }
+        : null);
+      const a = mid(g.cities.filter((c) => c.owner === this.owner));
+      const b = mid(g.cities.filter((c) => c.owner === 3 - this.owner));
+      const dx = a && b ? b.x - a.x : 1, dy = a && b ? b.y - a.y : 0;
+      const l = Math.hypot(dx, dy) || 1;
+      this.axis = { x: -dy / l, y: dx / l };
+      if (this.axis.y < 0 || (this.axis.y === 0 && this.axis.x < 0)) { this.axis.x *= -1; this.axis.y *= -1; }
+    }
+    return p.x * this.axis.x + p.y * this.axis.y;
+  }
+
+  // Teilstücke der Grenze mit ihren Achsenwerten (zum Messen von Längen)
+  borderSegs() {
+    this.border();
+    const bc = this.borderCache;
+    if (!bc.segs) {
+      bc.segs = [];
+      bc.kmin = Infinity;
+      bc.kmax = -Infinity;
+      for (const c of bc.chains) {
+        for (let i = 1; i < c.length; i++) {
+          const ka = this.key(c[i - 1]), kb = this.key(c[i]);
+          bc.segs.push({ a: c[i - 1], b: c[i], lo: Math.min(ka, kb), hi: Math.max(ka, kb), ka, kb,
+            len: Math.hypot(c[i].x - c[i - 1].x, c[i].y - c[i - 1].y) });
+          bc.kmin = Math.min(bc.kmin, ka, kb);
+          bc.kmax = Math.max(bc.kmax, ka, kb);
+        }
+      }
+    }
+    return bc;
+  }
+
+  // Grenzlänge mit Achsenwert unter k
+  lenBelow(k) {
+    let L = 0;
+    for (const s of this.borderSegs().segs) {
+      if (k >= s.hi) L += s.len;
+      else if (k > s.lo) L += s.len * (k - s.lo) / (s.hi - s.lo);
+    }
+    return L;
+  }
+
+  // Achsenwert, unter dem die Grenzlänge L liegt
+  keyAtLen(L) {
+    const { kmin, kmax } = this.borderSegs();
+    let lo = kmin, hi = kmax;
+    for (let i = 0; i < 30; i++) {
+      const mid = (lo + hi) / 2;
+      if (this.lenBelow(mid) < L) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
+  // Ein Punkt der Grenze mit dem Achsenwert k (als neuer Ankerpunkt)
+  anchorAt(k) {
+    for (const s of this.borderSegs().segs) {
+      if (k < s.lo || k > s.hi) continue;
+      const t = s.kb === s.ka ? 0 : (k - s.ka) / (s.kb - s.ka);
+      return { x: s.a.x + (s.b.x - s.a.x) * t, y: s.a.y + (s.b.y - s.a.y) * t };
+    }
+    return { x: this.axis.x * k, y: this.axis.y * k };
+  }
+
+  // Ankerpunkte entlang der Achse ordnen (vorderer zuerst)
   orderAnchors(anchors) {
     const [a, b] = anchors;
     if (!a || !b) return [a || null, b || null];
-    const chains = this.border();
-    return projectOnChains(chains, a) <= projectOnChains(chains, b) ? [a, b] : [b, a];
+    return this.key(a) <= this.key(b) ? [a, b] : [b, a];
   }
 
-  // Bereich einer Grenzfront auf der Grenzlinie (Bogenlängen) und die Gesamtlänge
-  rangeOf(f, chains = this.border()) {
-    const total = chains.reduce((s, c) => s + chainLength(c), 0);
+  // Bereich einer Grenzfront als Achsenwerte, begrenzt auf die heutige Grenze
+  // (null-Anker = bis zum Ende der Grenze)
+  rangeOf(f) {
+    const { kmin, kmax } = this.borderSegs();
     const [a, b] = f.kind === 'segment' && f.anchors ? f.anchors : [null, null];
-    let t0 = a ? projectOnChains(chains, a) : 0, t1 = b ? projectOnChains(chains, b) : total;
-    if (t0 > t1) [t0, t1] = [t1, t0];
-    return [t0, t1, total];
+    const k0 = a ? Math.min(kmax, Math.max(kmin, this.key(a))) : kmin;
+    const k1 = b ? Math.min(kmax, Math.max(kmin, this.key(b))) : kmax;
+    return [k0, Math.max(k0, k1)];
   }
 
   chainsFor(f) {
     if (f.kind === 'line') return [withNormals(f.line, (p, n) => this.facing(p, n))];
     const chains = this.border();
     if (f.kind === 'border') return chains;
-    const [t0, t1] = this.rangeOf(f, chains);
-    return sliceChains(chains, t0, t1);
+    const [a, b] = f.anchors;
+    return sliceByKey(chains, (p) => this.key(p), a ? this.key(a) : -Infinity, b ? this.key(b) : Infinity);
   }
 
   // Liegt eine gezeichnete Linie an der Grenze, wird sie zum Grenzabschnitt zwischen
@@ -108,28 +182,27 @@ export class FrontManager {
   // Abschnitt mitten in einem alten, behält dieser die längere Seite; das kürzere Reststück
   // übernimmt der Nachbar, der dort angrenzt (er teilt sich den Ankerpunkt)
   claim(f) {
-    const chains = this.border();
-    if (!chains.length) return;
-    // Enden, die fast auf dem Ankerpunkt eines anderen Abschnitts liegen, übernehmen ihn,
-    // damit beide auch beim Wandern der Grenze lückenlos aneinanderstoßen
+    if (!this.border().length) return;
+    // Enden, die fast auf dem Ankerpunkt eines anderen Abschnitts liegen, übernehmen ihn
     if (f.kind === 'segment') {
       f.anchors = f.anchors.map((a) => {
         if (!a) return a;
-        const ta = projectOnChains(chains, a);
+        const la = this.lenBelow(this.key(a));
         for (const o of this.fronts) {
           if (o === f || o.kind !== 'segment') continue;
-          for (const b of o.anchors) if (b && Math.abs(projectOnChains(chains, b) - ta) < MIN_SECTION) return b;
+          for (const b of o.anchors) if (b && Math.abs(this.lenBelow(this.key(b)) - la) < MIN_SECTION) return b;
         }
         return a;
       });
     }
-    const [a0, a1] = this.rangeOf(f, chains);
+    const [a0, a1] = this.rangeOf(f);
     const [fa, fb] = f.kind === 'segment' ? f.anchors : [null, null];
     for (const o of [...this.fronts]) {
       if (o === f || o.kind === 'line' || o.attack) continue;
-      const [b0, b1] = this.rangeOf(o, chains);
-      if (b1 <= a0 + 1 || b0 >= a1 - 1) continue; // keine Überschneidung
-      const left = a0 - b0, right = b1 - a1;       // was links bzw. rechts übrig bliebe
+      const [b0, b1] = this.rangeOf(o);
+      if (b1 <= a0 || b0 >= a1) continue; // keine Überschneidung
+      // was links bzw. rechts vom neuen Abschnitt übrig bliebe (als Grenzlänge)
+      const left = this.lenBelow(a0) - this.lenBelow(b0), right = this.lenBelow(b1) - this.lenBelow(a1);
       if (left < MIN_SECTION && right < MIN_SECTION) {
         this.events.push({ type: 'frontLost', division: o.division });
         this.remove(o);
@@ -145,28 +218,27 @@ export class FrontManager {
         for (const n of this.fronts) {
           if (n === o || n === f || n.kind !== 'segment') continue;
           const i = n.anchors.indexOf(lost);
-          if (i >= 0) { n.anchors[i] = now; this.refresh(n, true); }
+          if (i >= 0) { n.anchors[i] = now; this.prepare(n); }
         }
       }
-      this.refresh(o, true);
+      this.prepare(o);
     }
   }
 
   // Mehrere Divisionen teilen sich die Grenze (oder einen Abschnitt davon): aneinander-
   // liegende Abschnitte, Länge nach Stärke, Reihenfolge nach ihrer Lage an der Grenze
   splitBorder(divs, anchors = [null, null]) {
-    const chains = this.border();
-    if (!chains.length) return [];
-    const range = { kind: 'segment', anchors: this.orderAnchors(anchors) };
-    const [t0, t1] = this.rangeOf(range, chains);
-    const order = this.byPosition(divs, chains);
+    if (!this.border().length) return [];
+    const range = this.orderAnchors(anchors);
+    const [k0, k1] = this.rangeOf({ kind: 'segment', anchors: range });
+    const L0 = this.lenBelow(k0), L1 = this.lenBelow(k1);
+    const order = this.byPosition(divs, (c) => this.key(c));
     const sum = order.reduce((s, o) => s + o.s, 0) || 1;
     const made = [];
-    let acc = t0, prev = range.anchors[0];
+    let acc = L0, prev = range[0];
     order.forEach((o, k) => {
-      acc += (t1 - t0) * o.s / sum;
-      const p = k === order.length - 1 ? range.anchors[1] : pointAt(chains, acc);
-      const next = p && { x: p.x, y: p.y };
+      acc += (L1 - L0) * o.s / sum;
+      const next = k === order.length - 1 ? range[1] : this.anchorAt(this.keyAtLen(acc));
       made.push(this.assign(o.d, 'segment', null, [prev, next], false));
       prev = next;
     });
@@ -180,7 +252,7 @@ export class FrontManager {
   splitLine(divs, line) {
     const chains = [line];
     const total = chainLength(line);
-    const order = this.byPosition(divs, chains);
+    const order = this.byPosition(divs, (c) => projectOnChains(chains, c));
     const sum = order.reduce((s, o) => s + o.s, 0) || 1;
     let acc = 0;
     return order.map((o) => {
@@ -191,12 +263,12 @@ export class FrontManager {
     });
   }
 
-  // Divisionen nach ihrer Lage entlang der Linie ordnen, mit ihrer Stärke
-  byPosition(divs, chains) {
+  // Divisionen nach ihrer Lage (pos des Schwerpunkts) ordnen, mit ihrer Stärke
+  byPosition(divs, pos) {
     return divs.map((d) => {
       const c = centerOf(d);
       const s = unitsOf(d).reduce((a, u) => a + UNIT_TYPES[u.type].strength * (0.4 + 0.6 * u.hp / u.maxHp), 0);
-      return { d, t: c ? projectOnChains(chains, c) : 0, s };
+      return { d, t: c ? pos(c) : 0, s };
     }).sort((a, b) => a.t - b.t);
   }
 
@@ -204,19 +276,22 @@ export class FrontManager {
   // höchstens alle 0,5 s neu berechnet
   uncovered() {
     const g = this.game;
-    const key = this.fronts.map((f) => f.id + f.kind + (f.anchors ? f.anchors.map((a) => (a ? a.x : '-')).join() : '')).join('|');
-    if (this.gapCache && g.time - this.gapCache.time < 0.5 && this.gapCache.key === key) return this.gapCache.parts;
+    const sig = this.fronts.map((f) => f.id + f.kind + (f.anchors ? f.anchors.map((a) => (a ? a.x : '-')).join() : '')).join('|');
+    if (this.gapCache && g.time - this.gapCache.time < 0.5 && this.gapCache.sig === sig) return this.gapCache.parts;
     const chains = this.border();
-    const total = chains.reduce((s, c) => s + chainLength(c), 0);
-    const covered = this.fronts.filter((f) => f.kind !== 'line').map((f) => this.rangeOf(f, chains)).sort((a, b) => a[0] - b[0]);
     const parts = [];
-    let t = 0;
-    for (const [t0, t1] of covered) {
-      if (t0 - t > MIN_SECTION) parts.push(...sliceChains(chains, t, t0));
-      t = Math.max(t, t1);
+    if (chains.length) {
+      const { kmin, kmax } = this.borderSegs();
+      const key = (p) => this.key(p);
+      const covered = this.fronts.filter((f) => f.kind !== 'line').map((f) => this.rangeOf(f)).sort((a, b) => a[0] - b[0]);
+      let k = kmin;
+      for (const [k0, k1] of covered) {
+        if (this.lenBelow(k0) - this.lenBelow(k) > MIN_SECTION) parts.push(...sliceByKey(chains, key, k, k0));
+        k = Math.max(k, k1);
+      }
+      if (this.lenBelow(kmax) - this.lenBelow(k) > MIN_SECTION) parts.push(...sliceByKey(chains, key, k, kmax));
     }
-    if (total - t > MIN_SECTION) parts.push(...sliceChains(chains, t, total));
-    this.gapCache = { time: g.time, key, parts };
+    this.gapCache = { time: g.time, sig, parts };
     return parts;
   }
 
@@ -259,14 +334,14 @@ export class FrontManager {
 
   // Kompanien, die gerade nicht an der Front stehen, weil sie einen eigenen Befehl haben
   detached(f) {
-    return unitsOf(f.division).filter((u) => u.offFront === f && this.game.units.includes(u)).length;
+    return unitsOf(f.division).filter((u) => u.offFront === f).length;
   }
 
   // Einheiten der Front = lebende Kompanien der Division (ohne abgezogene)
   // Liefert true, wenn sich die Besetzung geändert hat
   sync(f) {
     const g = this.game;
-    const want = unitsOf(f.division).filter((u) => g.units.includes(u) && u.offFront !== f);
+    const want = unitsOf(f.division).filter((u) => u.offFront !== f);
     let changed = want.length !== f.units.length;
     for (const u of f.units) {
       if (u.front === f && !want.includes(u)) { u.front = null; u.frontGoal = null; u.rotating = false; changed = true; }
@@ -308,7 +383,15 @@ export class FrontManager {
     f.line = f.plan.line;
     f.attack = { line: f.plan.line, name: f.plan.name, started: this.game.time };
     f.plan = null;
-    this.refresh(f, true);
+    this.prepare(f);
+  }
+
+  // Linie und Besetzung sofort, die Wege erst im nächsten Durchgang (verteilt die Rechenlast)
+  prepare(f) {
+    this.sync(f);
+    f.chains = this.chainsFor(f);
+    f.length = f.chains.reduce((s, c) => s + chainLength(c), 0);
+    this.schedule(f);
   }
 
   // Neuberechnung im nächsten Frame statt sofort, damit sich die Rechenlast verteilt
@@ -353,35 +436,31 @@ export class FrontManager {
     this.timer -= dt;
     if (this.timer > 0) return;
     this.timer = REFRESH;
+    this.pathBudget = PATH_BUDGET;
     for (const f of [...this.fronts]) this.refresh(f, !!f.force);
     this.repair();
     this.updateNeighbors();
   }
 
-  // Verändert sich die Grenze stark (z. B. wenn sie schrumpft), können Ankerpunkte ihre
-  // Reihenfolge tauschen und Abschnitte sich überlappen: die betroffenen Divisionen teilen
-  // sich ihren gemeinsamen Bereich dann neu auf (Reihenfolge nach ihrer Lage)
+  // Überlappen sich Grenzabschnitte doch einmal (z. B. zwei Abschnitte, die sich keinen
+  // Ankerpunkt teilen), teilen die betroffenen Divisionen ihren gemeinsamen Bereich neu auf
   repair() {
-    const chains = this.border();
-    if (!chains.length) return;
-    const segs = this.fronts.filter((f) => f.kind !== 'line').map((f) => ({ f, r: this.rangeOf(f, chains) }));
+    if (!this.border().length) return;
+    const segs = this.fronts.filter((f) => f.kind !== 'line').map((f) => ({ f, r: this.rangeOf(f) }));
     const bad = new Set();
     for (let i = 0; i < segs.length; i++) {
       for (let j = i + 1; j < segs.length; j++) {
         const a = segs[i].r, b = segs[j].r;
-        if (Math.min(a[1], b[1]) - Math.max(a[0], b[0]) > MIN_SECTION) { bad.add(segs[i]); bad.add(segs[j]); }
+        const lo = Math.max(a[0], b[0]), hi = Math.min(a[1], b[1]);
+        if (hi > lo && this.lenBelow(hi) - this.lenBelow(lo) > MIN_SECTION) { bad.add(segs[i]); bad.add(segs[j]); }
       }
     }
     if (!bad.size) return;
     const list = [...bad];
-    const t0 = Math.min(...list.map((s) => s.r[0])), t1 = Math.max(...list.map((s) => s.r[1]));
-    const total = list[0].r[2];
-    const anchor = (t, end) => {
-      if (Math.abs(t - end) < 1) return null;
-      const p = pointAt(chains, t);
-      return p && { x: p.x, y: p.y };
-    };
-    const made = this.splitBorder(list.map((s) => s.f.division), [anchor(t0, 0), anchor(t1, total)]);
+    const { kmin, kmax } = this.borderSegs();
+    const k0 = Math.min(...list.map((s) => s.r[0])), k1 = Math.max(...list.map((s) => s.r[1]));
+    const made = this.splitBorder(list.map((s) => s.f.division),
+      [k0 <= kmin ? null : this.anchorAt(k0), k1 >= kmax ? null : this.anchorAt(k1)]);
     for (const f of made) f.rotate = list.find((s) => s.f.division === f.division).f.rotate;
   }
 
@@ -403,9 +482,10 @@ export class FrontManager {
       // Im Gefecht erst bei schweren Verlusten herauslösen
       // Bei Feindkontakt wird nicht rotiert: die Front hält. Verwundete gehen nur
       // zum Heilen, wenn kein Feind in der Nähe ist.
-      if (f.rotate && !u.rotating && frac < limit && !u.target && !this.enemyNear(u, 160)) {
+      if (f.rotate && !u.rotating && frac < limit && !u.target && this.pathBudget > 0 && !this.enemyNear(u, 160)) {
         const c = this.nearestCity(u);
         if (c) {
+          this.pathBudget--;
           u.rotating = true;
           u.frontGoal = null;
           u.path = g.map.findPath(u.x, u.y, c.x, c.y, this.safeRouting()) || [];
@@ -420,7 +500,6 @@ export class FrontManager {
     // Front, Länge nach ihrer Stärke. Kompanien bleiben in ihrem Abschnitt.
     const { slots, ordered } = this.sectionSlots(f, active);
     if (!slots.length) return;
-    let budget = PATH_BUDGET;
     let pending = false;
     const shared = new Map(); // Wege für nebeneinander stehende Einheiten mit ähnlichem Ziel teilen
     for (let k = 0; k < slots.length && k < ordered.length; k++) {
@@ -453,8 +532,8 @@ export class FrontManager {
         const key = (u.x / 30 | 0) + ',' + (u.y / 30 | 0) + '>' + (s.x / 30 | 0) + ',' + (s.y / 30 | 0);
         let base = shared.get(key);
         if (base === undefined) {
-          if (budget <= 0) { pending = true; continue; }
-          budget--;
+          if (this.pathBudget <= 0) { pending = true; continue; }
+          this.pathBudget--;
           base = g.map.findPath(u.x, u.y, s.x, s.y, opts) || [];
           shared.set(key, base);
         }
@@ -782,6 +861,44 @@ export function sliceChains(chains, t0, t1) {
       cur.push(t1 < s1 ? at(t1) : b);
     }
     if (cur.length >= 2) out.push(cur);
+  }
+  return out;
+}
+
+// Teile der Linien, deren Achsenwert key(p) zwischen k0 und k1 liegt
+function sliceByKey(chains, key, k0, k1) {
+  const out = [];
+  for (const c of chains) {
+    let cur = null;
+    for (let i = 1; i < c.length; i++) {
+      const q = c[i - 1], p = c[i];
+      const kq = key(q), kp = key(p);
+      let ts, te;
+      if (kp === kq) {
+        [ts, te] = kq < k0 || kq > k1 ? [1, 0] : [0, 1];
+      } else {
+        const ta = (k0 - kq) / (kp - kq), tb = (k1 - kq) / (kp - kq);
+        ts = Math.max(0, Math.min(ta, tb));
+        te = Math.min(1, Math.max(ta, tb));
+      }
+      if (te < ts) {
+        if (cur && cur.length >= 2) out.push(cur);
+        cur = null;
+        continue;
+      }
+      const at = (t) => ({ ...q, x: q.x + (p.x - q.x) * t, y: q.y + (p.y - q.y) * t });
+      const end = te === 1 ? p : at(te);
+      if (cur && ts === 0) cur.push(end);
+      else {
+        if (cur && cur.length >= 2) out.push(cur);
+        cur = [ts === 0 ? q : at(ts), end];
+      }
+      if (te < 1) {
+        out.push(cur);
+        cur = null;
+      }
+    }
+    if (cur && cur.length >= 2) out.push(cur);
   }
   return out;
 }

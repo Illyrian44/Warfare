@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=55';
-import { Game } from './game.js?v=55';
-import { AI } from './ai.js?v=55';
-import { Renderer, isFrontShown } from './render.js?v=55';
-import { Input } from './input.js?v=55';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=55';
-import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=55';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=55';
+import { generateMap } from './map.js?v=56';
+import { Game } from './game.js?v=56';
+import { AI } from './ai.js?v=56';
+import { Renderer, isFrontShown } from './render.js?v=56';
+import { Input } from './input.js?v=56';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=56';
+import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=56';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=56';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -263,7 +263,7 @@ const app = {
 
   // Eigene, lebende Einheiten der Auswahl
   ownSelection() {
-    return [...this.ui.selection].filter((u) => u.owner === this.human && this.game.units.includes(u));
+    return [...this.ui.selection].filter((u) => u.owner === this.human && u.hp > 0);
   },
 
   newDivision() {
@@ -325,7 +325,7 @@ const app = {
     const ob = this.game.orbat[this.human];
     const div = ob.refillFor(u);
     if (!div) return false;
-    const mates = unitsOf(div).filter((o) => o !== u && this.game.units.includes(o));
+    const mates = unitsOf(div).filter((o) => o !== u);
     ob.add(div, [u]);
     if (this.fronts.fronts.includes(div.front)) {
       // Die Front der Division übernimmt die neue Kompanie
@@ -455,7 +455,7 @@ const app = {
     const g = this.game;
     const bar = $('divBar');
     const divs = g.orbat[this.human].all(DIVISION)
-      .map((f) => ({ f, units: unitsOf(f).filter((u) => g.units.includes(u)) }))
+      .map((f) => ({ f, units: unitsOf(f) }))
       .filter((d) => d.units.length);
     const sel = this.ownSelection();
     const selDivs = new Set(sel.map(divisionOf));
@@ -478,7 +478,7 @@ const app = {
     bar.innerHTML = tools.join('') + divs.map((d) => {
       const heavy = d.units.filter((u) => u.type === 'heavy').length / d.units.length;
       const regs = d.f.children.map((reg) => {
-        const alive = reg.units.filter((u) => g.units.includes(u)).length;
+        const alive = reg.units.filter((u) => u.hp > 0).length;
         return natoIcon(reg.type === 'heavy' ? 1 : 0, 16, 11, alive ? 0.35 + 0.65 * alive / REGIMENT_MAX : 0.15, '', divisionColor(d.f));
       });
       const chosen = d.units.some((u) => this.ui.selection.has(u)) ? ' sel' : '';
@@ -495,7 +495,7 @@ const app = {
     const g = this.game;
     const f = g.orbat[this.human].all(DIVISION).find((d) => d.id === id);
     if (!f) return;
-    const units = unitsOf(f).filter((u) => g.units.includes(u));
+    const units = unitsOf(f);
     if (!units.length) return;
     this.ui.selection.clear();
     for (const u of units) this.ui.selection.add(u);

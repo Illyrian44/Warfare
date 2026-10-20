@@ -1,6 +1,6 @@
-import { unitStrength } from './game.js?v=55';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=55';
-import { pointAt } from './fronts.js?v=55';
+import { unitStrength } from './game.js?v=56';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=56';
+import { pointAt } from './fronts.js?v=56';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -52,7 +52,7 @@ export class HQManager {
     for (let p = 1; p <= 2; p++) {
       const cities = g.cities.filter((c) => c.owner === p);
       for (const f of g.orbat[p].all(DIVISION)) {
-        const units = unitsOf(f).filter((u) => g.units.includes(u));
+        const units = unitsOf(f);
         if (!units.length || !cities.length) { if (f.hq) f.hq.alive = false; continue; }
         const cx = units.reduce((a, u) => a + u.x, 0) / units.length;
         const cy = units.reduce((a, u) => a + u.y, 0) / units.length;
@@ -91,7 +91,7 @@ export class HQManager {
       for (const f of g.orbat[p].all(DIVISION)) {
         const hq = f.hq;
         if (!hq || !hq.alive) continue;
-        const units = unitsOf(f).filter((u) => g.units.includes(u));
+        const units = unitsOf(f);
         if (units.length < 2) continue;
         if (!this.sealBreakthrough(p, f, hq, units, enemies)) this.balance(p, units, enemies);
       }
@@ -129,7 +129,7 @@ export class HQManager {
       for (const nf of f.neighbors) {
         const nd = nf.division;
         if (!nd || nd.dissolved || nf.attack || !nd.hq || !nd.hq.alive) continue;
-        const free = unitsOf(nd).filter((u) => g.units.includes(u) && this.controllable(u) &&
+        const free = unitsOf(nd).filter((u) => this.controllable(u) &&
           !enemies.some((e) => Math.hypot(e.x - u.x, e.y - u.y) < PRESSURE_RADIUS));
         if (!best || free.length > best.free.length) best = { div: nd, free };
       }
@@ -184,7 +184,7 @@ export class HQManager {
     let helper = false;
     for (const reg of own.concat(neighbors)) {
       if (best && !helper && !own.includes(reg)) break; // eigenes Regiment gefunden
-      const comps = reg.units.filter((u) => u.hp > 0 && g.units.includes(u));
+      const comps = reg.units.filter((u) => u.hp > 0);
       if (!comps.length || !comps.every((u) => this.controllable(u))) continue;
       // Nur Regimenter ohne Feinddruck: sonst reißt das Abriegeln neue Lücken
       if (comps.some((u) => enemies.some((e) => Math.hypot(e.x - u.x, e.y - u.y) < PRESSURE_RADIUS))) continue;

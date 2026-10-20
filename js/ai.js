@@ -1,8 +1,8 @@
-import { DIFFICULTY } from './config.js?v=55';
-import { unitStrength } from './game.js?v=55';
-import { mulberry32 } from './rng.js?v=55';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=55';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=55';
+import { DIFFICULTY } from './config.js?v=56';
+import { unitStrength } from './game.js?v=56';
+import { mulberry32 } from './rng.js?v=56';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=56';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=56';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -37,7 +37,7 @@ export class AI {
     if (this.timer > 0) return;
     this.timer = this.cfg.interval * (0.8 + this.rng() * 0.4);
     this.pathCache.clear();
-    this.budget = 5;
+    this.budget = 3; // A*-Suchen je Denkschritt
     this.think();
   }
 
@@ -252,7 +252,7 @@ export class AI {
       }
       // ... die übrigen nach ihrer Lage an der Grenze zu neuen Divisionen zusammenfassen
       if (rest.length >= DIV_MIN) {
-        rest.sort((a, b) => projectOnChains(chains, a) - projectOnChains(chains, b));
+        rest.sort((a, b) => this.fronts.key(a) - this.fronts.key(b));
         const size = Math.ceil(rest.length / Math.ceil(rest.length / DIV_SIZE));
         for (let k = 0; k + 3 <= rest.length; k += size) {
           const group = rest.slice(k, k + size);

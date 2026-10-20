@@ -2,10 +2,10 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE,
-} from './config.js?v=55';
-import { mulberry32 } from './rng.js?v=55';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=55';
-import { HQManager } from './hq.js?v=55';
+} from './config.js?v=56';
+import { mulberry32 } from './rng.js?v=56';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=56';
+import { HQManager } from './hq.js?v=56';
 
 export class Game {
   constructor(map) {
@@ -409,7 +409,7 @@ export class Game {
     for (let p = 1; p <= 2; p++) {
       this.orbat[p].prune();
       for (const f of this.orbat[p].all(DIVISION)) {
-        divs.push({ owner: p, members: unitsOf(f).filter((u) => this.units.includes(u)), formation: f });
+        divs.push({ owner: p, members: unitsOf(f), formation: f });
       }
     }
     this.divisions = divs;

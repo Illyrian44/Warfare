@@ -25,7 +25,13 @@ export const DIVISION_COLORS = [
 
 export function divisionColor(f) {
   const pal = DIVISION_COLORS[f.owner];
-  return pal[(f.colorIndex || 0) % pal.length];
+  const i = f.colorIndex || 0;
+  if (i < pal.length) return pal[i];
+  // Ab der 9. Division weitere Töne im Farbbereich der Seite; der Goldene Schnitt
+  // verteilt sie so, dass aufeinanderfolgende Nummern gut unterscheidbar bleiben
+  const t = ((i - pal.length) * 0.618034) % 1;
+  const hue = f.owner === 1 ? 185 + t * 70 : (340 + t * 55) % 360;
+  return `hsl(${Math.round(hue)}, 85%, ${66 + (i % 3) * 6}%)`;
 }
 
 export class OrderOfBattle {
@@ -223,7 +229,8 @@ export class OrderOfBattle {
   }
 }
 
-// Alle lebenden Kompanien eines Verbands
+// Alle lebenden Kompanien eines Verbands. Eine Kompanie verlässt game.units erst, wenn
+// ihre Lebenspunkte auf 0 fallen, „lebend“ heißt also auch „im Spiel“.
 export function unitsOf(f) {
   if (f.level === REGIMENT) return f.units.filter((u) => u.hp > 0);
   const out = [];

@@ -1,5 +1,5 @@
-import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=55';
-import { mulberry32, makeNoise, fbm } from './rng.js?v=55';
+import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=56';
+import { mulberry32, makeNoise, fbm } from './rng.js?v=56';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -127,11 +127,15 @@ export class GameMap {
     }
     if (start === goal) return [{ x: tx, y: ty }];
     if (this.cellPassable(start) && this.regionOf(start) !== this.regionOf(goal)) return null;
+    // Arbeitsfelder wiederverwenden: ein Stempel markiert, was zu dieser Suche gehört
+    // (spart je Suche ~225 KB neuen Speicher und damit Pausen der Speicherbereinigung)
     const n = w * h;
-    const g = new Float32Array(n).fill(Infinity);
-    const parent = new Int32Array(n).fill(-1);
-    const closed = new Uint8Array(n);
-    const heap = new MinHeap();
+    if (!this.search) {
+      this.search = { g: new Float32Array(n), parent: new Int32Array(n), seen: new Uint32Array(n), closed: new Uint32Array(n), stamp: 0, heap: new MinHeap() };
+    }
+    const { g, parent, seen, closed, heap } = this.search;
+    const stamp = ++this.search.stamp;
+    heap.clear();
     const gx = goal % w, gy = Math.floor(goal / w);
     const heur = (i) => {
       const dx = Math.abs(i % w - gx), dy = Math.abs(Math.floor(i / w) - gy);
@@ -139,26 +143,29 @@ export class GameMap {
       return (Math.max(dx, dy) + 0.41421356 * Math.min(dx, dy)) / ROAD_SPEED;
     };
     g[start] = 0;
+    seen[start] = stamp;
+    parent[start] = -1;
     heap.push(start, heur(start));
     const dirs = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.4142], [1, -1, 1.4142], [-1, 1, 1.4142], [-1, -1, 1.4142]];
     let found = false;
     while (heap.size) {
       const cur = heap.pop();
-      if (closed[cur]) continue;
+      if (closed[cur] === stamp) continue;
       if (cur === goal) { found = true; break; }
-      closed[cur] = 1;
+      closed[cur] = stamp;
       const cx = cur % w, cy = Math.floor(cur / w);
       const curSpeed = this.cellSpeed(cur) || 0.5;
       for (const [dx, dy, len] of dirs) {
         const nx = cx + dx, ny = cy + dy;
         if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
         const ni = ny * w + nx;
-        if (closed[ni] || !this.cellPassable(ni)) continue;
+        if (closed[ni] === stamp || !this.cellPassable(ni)) continue;
         if (dx && dy && (!this.cellPassable(cy * w + nx) || !this.cellPassable(ny * w + cx))) continue;
         const sp = (this.cellSpeed(ni) + curSpeed) / 2;
         const ng = g[cur] + len / sp + (opts && opts.cost ? len * opts.cost(ni) : 0);
-        if (ng < g[ni]) {
+        if (seen[ni] !== stamp || ng < g[ni]) {
           g[ni] = ng;
+          seen[ni] = stamp;
           parent[ni] = cur;
           heap.push(ni, ng + heur(ni));
         }
@@ -173,17 +180,24 @@ export class GameMap {
     return this.smoothPath({ x: sx, y: sy }, pts, opts && opts.safe);
   }
 
-  // Wegpunkte überspringen, solange die direkte Linie auf gleich gutem Gelände bleibt
+  // Wegpunkte überspringen, solange die direkte Linie auf gleich gutem Gelände bleibt.
+  // Den weitesten erreichbaren Punkt erst in wachsenden Sprüngen, dann durch Halbieren
+  // suchen (statt jede Abkürzung vom Ende her zu prüfen)
   smoothPath(from, pts, safe = null) {
     const out = [];
     let anchor = from;
     let i = 0;
     while (i < pts.length) {
-      let j = pts.length - 1;
-      while (j > i && !this.clearLine(anchor, pts[j], safe)) j--;
-      out.push(pts[j]);
-      anchor = pts[j];
-      i = j + 1;
+      let lo = i, hi = i + 1, step = 1;
+      while (hi < pts.length && this.clearLine(anchor, pts[hi], safe)) { lo = hi; step *= 2; hi = lo + step; }
+      hi = Math.min(hi, pts.length);
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (this.clearLine(anchor, pts[mid], safe)) lo = mid; else hi = mid;
+      }
+      out.push(pts[lo]);
+      anchor = pts[lo];
+      i = lo + 1;
     }
     return out;
   }
@@ -225,6 +239,7 @@ export class GameMap {
 class MinHeap {
   constructor() { this.items = []; this.prio = []; }
   get size() { return this.items.length; }
+  clear() { this.items.length = 0; this.prio.length = 0; }
   push(item, p) {
     const a = this.items, q = this.prio;
     let i = a.length;
