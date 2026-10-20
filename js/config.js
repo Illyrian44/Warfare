@@ -2,6 +2,13 @@
 
 export const CELL = 10; // Weltgröße einer Gitterzelle
 
+// Maßstab: 1 Zelle = 1 km (1 Welteinheit = 100 m); Zeitraffer bei Tempo 1×:
+// 1 Spielsekunde = 6 Minuten. Die mittlere Insel misst damit 160 × 96 km.
+export const KM = CELL;              // Welteinheiten je Kilometer
+export const HOURS_PER_SECOND = 0.1; // Spielstunden je Spielsekunde
+// km/h -> Welteinheiten je Spielsekunde
+export const kmh = (v) => v * KM * HOURS_PER_SECOND;
+
 export const T = { DEEP: 0, WATER: 1, PLAINS: 2, FOREST: 3, HILL: 4, MOUNTAIN: 5 };
 
 export const TERRAIN_INFO = [
@@ -13,14 +20,15 @@ export const TERRAIN_INFO = [
   { name: 'Gebirge', speed: 0, attack: 0, vision: 1, passable: false },
 ];
 
+// speed: Marschtempo auf offener Ebene (Straße ×1,6, Gelände bremst, siehe TERRAIN_INFO)
 // terrainAttack: zusätzlicher Faktor je Gelände (Index wie T)
 export const UNIT_TYPES = {
   light: {
-    name: 'Leicht', hp: 100, speed: 22, dps: 6, radius: 5, buildTime: 15,
+    name: 'Leicht', hp: 100, speed: kmh(10), dps: 6, radius: 5, buildTime: 15,
     terrainAttack: [0, 1, 1, 1, 1, 0], strength: 1,
   },
   heavy: {
-    name: 'Schwer', hp: 165, speed: 14, dps: 10, radius: 7, buildTime: 26,
+    name: 'Schwer', hp: 165, speed: kmh(18), dps: 10, radius: 7, buildTime: 26,
     terrainAttack: [0, 0.7, 1.25, 0.7, 0.85, 0], strength: 1.7,
   },
 };

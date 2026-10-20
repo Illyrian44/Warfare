@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=57';
-import { classify } from './map.js?v=57';
-import { frontBadge, pointAt } from './fronts.js?v=57';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=57';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=58';
+import { classify } from './map.js?v=58';
+import { frontBadge, pointAt } from './fronts.js?v=58';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=58';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],

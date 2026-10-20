@@ -14,7 +14,8 @@ Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https:
 ## Regeln in Kürze
 
 - **Ziel:** alle gegnerischen Städte erobern und die Armee vernichten.
-- **Einheiten:** Infanterie/leicht (schnell, günstig) und Panzer/schwer (robust, stark auf Ebenen), dargestellt als NATO-Symbole nach APP-6: Rechteck = eigene, Raute = feindliche Einheit (im Farbton ihrer Division, grau ohne Division), X = Infanterie, Oval = Panzer. Städte produzieren sie; ein Klick auf die eigene Stadt wechselt den Typ.
+- **Einheiten:** Infanterie/leicht (10 km/h, günstig) und Panzer/schwer (18 km/h, robust, stark auf Ebenen), dargestellt als NATO-Symbole nach APP-6: Rechteck = eigene, Raute = feindliche Einheit (im Farbton ihrer Division, grau ohne Division), X = Infanterie, Oval = Panzer. Städte produzieren sie; ein Klick auf die eigene Stadt wechselt den Typ.
+- **Maßstab:** 1 Kartenfeld = 1 km, die mittlere Insel misst 160 × 96 km. Bei Tempo 1× vergehen in einer Sekunde 6 Minuten Spielzeit; alle Geschwindigkeiten stehen als km/h in `js/config.js` (Straßen ×1,6).
 - **Gelände:** Ebene, Wald (−25 % Angriff), Hügel (+50 % Angriff, mehr Sicht), Wasser (−50 % Angriff, langsam), Gebirge und tiefes Wasser sind unpassierbar.
 - **Kampf** läuft automatisch. Eingekesselte Einheiten nehmen 50 % mehr Schaden.
 - **Versorgung:** Heilung nahe eigener Städte, Schaden tief im Feindesland. Jede Stadt versorgt 10 Einheiten, überzählige hungern.
