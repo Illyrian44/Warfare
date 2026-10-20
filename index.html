@@ -7,7 +7,7 @@
   <meta name="description" content="War of Dots im Browser: minimalistisches Echtzeit-Strategiespiel gegen eine KI.">
   <title>War of Dots</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=51">
+  <link rel="stylesheet" href="css/style.css?v=52">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -33,8 +33,8 @@
         <button id="deselectBtn" hidden title="Auswahl aufheben (Esc)">✕ Abwählen</button>
         <button id="selectBtn" title="Rahmen aufziehen, um Einheiten auszuwählen">▢ Auswahl</button>
         <button id="allBtn" title="Alle eigenen Einheiten auswählen (A)">Alle</button>
-        <button id="frontBtn" title="Frontlinie zeichnen – ausgewählte Einheiten verteilen sich darauf (F)">〰 Front</button>
-        <button id="borderBtn" title="Grenzfront: ausgewählte Einheiten halten die Grenze zum Gegner (G)">⛨ Grenze</button>
+        <button id="frontBtn" title="Front für die ausgewählte Division zeichnen (F)">〰 Front</button>
+        <button id="borderBtn" title="Die ausgewählte Division hält die Grenze zum Gegner (G)">⛨ Grenze</button>
         <button id="centerBtn" title="Ansicht zurücksetzen">⤢</button>
       </div>
     </div>
@@ -48,10 +48,9 @@
         <button id="planBtn" title="Angriffslinie ziehen – ein Pfeil zeigt den geplanten Vorstoß">➜ Angriff planen</button>
         <button id="attackBtn" class="attack" title="Geplanten Angriff ausführen">▶ Angriff starten</button>
         <button id="cancelPlanBtn" title="Geplanten Angriff verwerfen">Plan verwerfen</button>
-        <button id="addBtn" title="Ausgewählte Einheiten dieser Front zuteilen">+ Auswahl</button>
-        <button id="reinforceBtn" title="Neue Einheiten rücken automatisch nach">Verstärkung</button>
+        <button id="rejoinBtn" title="Kompanien mit eigenem Befehl kehren an die Front zurück">↺ zurück an die Front</button>
         <button id="rotateBtn" title="Schwer Verwundete ziehen sich zum Heilen zurück">Rotation</button>
-        <button id="disbandBtn" title="Front auflösen">Auflösen</button>
+        <button id="disbandBtn" title="Front auflösen – die Division bleibt bestehen">Front auflösen</button>
       </div>
     </div>
     <div id="seedLabel" class="muted"></div>
@@ -89,7 +88,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 51</small>
+      <small id="version" class="muted">Version 52</small>
     </div>
   </div>
 
@@ -147,6 +146,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=51"></script>
+  <script type="module" src="js/main.js?v=52"></script>
 </body>
 </html>

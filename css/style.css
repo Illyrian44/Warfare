@@ -295,6 +295,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 }
 .divcard.sel { border-color: #fff; box-shadow: 0 0 0 1px #fff inset; }
 .divcard { position: relative; }
+.divcard.can-add { padding-right: 34px; }
 .divcard.refill { border-left: 4px solid var(--good); } /* Auffüllen eingeschaltet */
 .divcard .add {
   position: absolute;
@@ -323,6 +324,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 .divtool.active { background: var(--good); border-color: var(--good); color: #10241a; }
 .divcard .sym { grid-row: 1 / span 2; }
 .divcard .name { font-weight: 700; white-space: nowrap; }
+.divcard .fr { font-weight: 400; color: var(--accent); }
 .divcard .str { display: block; height: 3px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
 .divcard .str i { display: block; height: 100%; background: var(--good); }
 .divcard .regs { grid-column: 1 / span 2; display: flex; gap: 2px; margin-top: 3px; }

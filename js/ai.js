@@ -1,7 +1,8 @@
-import { DIFFICULTY } from './config.js?v=51';
-import { unitStrength } from './game.js?v=51';
-import { mulberry32 } from './rng.js?v=51';
-import { FrontManager } from './fronts.js?v=51';
+import { DIFFICULTY } from './config.js?v=52';
+import { unitStrength } from './game.js?v=52';
+import { mulberry32 } from './rng.js?v=52';
+import { FrontManager } from './fronts.js?v=52';
+import { DIVISION, strength, unitsOf } from './orbat.js?v=52';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -194,14 +195,17 @@ export class AI {
     }
   }
 
-  // Grenzfront wie ein Spieler: ein Teil der Armee hält die Grenze, der Rest greift Städte an
+  // Grenzfront wie ein Spieler. Übergang bis zur eigenen Frontplanung der KI: die
+  // stärkste Division hält die ganze Grenze, der Rest greift Städte an
   manageFront(myUnits, enemies) {
+    this.fronts.syncAll();
     if (this.front && !this.fronts.fronts.includes(this.front)) this.front = null;
-    const want = myUnits.length >= 6 ? Math.round(myUnits.length * this.cfg.frontShare) : 0;
-    if (!want) return;
     if (!this.front) {
-      this.front = this.fronts.create('border', null, []);
-      this.front.reinforce = false;
+      const divs = this.game.orbat[this.me].all(DIVISION).filter((d) => strength(d) >= 4);
+      if (!divs.length) return;
+      const div = divs.reduce((a, b) => (strength(b) > strength(a) ? b : a));
+      for (const u of unitsOf(div)) u.ai = null; // eigene Aufträge enden, die Front übernimmt
+      this.front = this.fronts.assign(div, 'border', null);
       this.front.rotate = this.cfg.rotate;
       if (!this.front.chains.length) {
         this.fronts.remove(this.front);
@@ -210,29 +214,6 @@ export class AI {
       }
     }
     const f = this.front;
-    const have = f.units.length;
-    if (have < want) {
-      // Freie Einheiten, die der Grenze am nächsten stehen, an die Front schicken
-      const pts = f.chains.flat();
-      const dist = (u) => {
-        let best = Infinity;
-        for (let i = 0; i < pts.length; i += 3) best = Math.min(best, Math.hypot(pts[i].x - u.x, pts[i].y - u.y));
-        return best;
-      };
-      const cands = myUnits
-        .filter((u) => !u.front && !u.target && !(u.ai && (u.ai.role === 'retreat' || u.ai.role === 'attack')))
-        .map((u) => ({ u, d: dist(u) }))
-        .sort((a, b) => a.d - b.d)
-        .slice(0, want - have)
-        .map((o) => o.u);
-      if (cands.length) {
-        for (const u of cands) u.ai = null;
-        this.fronts.add(f, cands);
-      }
-    } else if (have > want + 2) {
-      // Überschuss für Angriffe freigeben
-      for (const u of f.units.slice(want)) { this.fronts.release(u); u.path = []; }
-    }
 
     // Halten oder angreifen, je nach Kräfteverhältnis an der Front
     let mine = 0;

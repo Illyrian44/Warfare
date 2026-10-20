@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=51';
-import { DIVISION, formationOf } from './orbat.js?v=51';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=52';
+import { DIVISION, formationOf, unitsOf } from './orbat.js?v=52';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -10,8 +10,8 @@ const CODENAMES = ['ADLER', 'FALKE', 'WOLF', 'LUCHS', 'BÄR', 'HABICHT', 'KRANIC
 const PATH_BUDGET = 4;      // A*-Suchen pro Neuberechnung
 const DANGER_RADIUS = 45;   // so viel Abstand halten Verschiebungen zu Feinden
 
-// Fronten wie in Hearts of Iron: Einheiten werden einer Linie zugewiesen,
-// verteilen sich gleichmäßig darauf und halten sie selbstständig.
+// Fronten wie in Hearts of Iron: Jede Front gehört zu genau einer Division. Deren
+// Kompanien verteilen sich gleichmäßig auf der Linie und halten sie selbstständig.
 export class FrontManager {
   constructor(game, owner) {
     this.game = game;
@@ -21,41 +21,83 @@ export class FrontManager {
     this.nextId = 1;
     this.events = [];
     this.codename = owner === 1 ? 0 : 7;
+    // Löst sich eine Division auf, verschwindet ihre Front sofort
+    game.orbat[owner].onDissolve.push((div) => { if (this.fronts.includes(div.front)) this.remove(div.front); });
   }
 
-  create(kind, line, units) {
-    for (const u of units) this.release(u);
-    const f = {
-      id: this.nextId++, owner: this.owner, kind, line, units: [...units], chains: [],
-      reinforce: true, rotate: true,
-    };
-    for (const u of f.units) u.front = f;
-    this.fronts.push(f);
+  // Front einer Division anlegen oder ihre bestehende Front neu ausrichten
+  // (eine Division hat höchstens eine Front)
+  assign(div, kind, line) {
+    let f = this.fronts.includes(div.front) ? div.front : null;
+    if (!f) {
+      f = { id: this.nextId++, owner: this.owner, division: div, units: [], chains: [], rotate: true };
+      div.front = f;
+      this.fronts.push(f);
+    }
+    f.kind = kind;
+    f.line = line;
+    f.attack = null;
+    f.plan = null;
+    this.rejoin(f);
     this.refresh(f, true);
     return f;
   }
 
   remove(f) {
-    for (const u of f.units) { u.front = null; u.frontGoal = null; u.rotating = false; }
+    for (const u of f.units) if (u.front === f) { u.front = null; u.frontGoal = null; u.rotating = false; }
+    if (f.division.front === f) f.division.front = null;
     this.fronts = this.fronts.filter((o) => o !== f);
   }
 
-  // Einheit verlässt ihre Front, z. B. bei einem manuellen Befehl
+  // Kompanie verlässt die Front ihrer Division, z. B. bei einem manuellen Befehl.
+  // Sie bleibt in der Division und kehrt mit „Alle an die Front“ zurück.
   release(u) {
     const f = u.front;
     if (!f) return;
     f.units = f.units.filter((o) => o !== u);
     u.front = null; u.frontGoal = null; u.rotating = false;
+    u.offFront = f;
   }
 
-  add(f, units) {
-    for (const u of units) {
-      if (u.front === f) continue;
-      this.release(u);
-      u.front = f;
-      f.units.push(u);
-    }
+  // Alle Kompanien der Division zurück an die Front
+  rejoin(f) {
+    for (const u of unitsOf(f.division)) if (u.offFront === f) u.offFront = null;
+    this.sync(f);
     this.schedule(f);
+  }
+
+  // Kompanien, die gerade nicht an der Front stehen, weil sie einen eigenen Befehl haben
+  detached(f) {
+    return unitsOf(f.division).filter((u) => u.offFront === f && this.game.units.includes(u)).length;
+  }
+
+  // Einheiten der Front = lebende Kompanien der Division (ohne abgezogene)
+  // Liefert true, wenn sich die Besetzung geändert hat
+  sync(f) {
+    const g = this.game;
+    const want = unitsOf(f.division).filter((u) => g.units.includes(u) && u.offFront !== f);
+    let changed = want.length !== f.units.length;
+    for (const u of f.units) {
+      if (u.front === f && !want.includes(u)) { u.front = null; u.frontGoal = null; u.rotating = false; changed = true; }
+    }
+    for (const u of want) {
+      if (u.front !== f) {
+        if (u.front) this.release(u); // aus einer anderen Front dieser Seite herausnehmen
+        u.offFront = null;
+        u.front = f;
+        u.frontGoal = null;
+        changed = true;
+      }
+    }
+    f.units = want;
+    return changed;
+  }
+
+  syncAll() {
+    for (const f of [...this.fronts]) {
+      if (f.division.dissolved) this.remove(f);
+      else if (this.sync(f)) this.schedule(f);
+    }
   }
 
   // Angriff wie in Hearts of Iron: erst Ziel-Linie planen, dann auf Befehl vorstoßen
@@ -82,16 +124,6 @@ export class FrontManager {
   schedule(f) {
     f.force = true;
     this.timer = Math.min(this.timer, 0.05);
-  }
-
-  onSpawn(u) {
-    let best = null, bestScore = Infinity;
-    for (const f of this.fronts) {
-      if (!f.reinforce || !f.chains.length) continue;
-      const score = (f.units.length + 1) / Math.max(1, f.length);
-      if (score < bestScore) { bestScore = score; best = f; }
-    }
-    if (best) this.add(best, [u]);
   }
 
   // Gefahrenkarte: Feindgebiet kostet mehr, die Nähe feindlicher Einheiten sehr viel mehr.
@@ -136,8 +168,8 @@ export class FrontManager {
   refresh(f, force) {
     const g = this.game;
     f.force = false;
-    f.units = f.units.filter((u) => u.hp > 0 && g.units.includes(u));
-    if (!f.units.length && !f.reinforce) { this.remove(f); return; }
+    if (f.division.dissolved) { this.remove(f); return; }
+    this.sync(f);
 
     f.chains = f.kind === 'border' ? this.borderChains() : [withNormals(f.line, (p, n) => this.facing(p, n))];
     f.length = 0;

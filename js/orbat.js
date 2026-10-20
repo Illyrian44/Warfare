@@ -34,6 +34,7 @@ export class OrderOfBattle {
   constructor(owner) {
     this.owner = owner;
     this.divisions = [];
+    this.onDissolve = []; // Rückrufe, z. B. damit die Front einer aufgelösten Division verschwindet
   }
 
   // Kleinste freie Nummer: aufgelöste Verbände geben Nummer (und Farbe) wieder frei
@@ -166,6 +167,7 @@ export class OrderOfBattle {
     div.dissolved = true;
     if (div.hq) div.hq.alive = false;
     this.divisions = this.divisions.filter((d) => d !== div);
+    for (const cb of this.onDissolve) cb(div);
   }
 
   // Gefallene austragen und leere Divisionen auflösen (regelmäßig aus dem Spiel aufgerufen)

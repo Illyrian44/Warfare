@@ -9,7 +9,7 @@ const { generateMap } = await load('map');
 const { Game } = await load('game');
 const { AI } = await load('ai');
 const { TERRAIN_INFO } = await load('config');
-const { REGIMENT, DIVISION, DIVISION_MAX, REGIMENT_MAX, strength } = await load('orbat');
+const { REGIMENT, DIVISION, DIVISION_MAX, REGIMENT_MAX, strength, divisionOf } = await load('orbat');
 
 const STEP = 1 / 30;
 const MAX_TIME = 20 * 60;   // Sekunden Spielzeit, bis die Partie entschieden sein muss
@@ -18,7 +18,7 @@ const CASES = [[1, 'small'], [42, 'medium'], [777, 'large']];
 let failed = 0;
 const fail = (msg) => { failed++; console.error('  FEHLER: ' + msg); };
 
-function checkState(g, label) {
+function checkState(g, label, ais) {
   // Keine Einheit dauerhaft auf unbegehbarem Gelände
   for (const u of g.units) {
     const t = g.map.cellTerrainAt(u.x, u.y);
@@ -49,6 +49,20 @@ function checkState(g, label) {
       if (u.owner === p && u.regiment && u.regiment.parent.dissolved) fail(`${label}: Kompanie ${u.id} hängt an einer aufgelösten Division`);
     }
   }
+  // Fronten: je Division höchstens eine, nur Kompanien der eigenen Division
+  for (const ai of ais) {
+    const divs = new Set();
+    for (const f of ai.fronts.fronts) {
+      if (!f.division || f.division.dissolved) fail(`${label}: Front ${f.id} ohne bestehende Division`);
+      if (divs.has(f.division)) fail(`${label}: ${f.division.name} hat zwei Fronten`);
+      divs.add(f.division);
+      for (const u of f.units) {
+        if (!g.units.includes(u)) continue;
+        if (divisionOf(u) !== f.division) fail(`${label}: Kompanie ${u.id} steht an der Front einer fremden Division`);
+        if (u.front !== f) fail(`${label}: Kompanie ${u.id} weiß nichts von ihrer Front`);
+      }
+    }
+  }
 }
 
 for (const [seed, size] of CASES) {
@@ -69,7 +83,7 @@ for (const [seed, size] of CASES) {
       g.events.length = 0;
       worst = Math.max(worst, performance.now() - t);
       if (++steps % 30 === 0) {
-        checkState(g, label);
+        checkState(g, label, ais);
         maxDivs = Math.max(maxDivs, g.orbat[1].all(DIVISION).length + g.orbat[2].all(DIVISION).length);
       }
     }

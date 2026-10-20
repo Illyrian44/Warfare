@@ -1,4 +1,4 @@
-import { CITY_RADIUS } from './config.js?v=51';
+import { CITY_RADIUS } from './config.js?v=52';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -188,7 +188,9 @@ export class Input {
     const sel = this.ui.selection;
     const f = g.badge || this.app.pickFront(g.world);
     if (f && (g.badge || !sel.size || f === this.ui.front)) {
-      this.app.selectFront(f === this.ui.front ? null : f);
+      // Front antippen = ihre Division auswählen (öffnet das Frontmenü)
+      if (f === this.ui.front) { sel.clear(); this.app.selectFront(null); }
+      else this.app.selectDivision(f.division.id, false);
       return;
     }
     if (g.city && !sel.size) {
@@ -222,7 +224,7 @@ export class Input {
       app.setFrontMode(null);
       app.selectFront(null);
       app.updateSelectionInfo();
-    } else if (k === 'f') app.setFrontMode(this.ui.frontMode ? null : 'new');
+    } else if (k === 'f') app.toggleFrontMode();
     else if (k === 'g') app.borderFront();
     else if (k === 'd') {
       if (e.shiftKey) app.removeFromDivision();
