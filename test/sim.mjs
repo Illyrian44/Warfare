@@ -49,8 +49,16 @@ function checkState(g, label, ais) {
       if (u.owner === p && u.regiment && u.regiment.parent.dissolved) fail(`${label}: Kompanie ${u.id} hängt an einer aufgelösten Division`);
     }
   }
-  // Fronten: je Division höchstens eine, nur Kompanien der eigenen Division
+  // Fronten: je Division höchstens eine, nur Kompanien der eigenen Division,
+  // Grenzabschnitte einer Seite überlappen sich nicht
   for (const ai of ais) {
+    const ranges = ai.fronts.fronts.filter((f) => f.kind !== 'line').map((f) => [f, ...ai.fronts.rangeOf(f)]);
+    for (let i = 0; i < ranges.length; i++) {
+      for (let j = i + 1; j < ranges.length; j++) {
+        const [fa, a0, a1] = ranges[i], [fb, b0, b1] = ranges[j];
+        if (Math.min(a1, b1) - Math.max(a0, b0) > 40) fail(`${label}: Grenzabschnitte von ${fa.division.name} und ${fb.division.name} überlappen`);
+      }
+    }
     const divs = new Set();
     for (const f of ai.fronts.fronts) {
       if (!f.division || f.division.dissolved) fail(`${label}: Front ${f.id} ohne bestehende Division`);

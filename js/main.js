@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=52';
-import { Game } from './game.js?v=52';
-import { AI } from './ai.js?v=52';
-import { Renderer } from './render.js?v=52';
-import { Input } from './input.js?v=52';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=52';
-import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=52';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=52';
+import { generateMap } from './map.js?v=53';
+import { Game } from './game.js?v=53';
+import { AI } from './ai.js?v=53';
+import { Renderer } from './render.js?v=53';
+import { Input } from './input.js?v=53';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=53';
+import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=53';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=53';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -132,22 +132,24 @@ const app = {
     if (u.front) { this.fronts.release(u); this.updateFrontPanel(); }
   },
 
-  // mode: { div } = Front für eine Division zeichnen, { plan: front } = Angriffsziel ziehen
+  // mode: { divs } = Front für Divisionen zeichnen, { plan: front } = Angriffsziel ziehen
   setFrontMode(mode) {
     this.ui.frontMode = mode;
     $('frontBtn').classList.toggle('active', !!mode);
     $('frontBanner').hidden = !mode;
     if (mode) {
-      $('frontBanner').firstElementChild.textContent = mode.div
-        ? `Front für ${mode.div.name} zeichnen: Linie ziehen`
-        : 'Angriffsziel: Linie ziehen, bis wohin die Front vorstoßen soll';
+      $('frontBanner').firstElementChild.textContent = !mode.divs
+        ? 'Angriffsziel: Linie ziehen, bis wohin die Front vorstoßen soll'
+        : mode.divs.length === 1
+          ? `Front für ${mode.divs[0].name} zeichnen: Linie ziehen`
+          : `Front für ${mode.divs.length} Divisionen zeichnen – sie teilen sich die Linie`;
     }
   },
 
   toggleFrontMode() {
     if (this.ui.frontMode) { this.setFrontMode(null); return; }
-    const div = this.frontDivision();
-    if (div) this.setFrontMode({ div });
+    const divs = this.frontDivisions();
+    if (divs) this.setFrontMode({ divs });
   },
 
   // Die ganze Auswahl gehört zu genau einer Division (sonst null)
@@ -156,14 +158,14 @@ const app = {
     return divs.size === 1 ? [...divs][0] : null;
   },
 
-  // Division, die eine Front bekommen soll: genau eine Division in der Auswahl
-  frontDivision() {
+  // Divisionen, die eine Front bekommen sollen: alle Divisionen in der Auswahl
+  // (Kompanien ohne Division zählen nicht)
+  frontDivisions() {
     const sel = this.ownSelection();
     const divs = [...new Set(sel.map(divisionOf).filter(Boolean))];
-    if (divs.length === 1) return divs[0];
+    if (divs.length) return divs;
     if (!sel.length) this.toast('Erst eine Division auswählen – unten in der Divisionsleiste oder auf der Karte');
-    else if (!divs.length) this.toast('Kompanien ohne Division können keine Front halten – erst eine Division bilden');
-    else this.toast('Bitte genau eine Division auswählen');
+    else this.toast('Kompanien ohne Division können keine Front halten – erst eine Division bilden');
     return null;
   },
 
@@ -180,21 +182,28 @@ const app = {
       this.toast('Angriff geplant – „▶ Angriff starten“ drücken');
       return;
     }
-    const div = mode && mode.div;
-    if (!div || div.dissolved) return;
-    const f = this.fronts.assign(div, 'line', line);
-    this.selectFront(f);
+    const divs = ((mode && mode.divs) || []).filter((d) => !d.dissolved);
+    if (!divs.length) return;
+    // Nahe der Grenze rastet die Linie ein und wird zum Grenzabschnitt
+    const anchors = this.fronts.snapToBorder(line);
+    const made = anchors
+      ? (divs.length > 1 ? this.fronts.splitBorder(divs, anchors) : [this.fronts.assign(divs[0], 'segment', null, anchors)])
+      : (divs.length > 1 ? this.fronts.splitLine(divs, line) : [this.fronts.assign(divs[0], 'line', line)]);
+    if (made.length === 1) this.selectFront(made[0]);
     this.divBarSig = null;
-    this.toast(`${div.name} hält die neue Front (${f.units.length} Kompanien)`);
+    const what = anchors ? 'den Grenzabschnitt' : 'die neue Front';
+    this.toast(divs.length > 1 ? `${divs.length} Divisionen teilen sich ${what}` : `${divs[0].name} hält ${what}`);
   },
 
+  // Grenze: eine Division hält die ganze Grenze, mehrere teilen sie sich nach Stärke
   borderFront() {
-    const div = this.frontDivision();
-    if (!div) return;
-    const f = this.fronts.assign(div, 'border', null);
-    this.selectFront(f);
+    const divs = this.frontDivisions();
+    if (!divs) return;
+    const made = divs.length > 1 ? this.fronts.splitBorder(divs) : [this.fronts.assign(divs[0], 'border', null)];
+    if (made.length === 1) this.selectFront(made[0]);
     this.divBarSig = null;
-    this.toast(f.chains.length ? `${div.name} hält die Grenze (${f.units.length} Kompanien)` : 'Keine Grenze zum Gegner gefunden');
+    if (!made.length || !made[0].chains.length) this.toast('Keine Grenze zum Gegner gefunden');
+    else this.toast(divs.length > 1 ? `${divs.length} Divisionen teilen sich die Grenze` : `${divs[0].name} hält die Grenze`);
   },
 
   selectFront(f) {
@@ -229,7 +238,8 @@ const app = {
     const cur = this.ui.front;
     $('frontPanel').hidden = !cur;
     if (!cur) return;
-    $('frontTitle').textContent = `${cur.division.name} · ${cur.kind === 'border' ? 'Grenzfront' : 'Front'} · ${cur.units.length} Kompanien`;
+    const kind = cur.kind === 'border' ? 'Grenzfront' : cur.kind === 'segment' ? 'Grenzabschnitt' : 'Front';
+    $('frontTitle').textContent = `${cur.division.name} · ${kind} · ${cur.units.length} Kompanien`;
     $('planBtn').hidden = !!cur.plan;
     $('planBtn').textContent = cur.attack ? '➜ Neues Ziel' : '➜ Angriff planen';
     $('attackBtn').hidden = !cur.plan;
@@ -405,6 +415,10 @@ const app = {
     g.events.length = 0;
     for (const ev of this.fronts.events) {
       if (ev.type === 'attackDone') this.toast('Angriffsziel erreicht – die Front hält die neue Linie', 'good');
+      else if (ev.type === 'frontLost') {
+        this.toast(`${ev.division.name} hat keinen Frontabschnitt mehr`);
+        this.divBarSig = null;
+      }
     }
     this.fronts.events.length = 0;
   },

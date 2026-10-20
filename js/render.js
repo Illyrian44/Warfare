@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=52';
-import { classify } from './map.js?v=52';
-import { frontBadge, pointAt } from './fronts.js?v=52';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf } from './orbat.js?v=52';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=53';
+import { classify } from './map.js?v=53';
+import { frontBadge, pointAt } from './fronts.js?v=53';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf } from './orbat.js?v=53';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -408,6 +408,25 @@ export class Renderer {
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 1.4 * px;
         ctx.stroke();
+      }
+    }
+
+    // Enden eines Grenzabschnitts: Querstrich wie an Divisionsgrenzen
+    if (!fogged && f.kind === 'segment') {
+      const chains = f.chains.filter((c) => c.length >= 2);
+      if (chains.length) {
+        const first = chains[0], last = chains[chains.length - 1];
+        for (const p of [first[0], last[last.length - 1]]) {
+          ctx.beginPath();
+          ctx.moveTo(p.x - (p.nx || 0) * 15 * px, p.y - (p.ny || 0) * 15 * px);
+          ctx.lineTo(p.x + (p.nx || 0) * 11 * px, p.y + (p.ny || 0) * 11 * px);
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 3.5 * px;
+          ctx.stroke();
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 1.6 * px;
+          ctx.stroke();
+        }
       }
     }
 

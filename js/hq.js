@@ -1,6 +1,6 @@
-import { unitStrength } from './game.js?v=52';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=52';
-import { pointAt } from './fronts.js?v=52';
+import { unitStrength } from './game.js?v=53';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=53';
+import { pointAt } from './fronts.js?v=53';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -99,57 +99,56 @@ export class HQManager {
     }
   }
 
-  // HQs sprechen sich ab: ist ein Divisionsabschnitt (weitgehend) leer, fordert das HQ
-  // bei den Nachbar-HQs Hilfe an; der Nachbar mit Reserven schickt Kompanien hinüber,
-  // bis die eigene Division den Abschnitt wieder besetzen kann
+  // HQs sprechen sich ab: ist der Frontabschnitt einer Division (weitgehend) leer,
+  // fordert ihr HQ bei den HQs der Nachbarfronten Hilfe an; der Nachbar mit Reserven
+  // schickt Kompanien hinüber, bis die eigene Division den Abschnitt wieder besetzen kann
   coverGaps(p, enemies) {
     const g = this.game;
     const own = g.units.filter((u) => u.owner === p && !u.rotating);
-    const fronts = new Set(own.map((u) => u.front).filter((f) => f && f.chains && f.chains.length &&
-      f.sections && f.sections.length > 1 && !f.attack));
+    // Über die Divisionen suchen: auch ein ganz verlassener Abschnitt bittet um Hilfe
+    const fronts = g.orbat[p].all(DIVISION).map((d) => d.front)
+      .filter((f) => f && f.chains.length && !f.attack && f.neighbors && f.neighbors.length);
     for (const f of fronts) {
-      const secs = f.sections;
-      for (let i = 0; i < secs.length; i++) {
-        const sec = secs[i];
-        if (!sec.div) continue;
-        const gaps = [];
-        let total = 0;
-        for (let t = sec.from + 15; t < sec.to; t += 30) {
-          total++;
-          const pt = pointAt(f.chains, t);
-          if (!pt) continue;
-          if (!own.some((u) => Math.abs(u.x - pt.x) < GAP_COVER && Math.abs(u.y - pt.y) < GAP_COVER &&
-            Math.hypot(u.x - pt.x, u.y - pt.y) < GAP_COVER)) gaps.push(pt);
-        }
-        if (!total || gaps.length / total < 0.5) continue; // Abschnitt ausreichend besetzt
-        if ((sec.div.helpUntil || 0) > g.time) continue;   // Hilfe ist schon unterwegs
-        const asker = sec.div.hq;
-        // Nachbarn links und rechts fragen, den mit den meisten freien Kompanien nehmen
-        let best = null;
-        for (const j of [i - 1, i + 1]) {
-          const nb = secs[j];
-          if (!nb || !nb.div || !nb.div.hq || !nb.div.hq.alive) continue;
-          const free = unitsOf(nb.div).filter((u) => g.units.includes(u) && this.controllable(u) &&
-            !enemies.some((e) => Math.hypot(e.x - u.x, e.y - u.y) < PRESSURE_RADIUS));
-          if (!best || free.length > best.free.length) best = { sec: nb, free };
-        }
-        if ((sec.div.askUntil || 0) > g.time) continue; // nicht ständig neu funken
-        sec.div.askUntil = g.time + 8;
-        if (asker && asker.alive && best) this.radio(asker, best.sec.div.hq, `${sec.div.name} bittet um Unterstützung`);
-        if (!best || best.free.length < 2) continue; // Nachbar hat selbst keine Reserven
-        const send = Math.min(Math.ceil(gaps.length / 2), Math.floor(best.free.length / 2), 3);
-        for (let k = 0; k < send; k++) {
-          const pt = gaps[Math.floor((k + 0.5) * gaps.length / send)];
-          let u = null, bd = Infinity;
-          for (const c of best.free) { const d = Math.hypot(c.x - pt.x, c.y - pt.y); if (d < bd) { bd = d; u = c; } }
-          if (!u) break;
-          best.free.splice(best.free.indexOf(u), 1);
-          this.send(u, pt.x, pt.y, 'aushelfen', true, LOAN_TIME);
-        }
-        if (send > 0) {
-          sec.div.helpUntil = g.time + LOAN_TIME;
-          this.radio(best.sec.div.hq, asker && asker.alive ? asker : best.sec.div.hq, `${best.sec.div.name} übernimmt Abschnitt (${send} Kp.)`);
-        }
+      const div = f.division;
+      // Rückt die Division selbst noch ein, ist die Lücke kein Notfall
+      if (f.units.length >= 2 && f.units.filter((u) => u.path.length).length >= f.units.length * 0.5) continue;
+      const gaps = [];
+      let total = 0;
+      for (let t = 15; t < f.length; t += 30) {
+        total++;
+        const pt = pointAt(f.chains, t);
+        if (!pt) continue;
+        if (!own.some((u) => Math.abs(u.x - pt.x) < GAP_COVER && Math.abs(u.y - pt.y) < GAP_COVER &&
+          Math.hypot(u.x - pt.x, u.y - pt.y) < GAP_COVER)) gaps.push(pt);
+      }
+      if (!total || gaps.length / total < 0.5) continue; // Abschnitt ausreichend besetzt
+      if ((div.helpUntil || 0) > g.time) continue;       // Hilfe ist schon unterwegs
+      const asker = div.hq;
+      // Nachbarfronten fragen, die Division mit den meisten freien Kompanien nehmen
+      let best = null;
+      for (const nf of f.neighbors) {
+        const nd = nf.division;
+        if (!nd || nd.dissolved || nf.attack || !nd.hq || !nd.hq.alive) continue;
+        const free = unitsOf(nd).filter((u) => g.units.includes(u) && this.controllable(u) &&
+          !enemies.some((e) => Math.hypot(e.x - u.x, e.y - u.y) < PRESSURE_RADIUS));
+        if (!best || free.length > best.free.length) best = { div: nd, free };
+      }
+      if ((div.askUntil || 0) > g.time) continue; // nicht ständig neu funken
+      div.askUntil = g.time + 8;
+      if (asker && asker.alive && best) this.radio(asker, best.div.hq, `${div.name} bittet um Unterstützung`);
+      if (!best || best.free.length < 2) continue; // Nachbar hat selbst keine Reserven
+      const send = Math.min(Math.ceil(gaps.length / 2), Math.floor(best.free.length / 2), 3);
+      for (let k = 0; k < send; k++) {
+        const pt = gaps[Math.floor((k + 0.5) * gaps.length / send)];
+        let u = null, bd = Infinity;
+        for (const c of best.free) { const d = Math.hypot(c.x - pt.x, c.y - pt.y); if (d < bd) { bd = d; u = c; } }
+        if (!u) break;
+        best.free.splice(best.free.indexOf(u), 1);
+        this.send(u, pt.x, pt.y, 'aushelfen', true, LOAN_TIME);
+      }
+      if (send > 0) {
+        div.helpUntil = g.time + LOAN_TIME;
+        this.radio(best.div.hq, asker && asker.alive ? asker : best.div.hq, `${best.div.name} übernimmt Abschnitt (${send} Kp.)`);
       }
     }
   }
