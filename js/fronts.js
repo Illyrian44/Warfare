@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=54';
-import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=54';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=55';
+import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=55';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -33,8 +33,8 @@ export class FrontManager {
 
   // Front einer Division anlegen oder ihre bestehende Front neu ausrichten
   // (eine Division hat höchstens eine Front). Grenzfronten und -abschnitte kürzen
-  // ältere, mit denen sie sich überschneiden.
-  assign(div, kind, line, anchors = null) {
+  // ältere, mit denen sie sich überschneiden (außer beim Aufteilen, das selbst abgleicht).
+  assign(div, kind, line, anchors = null, claim = true) {
     let f = this.fronts.includes(div.front) ? div.front : null;
     if (!f) {
       f = { id: this.nextId++, owner: this.owner, division: div, units: [], chains: [], rotate: true, neighbors: [] };
@@ -48,7 +48,7 @@ export class FrontManager {
     f.plan = null;
     this.rejoin(f);
     this.refresh(f, true);
-    if (kind !== 'line') this.claim(f);
+    if (claim && kind !== 'line') this.claim(f);
     this.updateNeighbors();
     return f;
   }
@@ -167,9 +167,12 @@ export class FrontManager {
       acc += (t1 - t0) * o.s / sum;
       const p = k === order.length - 1 ? range.anchors[1] : pointAt(chains, acc);
       const next = p && { x: p.x, y: p.y };
-      made.push(this.assign(o.d, 'segment', null, [prev, next]));
+      made.push(this.assign(o.d, 'segment', null, [prev, next], false));
       prev = next;
     });
+    // Erst alle neuen Abschnitte setzen, dann ältere Fronten anderer Divisionen kürzen;
+    // so verdrängen sich die aufgeteilten Divisionen nicht gegenseitig
+    for (const f of made) this.claim(f);
     return made;
   }
 
@@ -351,7 +354,35 @@ export class FrontManager {
     if (this.timer > 0) return;
     this.timer = REFRESH;
     for (const f of [...this.fronts]) this.refresh(f, !!f.force);
+    this.repair();
     this.updateNeighbors();
+  }
+
+  // Verändert sich die Grenze stark (z. B. wenn sie schrumpft), können Ankerpunkte ihre
+  // Reihenfolge tauschen und Abschnitte sich überlappen: die betroffenen Divisionen teilen
+  // sich ihren gemeinsamen Bereich dann neu auf (Reihenfolge nach ihrer Lage)
+  repair() {
+    const chains = this.border();
+    if (!chains.length) return;
+    const segs = this.fronts.filter((f) => f.kind !== 'line').map((f) => ({ f, r: this.rangeOf(f, chains) }));
+    const bad = new Set();
+    for (let i = 0; i < segs.length; i++) {
+      for (let j = i + 1; j < segs.length; j++) {
+        const a = segs[i].r, b = segs[j].r;
+        if (Math.min(a[1], b[1]) - Math.max(a[0], b[0]) > MIN_SECTION) { bad.add(segs[i]); bad.add(segs[j]); }
+      }
+    }
+    if (!bad.size) return;
+    const list = [...bad];
+    const t0 = Math.min(...list.map((s) => s.r[0])), t1 = Math.max(...list.map((s) => s.r[1]));
+    const total = list[0].r[2];
+    const anchor = (t, end) => {
+      if (Math.abs(t - end) < 1) return null;
+      const p = pointAt(chains, t);
+      return p && { x: p.x, y: p.y };
+    };
+    const made = this.splitBorder(list.map((s) => s.f.division), [anchor(t0, 0), anchor(t1, total)]);
+    for (const f of made) f.rotate = list.find((s) => s.f.division === f.division).f.rotate;
   }
 
   refresh(f, force) {

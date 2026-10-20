@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=54';
-import { Game } from './game.js?v=54';
-import { AI } from './ai.js?v=54';
-import { Renderer, isFrontShown } from './render.js?v=54';
-import { Input } from './input.js?v=54';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=54';
-import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=54';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=54';
+import { generateMap } from './map.js?v=55';
+import { Game } from './game.js?v=55';
+import { AI } from './ai.js?v=55';
+import { Renderer, isFrontShown } from './render.js?v=55';
+import { Input } from './input.js?v=55';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=55';
+import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=55';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=55';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);

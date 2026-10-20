@@ -1,11 +1,16 @@
-import { DIFFICULTY } from './config.js?v=54';
-import { unitStrength } from './game.js?v=54';
-import { mulberry32 } from './rng.js?v=54';
-import { FrontManager } from './fronts.js?v=54';
-import { DIVISION, strength, unitsOf } from './orbat.js?v=54';
+import { DIFFICULTY } from './config.js?v=55';
+import { unitStrength } from './game.js?v=55';
+import { mulberry32 } from './rng.js?v=55';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=55';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=55';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
+const ORGANIZE_EVERY = 5;   // Sekunden zwischen zwei Gliederungsdurchgängen
+const DIV_MIN = 6;          // neue Front-Divisionen: mindestens so viele Kompanien
+const DIV_SIZE = 10;        // und höchstens so viele
+const DIV_LEAVE = 400;      // so weit entfernte Kompanien verlassen ihre Division
+const GAP_RESPLIT = 80;     // so viel ungedeckte Grenze löst eine neue Aufteilung aus
 
 export class AI {
   constructor(game, player, difficulty = 'medium') {
@@ -20,11 +25,9 @@ export class AI {
     this.penalty = new Map();
     this.pathCache = new Map();
     this.fronts = new FrontManager(game, player);
-    this.front = null;
     this.nextFrontAttack = 30;
-    // Übergang bis zur eigenen Gliederungslogik der KI: Kompanien automatisch einteilen
-    game.orbat[player].autoOrganize(game.units);
-    this.nextOrganize = 5;
+    this.nextOrganize = 0;
+    this.needSplit = false;
   }
 
   update(dt) {
@@ -72,11 +75,12 @@ export class AI {
     }
     if (!myUnits.length) return;
 
+    this.fronts.syncAll();
     if (g.time >= this.nextOrganize) {
-      this.nextOrganize = g.time + 5;
-      g.orbat[me].autoOrganize(myUnits);
+      this.nextOrganize = g.time + ORGANIZE_EVERY;
+      this.organize(myUnits);
     }
-    this.manageFront(myUnits, enemies);
+    this.manageAttacks(enemies);
     const free = new Set(myUnits.filter((u) => !u.front));
 
     // Angeschlagene Einheiten zurückziehen
@@ -195,82 +199,150 @@ export class AI {
     }
   }
 
-  // Grenzfront wie ein Spieler. Übergang bis zur eigenen Frontplanung der KI: die
-  // stärkste Division hält die ganze Grenze, der Rest greift Städte an
-  manageFront(myUnits, enemies) {
-    this.fronts.syncAll();
-    if (this.front && !this.fronts.fronts.includes(this.front)) this.front = null;
-    if (!this.front) {
-      const divs = this.game.orbat[this.me].all(DIVISION).filter((d) => strength(d) >= 4);
-      if (!divs.length) return;
-      const div = divs.reduce((a, b) => (strength(b) > strength(a) ? b : a));
-      for (const u of unitsOf(div)) u.ai = null; // eigene Aufträge enden, die Front übernimmt
-      this.front = this.fronts.assign(div, 'border', null);
-      this.front.rotate = this.cfg.rotate;
-      if (!this.front.chains.length) {
-        this.fronts.remove(this.front);
-        this.front = null;
-        return;
+  // Gliederung der KI: Front-Divisionen bilden und auffüllen, Versprengte austragen,
+  // Kleinstdivisionen auflösen. Kompanien ohne Division sind die Reserve für Angriffe
+  // auf Städte und die Verteidigung.
+  organize(myUnits) {
+    const g = this.game;
+    const ob = g.orbat[this.me];
+    let changed = false; // neu aufteilen nur, wenn Divisionen entstehen oder verschwinden
+    // Versprengte verlassen ihre Division (nicht, wer gerade zum Heilen rotiert)
+    for (const div of [...ob.all(DIVISION)]) {
+      if (div.front && div.front.attack) continue;
+      const c = centerOf(div);
+      const far = c ? unitsOf(div).filter((u) => !u.rotating && Math.hypot(u.x - c.x, u.y - c.y) > DIV_LEAVE) : [];
+      if (far.length) {
+        ob.remove(far);
+        if (div.dissolved) changed = true;
       }
     }
-    const f = this.front;
-
-    // Halten oder angreifen, je nach Kräfteverhältnis an der Front
-    let mine = 0;
-    for (const u of f.units) mine += unitStrength(u);
-    let theirs = 0;
-    for (const e of enemies) {
-      if (f.units.some((u) => Math.hypot(u.x - e.x, u.y - e.y) < 180)) theirs += unitStrength(e);
+    // Kleinstdivisionen auflösen
+    for (const div of [...ob.all(DIVISION)]) {
+      if (strength(div) < 3 && !(div.front && div.front.attack)) { ob.disband(div); changed = true; }
     }
-    const g = this.game;
-    if (f.attack) {
-      // Laufenden Angriff abbrechen, wenn das Kräfteverhältnis kippt
-      if (mine < theirs * 0.9) this.backToBorder(f);
-      return;
+    // Front bis zum gewünschten Anteil der Armee auffüllen
+    const want = myUnits.length >= 6 ? Math.round(myUnits.length * this.cfg.frontShare) : 0;
+    const divs = ob.all(DIVISION);
+    const have = divs.reduce((s, d) => s + strength(d), 0);
+    const chains = this.fronts.border();
+    if (have < want && chains.length) {
+      const pts = chains.flat();
+      const dist = (u) => {
+        let best = Infinity;
+        for (let i = 0; i < pts.length; i += 3) best = Math.min(best, Math.hypot(pts[i].x - u.x, pts[i].y - u.y));
+        return best;
+      };
+      const recruits = myUnits
+        .filter((u) => !u.regiment && !u.target && !(u.ai && (u.ai.role === 'attack' || u.ai.role === 'retreat')))
+        .map((u) => ({ u, d: dist(u) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, want - have)
+        .map((o) => o.u);
+      // Erst nahe Divisionen mit freien Plätzen auffüllen, ...
+      const rest = [];
+      for (const u of recruits) {
+        let best = null, bd = 300;
+        for (const d of divs) {
+          if (strength(d) >= DIV_SIZE || (d.front && d.front.attack)) continue;
+          const c = centerOf(d);
+          const dd = c ? Math.hypot(c.x - u.x, c.y - u.y) : Infinity;
+          if (dd < bd) { bd = dd; best = d; }
+        }
+        if (best) { u.ai = null; ob.add(best, [u]); } else rest.push(u);
+      }
+      // ... die übrigen nach ihrer Lage an der Grenze zu neuen Divisionen zusammenfassen
+      if (rest.length >= DIV_MIN) {
+        rest.sort((a, b) => projectOnChains(chains, a) - projectOnChains(chains, b));
+        const size = Math.ceil(rest.length / Math.ceil(rest.length / DIV_SIZE));
+        for (let k = 0; k + 3 <= rest.length; k += size) {
+          const group = rest.slice(k, k + size);
+          for (const u of group) u.ai = null;
+          ob.createDivision(group);
+          changed = true;
+        }
+      }
+    } else if (have > want + DIV_SIZE) {
+      // Deutlich zu viele an der Front: die schwächste Division wird Reserve
+      const idle = divs.filter((d) => !(d.front && d.front.attack));
+      if (idle.length > 1) {
+        ob.disband(idle.reduce((a, b) => (strength(b) < strength(a) ? b : a)));
+        changed = true;
+      }
     }
-    if (f.kind === 'line') {
-      // Angriff beendet: wieder der (vorgerückten) Grenze folgen
-      this.backToBorder(f);
-      return;
-    }
-    if (g.time < this.nextFrontAttack || f.units.length < 4) return;
-    if (mine > theirs * this.cfg.frontPush + 2) this.launchFrontAttack(f);
+    this.fronts.syncAll(); // Fronten sofort an die neue Gliederung anpassen
+    const gap = this.fronts.uncovered().reduce((s, c) => s + chainLength(c), 0);
+    if (changed || this.needSplit || gap > GAP_RESPLIT) this.splitFronts();
   }
 
-  // Angriffspfeil wie der Spieler: Ziellinie quer hinter die nächste feindliche Stadt legen
-  launchFrontAttack(f) {
+  // Alle Divisionen, die nicht gerade angreifen, teilen sich die Grenze wie beim Spieler
+  splitFronts() {
+    const ob = this.game.orbat[this.me];
+    const holders = ob.all(DIVISION).filter((d) => !(d.front && d.front.attack));
+    this.needSplit = false;
+    if (!holders.length) return;
+    for (const d of holders) for (const u of unitsOf(d)) u.ai = null; // eigene Aufträge enden
+    for (const f of this.fronts.splitBorder(holders)) f.rotate = this.cfg.rotate;
+  }
+
+  // Angriffe von der Front: die 1–2 Divisionen, die einer Stadt am nächsten sind, stoßen
+  // vor, die übrigen halten ihre Abschnitte
+  manageAttacks(enemies) {
     const g = this.game;
-    const active = f.units.filter((u) => !u.rotating);
-    if (!active.length) return;
-    const cx = active.reduce((a, u) => a + u.x, 0) / active.length;
-    const cy = active.reduce((a, u) => a + u.y, 0) / active.length;
+    const sum = (list) => list.reduce((a, u) => a + unitStrength(u), 0);
+    const pressure = (units) => sum(enemies.filter((e) => units.some((u) => Math.hypot(u.x - e.x, u.y - e.y) < 180)));
+    for (const f of [...this.fronts.fronts]) {
+      // Laufenden Angriff abbrechen, wenn das Kräfteverhältnis kippt; beendeten auflösen
+      if (f.attack ? sum(f.units) < pressure(f.units) * 0.9 : f.kind === 'line') this.backToBorder(f);
+    }
+    if (g.time < this.nextFrontAttack) return;
+    const ready = this.fronts.fronts.filter((f) => !f.attack && f.kind !== 'line' &&
+      f.units.filter((u) => !u.rotating).length >= 4);
     const targets = g.cities.filter((c) => c.owner !== this.me);
-    if (!targets.length) return;
+    if (!ready.length || !targets.length) return;
+    const center = (f) => centerOf(f.division);
     let target = null, bd = Infinity;
     for (const c of targets) {
-      const d = Math.hypot(c.x - cx, c.y - cy) + (c.owner === this.foe ? 0 : 80);
-      if (d < bd) { bd = d; target = c; }
+      for (const f of ready) {
+        const p = center(f);
+        const d = p ? Math.hypot(c.x - p.x, c.y - p.y) + (c.owner === this.foe ? 0 : 80) : Infinity;
+        if (d < bd) { bd = d; target = c; }
+      }
     }
-    const dx = target.x - cx, dy = target.y - cy;
-    const dl = Math.hypot(dx, dy) || 1;
-    const ux = dx / dl, uy = dy / dl;
+    const attackers = ready
+      .map((f) => ({ f, d: Math.hypot(target.x - center(f).x, target.y - center(f).y) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2)
+      .filter((o, k) => k === 0 || o.d < 500)
+      .map((o) => o.f);
+    const units = attackers.flatMap((f) => f.units.filter((u) => !u.rotating));
+    const defenders = new Set(enemies.filter((e) => Math.hypot(e.x - target.x, e.y - target.y) < TARGET_RADIUS ||
+      units.some((u) => Math.hypot(u.x - e.x, u.y - e.y) < 180)));
+    if (sum(units) <= sum([...defenders]) * this.cfg.frontPush + 2) return;
+    // Ziellinie quer hinter der Stadt, auf die Angreifer aufgeteilt
+    const cx = units.reduce((a, u) => a + u.x, 0) / units.length;
+    const cy = units.reduce((a, u) => a + u.y, 0) / units.length;
+    const dl = Math.hypot(target.x - cx, target.y - cy) || 1;
+    const ux = (target.x - cx) / dl, uy = (target.y - cy) / dl;
     const mx = target.x + ux * 40, my = target.y + uy * 40;
-    const half = Math.min(220, Math.max(90, active.length * 14));
+    const half = Math.min(220, Math.max(90, units.length * 14));
     const line = [];
-    for (let k = -2; k <= 2; k++) {
-      line.push({ x: mx - uy * half * k / 2, y: my + ux * half * k / 2 });
-    }
-    this.fronts.planAttack(f, line);
-    this.fronts.startAttack(f);
+    for (let k = -2; k <= 2; k++) line.push({ x: mx - uy * half * k / 2, y: my + ux * half * k / 2 });
+    const total = chainLength(line);
+    const order = attackers.map((f) => ({ f, t: projectOnChains([line], center(f)) })).sort((a, b) => a.t - b.t);
+    order.forEach((o, k) => {
+      const part = sliceChains([line], total * k / order.length, total * (k + 1) / order.length)[0] || line;
+      this.fronts.planAttack(o.f, part.map((q) => ({ x: q.x, y: q.y })));
+      this.fronts.startAttack(o.f);
+    });
     this.nextFrontAttack = g.time + 20;
   }
 
+  // Nach dem Angriff (oder bei Abbruch) übernimmt die Division wieder einen Grenzabschnitt
   backToBorder(f) {
-    f.kind = 'border';
-    f.line = null;
     f.attack = null;
     f.plan = null;
-    this.fronts.schedule(f);
+    this.needSplit = true;
+    this.splitFronts();
     this.nextFrontAttack = Math.max(this.nextFrontAttack, this.game.time + 15);
   }
 

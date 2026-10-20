@@ -18,6 +18,8 @@ const CASES = [[1, 'small'], [42, 'medium'], [777, 'large']];
 let failed = 0;
 const fail = (msg) => { failed++; console.error('  FEHLER: ' + msg); };
 
+const overlapSince = new Map();
+
 function checkState(g, label, ais) {
   // Keine Einheit dauerhaft auf unbegehbarem Gelände
   for (const u of g.units) {
@@ -56,7 +58,11 @@ function checkState(g, label, ais) {
     for (let i = 0; i < ranges.length; i++) {
       for (let j = i + 1; j < ranges.length; j++) {
         const [fa, a0, a1] = ranges[i], [fb, b0, b1] = ranges[j];
-        if (Math.min(a1, b1) - Math.max(a0, b0) > 40) fail(`${label}: Grenzabschnitte von ${fa.division.name} und ${fb.division.name} überlappen`);
+        // kurzzeitig erlaubt: die Frontverwaltung repariert Überlappungen bei der nächsten Neuberechnung
+        const key = `${ai.me}:${fa.id}:${fb.id}`;
+        if (Math.min(a1, b1) - Math.max(a0, b0) > 40) overlapSince.set(key, (overlapSince.get(key) || 0) + 1);
+        else overlapSince.delete(key);
+        if (overlapSince.get(key) === 4) fail(`${label}: Grenzabschnitte von ${fa.division.name} und ${fb.division.name} überlappen seit 3 s`);
       }
     }
     const divs = new Set();
@@ -80,10 +86,8 @@ for (const [seed, size] of CASES) {
   try {
     const g = new Game(generateMap(seed, size));
     const ais = [new AI(g, 1, 'medium'), new AI(g, 2, 'hard')];
-    for (let p = 1; p <= 2; p++) {
-      if (g.units.some((u) => u.owner === p && !u.regiment)) fail(`${label}: Seite ${p} hat beim Start Kompanien ohne Division`);
-    }
     let steps = 0, maxDivs = 0;
+    const formed = [0, 0, 0], reserve = [0, 0, 0], attacks = [0, 0, 0];
     while (!g.winner && g.time < MAX_TIME) {
       const t = performance.now();
       for (const ai of ais) ai.update(STEP);
@@ -93,12 +97,23 @@ for (const [seed, size] of CASES) {
       if (++steps % 30 === 0) {
         checkState(g, label, ais);
         maxDivs = Math.max(maxDivs, g.orbat[1].all(DIVISION).length + g.orbat[2].all(DIVISION).length);
+        for (let p = 1; p <= 2; p++) {
+          if (g.orbat[p].all(DIVISION).length) formed[p]++;
+          if (g.units.some((u) => u.owner === p && !u.regiment)) reserve[p]++;
+          if (ais[p - 1].fronts.fronts.some((f) => f.attack)) attacks[p]++;
+        }
       }
     }
     if (!g.winner) fail(`${label}: nach ${MAX_TIME / 60} Minuten Spielzeit noch kein Sieger`);
+    // Die KI bildet Divisionen für ihre Fronten und behält eine Reserve ohne Division
+    for (let p = 1; p <= 2; p++) {
+      if (formed[p] < steps / 30 * 0.5) fail(`${label}: Seite ${p} hatte nur selten Divisionen (${formed[p]} von ${Math.round(steps / 30)} s)`);
+      if (!reserve[p]) fail(`${label}: Seite ${p} hatte nie eine Reserve ohne Division`);
+    }
     const ms = (performance.now() - t0) / steps;
     console.log(`${g.winner ? 'ok  ' : '    '} ${label}: Sieger ${g.winner} nach ${Math.round(g.time)} s, ` +
-      `${ms.toFixed(2)} ms/Schritt (max ${worst.toFixed(0)} ms), bis zu ${maxDivs} Divisionen`);
+      `${ms.toFixed(2)} ms/Schritt (max ${worst.toFixed(0)} ms), bis zu ${maxDivs} Divisionen, ` +
+      `Frontangriffe ${attacks[1]}/${attacks[2]} s`);
   } catch (e) {
     fail(`${label}: Absturz\n${e.stack}`);
   }
