@@ -1,23 +1,19 @@
-// Gliederung (Order of Battle): Kompanie → Regiment → Brigade → Division → Korps → Armee.
-// Jede Kompanie gehört fest zu einem Regiment, jedes Regiment zu einer Brigade usw.
+// Gliederung (Order of Battle): Division (XX) → Regiment (III) → Kompanie (I).
+// Kompanien starten ohne Division; Spieler und KI fassen sie nach Bedarf zu Divisionen
+// zusammen. Die Regimenter innerhalb einer Division ordnet das Spiel selbst.
 
 export const LEVELS = [
   { name: 'Kompanie', short: 'Kp.', echelon: 'I' },
   { name: 'Regiment', short: 'Rgt.', echelon: 'III' },
-  { name: 'Brigade', short: 'Brig.', echelon: 'X' },
   { name: 'Division', short: 'Div.', echelon: 'XX' },
-  { name: 'Korps', short: 'Korps', echelon: 'XXX' },
-  { name: 'Armee', short: 'Armee', echelon: 'XXXX' },
 ];
-export const REGIMENT = 1, BRIGADE = 2, DIVISION = 3, CORPS = 4, ARMY = 5;
+export const REGIMENT = 1, DIVISION = 2;
 
-// Sollstärke: Kinder je Verband (Regiment: Kompanien)
-const SIZE = { [REGIMENT]: 2, [BRIGADE]: 2, [DIVISION]: 2, [CORPS]: 2 };
-
-// Sollstärke in Kompanien je Stufe (Regiment 2, Brigade 4, Division 8, Korps 16, Armee 32)
-export const NOMINAL = {};
-NOMINAL[REGIMENT] = SIZE[REGIMENT];
-for (let l = BRIGADE; l <= ARMY; l++) NOMINAL[l] = NOMINAL[l - 1] * (SIZE[l] || 2);
+export const DIVISION_MAX = 12; // Höchststärke einer Division in Kompanien
+export const REGIMENT_MAX = 3;  // Kompanien je Regiment
+const AUTO_SIZE = 8;            // Auto-Gliederung: Kompanien je neuer Division
+const AUTO_RADIUS = 260;        // Auto-Gliederung: so weit dürfen Kompanien einer Division auseinander stehen
+const TYPES = ['light', 'heavy'];
 
 // Farbtöne je Division: Blautöne für Blau, Rottöne für Rot (gut unterscheidbar,
 // hell genug für die schwarzen NATO-Zeichen)
@@ -32,86 +28,184 @@ export function divisionColor(f) {
   return pal[(f.colorIndex || 0) % pal.length];
 }
 
-const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-
 export class OrderOfBattle {
   static nextId = 0;
 
   constructor(owner) {
     this.owner = owner;
-    this.counters = [0, 0, 0, 0, 0, 0];
-    this.army = this.make(ARMY, null);
+    this.divisions = [];
   }
 
-  make(level, parent) {
-    const n = ++this.counters[level];
-    const f = {
-      id: ++OrderOfBattle.nextId, level, owner: this.owner, parent, children: [], units: [],
-      name: level === CORPS ? `${ROMAN[n] || n}. Korps` : `${n}. ${LEVELS[level].short}`,
+  // Kleinste freie Nummer: aufgelöste Verbände geben Nummer (und Farbe) wieder frei
+  freeNumber(list) {
+    const used = new Set(list.map((f) => f.number));
+    let n = 1;
+    while (used.has(n)) n++;
+    return n;
+  }
+
+  makeDivision() {
+    const n = this.freeNumber(this.divisions);
+    const div = {
+      id: ++OrderOfBattle.nextId, level: DIVISION, owner: this.owner, parent: null, children: [],
+      number: n, colorIndex: n - 1, name: `${n}. Div.`,
     };
-    if (level === DIVISION) f.colorIndex = n - 1;
-    if (parent) parent.children.push(f);
-    return f;
+    this.divisions.push(div);
+    this.divisions.sort((a, b) => a.number - b.number);
+    return div;
   }
 
-  // Startaufstellung: je Stadt eine Division (2 Brigaden à 2 Regimenter à 2 Kompanien),
-  // je zwei Divisionen ein Korps, alles unter einer Armee
-  createStart(game, cities) {
-    let corps = null;
-    cities.forEach((city, k) => {
-      if (k % SIZE[CORPS] === 0) corps = this.make(CORPS, this.army);
-      const div = this.make(DIVISION, corps);
-      let slot = 0;
-      for (let b = 0; b < SIZE[DIVISION]; b++) {
-        const brig = this.make(BRIGADE, div);
-        for (let r = 0; r < SIZE[BRIGADE]; r++) {
-          const reg = this.make(REGIMENT, brig);
-          // Ein Panzerregiment je Division, sonst Infanterie
-          const type = b === SIZE[DIVISION] - 1 && r === SIZE[BRIGADE] - 1 ? 'heavy' : 'light';
-          for (let c = 0; c < SIZE[REGIMENT]; c++) {
-            const u = game.spawnUnit(this.owner, type, city, slot++);
-            this.attach(u, reg);
-          }
-        }
-      }
-    });
-  }
-
-  attach(u, reg) {
-    u.regiment = reg;
-    reg.units.push(u);
-  }
-
-  // Neue Kompanie dem schwächsten Regiment zuteilen; sind alle voll, neue Verbände bilden
-  assign(u, game) {
-    this.prune(game);
-    const regs = this.all(REGIMENT).sort((a, b) => a.units.length - b.units.length);
-    if (regs.length && regs[0].units.length < SIZE[REGIMENT]) return this.attach(u, regs[0]);
-    this.attach(u, this.make(REGIMENT, this.slotFor(BRIGADE)));
-  }
-
-  // Verband der Stufe `level` mit freiem Platz finden oder anlegen
-  slotFor(level) {
-    if (level === ARMY) return this.army;
-    const open = this.all(level).filter((f) => f.children.length < SIZE[level])
-      .sort((a, b) => a.children.length - b.children.length);
-    if (open.length) return open[0];
-    return this.make(level, this.slotFor(level + 1));
+  makeRegiment(div, type) {
+    const n = this.freeNumber(this.all(REGIMENT));
+    const reg = {
+      id: ++OrderOfBattle.nextId, level: REGIMENT, owner: this.owner, parent: div, children: [], units: [],
+      type, number: n, name: `${n}. Rgt.`,
+    };
+    div.children.push(reg);
+    return reg;
   }
 
   all(level) {
-    const out = [];
-    const walk = (f) => {
-      if (f.level === level) { out.push(f); return; }
-      for (const c of f.children) walk(c);
-    };
-    walk(this.army);
-    return out;
+    if (level === DIVISION) return this.divisions;
+    if (level === REGIMENT) return this.divisions.flatMap((d) => d.children);
+    return [];
   }
 
-  // Gefallene Kompanien austragen
-  prune(game) {
-    for (const reg of this.all(REGIMENT)) reg.units = reg.units.filter((u) => u.hp > 0 && game.units.includes(u));
+  // Startaufstellung: je eigene Stadt 8 Kompanien (davon 2 Panzer), noch ohne Division
+  createStart(game, cities) {
+    for (const city of cities) {
+      for (let k = 0; k < 8; k++) game.spawnUnit(this.owner, k >= 6 ? 'heavy' : 'light', city, k);
+    }
+  }
+
+  // Neue Division aus Kompanien bilden (höchstens DIVISION_MAX)
+  createDivision(units) {
+    const list = units.filter((u) => u.owner === this.owner && u.hp > 0).slice(0, DIVISION_MAX);
+    if (!list.length) return null;
+    const div = this.makeDivision();
+    this.add(div, list);
+    return div;
+  }
+
+  // Kompanien einer Division zuteilen; sie verlassen dabei ihre alte Division.
+  // Liefert die Zahl der aufgenommenen Kompanien (begrenzt durch die Höchststärke)
+  add(div, units) {
+    let added = 0;
+    for (const u of units) {
+      if (u.owner !== this.owner || u.hp <= 0 || divisionOf(u) === div) continue;
+      if (strength(div) >= DIVISION_MAX) break;
+      this.remove([u]);
+      this.place(div, u);
+      added++;
+    }
+    if (added) this.compact(div);
+    return added;
+  }
+
+  // In das kleinste Regiment gleichen Typs mit freiem Platz, sonst neues Regiment
+  place(div, u) {
+    let reg = null;
+    for (const r of div.children) {
+      if (r.type === u.type && r.units.length < REGIMENT_MAX && (!reg || r.units.length < reg.units.length)) reg = r;
+    }
+    if (!reg) reg = this.makeRegiment(div, u.type);
+    reg.units.push(u);
+    u.regiment = reg;
+  }
+
+  // Kompanien aus ihrer Division nehmen
+  remove(units) {
+    const touched = new Set();
+    for (const u of units) {
+      const reg = u.regiment;
+      if (!reg) continue;
+      reg.units = reg.units.filter((o) => o !== u);
+      u.regiment = null;
+      touched.add(reg.parent);
+    }
+    for (const div of touched) this.compact(div);
+  }
+
+  disband(div) {
+    this.remove(div.children.flatMap((r) => r.units));
+    if (!div.dissolved) this.dissolve(div);
+  }
+
+  // Regimenter aufräumen: Gefallene austragen, je Typ so wenige Regimenter wie nötig,
+  // Größen angleichen (2+2 statt 3+1). Leere Divisionen werden aufgelöst.
+  compact(div) {
+    for (const r of div.children) r.units = r.units.filter((u) => u.hp > 0 && u.regiment === r);
+    for (const type of TYPES) {
+      const regs = div.children.filter((r) => r.type === type).sort((a, b) => b.units.length - a.units.length);
+      const n = regs.reduce((s, r) => s + r.units.length, 0);
+      const keep = regs.slice(0, Math.ceil(n / REGIMENT_MAX));
+      for (const r of regs.slice(keep.length)) {
+        for (const u of r.units) {
+          const t = keep.reduce((a, b) => (b.units.length < a.units.length ? b : a));
+          t.units.push(u);
+          u.regiment = t;
+        }
+        r.units = [];
+      }
+      for (let guard = 0; guard < 6 && keep.length > 1; guard++) {
+        keep.sort((a, b) => b.units.length - a.units.length);
+        const big = keep[0], small = keep[keep.length - 1];
+        if (big.units.length - small.units.length < 2) break;
+        const u = big.units.pop();
+        small.units.push(u);
+        u.regiment = small;
+      }
+    }
+    div.children = div.children.filter((r) => r.units.length);
+    if (!div.children.length) this.dissolve(div);
+  }
+
+  dissolve(div) {
+    for (const r of div.children) for (const u of r.units) if (u.regiment === r) u.regiment = null;
+    div.children = [];
+    div.dissolved = true;
+    if (div.hq) div.hq.alive = false;
+    this.divisions = this.divisions.filter((d) => d !== div);
+  }
+
+  // Gefallene austragen und leere Divisionen auflösen (regelmäßig aus dem Spiel aufgerufen)
+  prune() {
+    for (const div of [...this.divisions]) this.compact(div);
+  }
+
+  // Auto-Gliederung: Kompanien ohne Division nach ihrer Lage zu Divisionen zusammenfassen.
+  // Kleine Reste schließen sich einer nahen Division mit freien Plätzen an.
+  autoOrganize(units) {
+    const pool = units.filter((u) => u.owner === this.owner && u.hp > 0 && !u.regiment)
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+    const made = [];
+    while (pool.length) {
+      const seed = pool[0];
+      const group = pool.map((u) => ({ u, d: Math.hypot(u.x - seed.x, u.y - seed.y) }))
+        .filter((o) => o.d <= AUTO_RADIUS)
+        .sort((a, b) => a.d - b.d)
+        .slice(0, AUTO_SIZE)
+        .map((o) => o.u);
+      for (const u of group) pool.splice(pool.indexOf(u), 1);
+      if (group.length < 3) {
+        const near = this.nearestWithSpace(seed, AUTO_RADIUS);
+        if (near) { this.add(near, group); continue; }
+        if (group.length < 2) continue;
+      }
+      made.push(this.createDivision(group));
+    }
+    return made;
+  }
+
+  nearestWithSpace(p, maxDist) {
+    let best = null, bd = maxDist;
+    for (const div of this.divisions) {
+      if (strength(div) >= DIVISION_MAX) continue;
+      const c = centerOf(div);
+      const d = c ? Math.hypot(c.x - p.x, c.y - p.y) : Infinity;
+      if (d <= bd) { bd = d; best = div; }
+    }
+    return best;
   }
 }
 
@@ -123,9 +217,27 @@ export function unitsOf(f) {
   return out;
 }
 
+// Zahl der eingeteilten Kompanien (auch eben gefallene, bis sie ausgetragen sind)
+export function strength(div) {
+  return div.children.reduce((s, r) => s + r.units.length, 0);
+}
+
+export function centerOf(f) {
+  const units = unitsOf(f);
+  if (!units.length) return null;
+  return {
+    x: units.reduce((a, u) => a + u.x, 0) / units.length,
+    y: units.reduce((a, u) => a + u.y, 0) / units.length,
+  };
+}
+
 // Verband einer Kompanie auf der gewünschten Stufe
 export function formationOf(u, level) {
   let f = u.regiment;
   while (f && f.level < level) f = f.parent;
   return f;
+}
+
+export function divisionOf(u) {
+  return u.regiment ? u.regiment.parent : null;
 }

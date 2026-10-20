@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=49';
-import { classify } from './map.js?v=49';
-import { frontBadge, pointAt } from './fronts.js?v=49';
-import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=49';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=50';
+import { classify } from './map.js?v=50';
+import { frontBadge, pointAt } from './fronts.js?v=50';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf } from './orbat.js?v=50';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -235,12 +235,11 @@ export class Renderer {
       for (const g of groups) { gid++; for (const u of g.members) u.drawGroup = g.members.length > 1 ? p * 100000 + gid : 0; }
       for (const group of groups) {
         if (group.members.length < 2) continue;
-        const label = labelFor(group.members);
         const sel = group.members.some((u) => ui.selection.has(u));
         const inFront = ui.front && group.members.some((u) => u.front === ui.front);
         const hw = drawFormationSymbol(ctx, group.x, group.y, group.members, p === me, px,
           sel ? '#fff' : inFront ? '#f2c94c' : null, group.members.some((u) => u.starving) && flash,
-          label.level, label.name, label.count);
+          labelFor(group.members));
         for (const u of group.members) drawn.add(u);
         if (p === me) this.divHits.push({ x: group.x, y: group.y, r: hw, members: group.members });
       }
@@ -493,8 +492,10 @@ function hash(x, y) {
 
 const NATO_FRIEND = '#80e0ff';
 const NATO_HOSTILE = '#ff8080';
+const LOOSE_FRIEND = '#c9d2dc';  // Kompanien ohne Division: grau
+const LOOSE_HOSTILE = '#dcc6c6';
 
-// Füllfarbe nach Division der Kompanie(n): Farbe der häufigsten Division
+// Füllfarbe nach Division der Kompanie(n): Farbe der häufigsten Division, ohne Division grau
 function fillFor(members, friend) {
   const count = new Map();
   for (const u of members) {
@@ -503,7 +504,7 @@ function fillFor(members, friend) {
   }
   let best = null, bc = 0;
   for (const [f, c] of count) if (c > bc) { bc = c; best = f; }
-  return best ? divisionColor(best) : friend ? NATO_FRIEND : NATO_HOSTILE;
+  return best ? divisionColor(best) : friend ? LOOSE_FRIEND : LOOSE_HOSTILE;
 }
 
 // Rahmen nach APP-6: Rechteck für eigene, Raute für feindliche Einheiten
@@ -667,9 +668,10 @@ function drawAxisOfAdvance(ctx, from, to, px, color, planned) {
   ctx.lineCap = 'round';
 }
 
-// Divisionssymbol (APP-6): Größenzeichen XX, Innenzeichen nach Zusammensetzung
-// (X = Infanterie, Oval = Panzer, beides = Panzergrenadiere), Zahl der Kompanien
-function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving, level, name, count = '') {
+// Verbandssymbol (APP-6): Größenzeichen (III, XX), Innenzeichen nach Zusammensetzung
+// (X = Infanterie, Oval = Panzer, beides = Panzergrenadiere), Name und Stärke
+function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving, label) {
+  const { level, echelon, name, count } = label;
   // Mindestens etwas größer als eine Kompanie; beim Hineinzoomen wächst das Symbol mit
   // der Karte, und Linien, Schrift und Größenzeichen skalieren proportional mit
   const base = 10 + level * 1.2;
@@ -708,9 +710,9 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
     ctx.stroke();
   }
 
-  // Größenzeichen der Stufe über dem Rahmen (III, X, XX, XXX, XXXX)
+  // Größenzeichen der Stufe über dem Rahmen (III, XX)
   const top = friend ? y - hh : y - d;
-  drawEchelon(ctx, x, top, LEVELS[level].echelon, px);
+  drawEchelon(ctx, x, top, echelon, px);
 
   // Name des Verbands rechts neben dem Symbol
   ctx.font = `bold ${10 * px}px system-ui, sans-serif`;
@@ -719,10 +721,10 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
   ctx.lineWidth = 3 * px;
   ctx.strokeStyle = 'rgba(255,255,255,0.9)';
   ctx.fillStyle = '#111';
-  const label = name || String(members.length);
+  const text = name || String(members.length);
   const lx = x + (friend ? hw : d) + 3 * px;
-  ctx.strokeText(label, lx, y);
-  ctx.fillText(label, lx, y);
+  ctx.strokeText(text, lx, y);
+  ctx.fillText(text, lx, y);
   if (count) {
     // Stärke anwesend/Soll unter dem Namen
     ctx.font = `${8 * px}px system-ui, sans-serif`;
@@ -744,12 +746,13 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
 }
 
 // Stufe und Name aus der Gliederung: kleinster gemeinsamer Verband der Kompanien
-// (Regiment, Brigade oder Division), dazu ein Zähler anwesend/Sollstärke
+// (Regiment oder Division), dazu ein Zähler anwesend/Stärke des Verbands.
+// Kompanien ohne Division haben keinen Verband: kein Größenzeichen, nur die Anzahl
 function labelFor(members) {
   let f = members[0].regiment;
-  while (f && f.level < ARMY && !members.every((u) => isIn(u, f))) f = f.parent;
-  if (!f) return { level: REGIMENT, name: '', count: '' };
-  return { level: f.level, name: f.name, count: `${members.length}/${NOMINAL[f.level]}` };
+  while (f && !members.every((u) => isIn(u, f))) f = f.parent;
+  if (!f) return { level: REGIMENT, echelon: '', name: `${members.length} Kp.`, count: '' };
+  return { level: f.level, echelon: LEVELS[f.level].echelon, name: f.name, count: `${members.length}/${unitsOf(f).length}` };
 }
 
 function isIn(u, f) {

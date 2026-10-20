@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=49';
-import { Game } from './game.js?v=49';
-import { AI } from './ai.js?v=49';
-import { Renderer } from './render.js?v=49';
-import { Input } from './input.js?v=49';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=49';
-import { DIVISION, unitsOf, divisionColor } from './orbat.js?v=49';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=49';
+import { generateMap } from './map.js?v=50';
+import { Game } from './game.js?v=50';
+import { AI } from './ai.js?v=50';
+import { Renderer } from './render.js?v=50';
+import { Input } from './input.js?v=50';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=50';
+import { DIVISION, REGIMENT_MAX, unitsOf, divisionColor } from './orbat.js?v=50';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=50';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -36,6 +36,9 @@ const app = {
     $('menuError').hidden = true;
     this.game = new Game(map);
     this.ai = new AI(this.game, 2, difficulty);
+    // Übergang, bis der Spieler selbst Divisionen bildet: Startkompanien automatisch einteilen
+    this.game.orbat[this.human].autoOrganize(this.game.units);
+    this.game.hq.place();
     this.fronts = new FrontManager(this.game, this.human);
     this.ui.frontMode = null;
     this.ui.front = null;
@@ -65,7 +68,7 @@ const app = {
     const { worldW, worldH } = this.game.map;
     const vw = canvas.clientWidth, vh = canvas.clientHeight;
     const fit = Math.min(vw / worldW, vh / worldH);
-    this.cam.min = Math.min(fit * 0.6, 0.15); // weit genug für Korps- und Armeeansicht
+    this.cam.min = Math.min(fit * 0.6, 0.15); // weit genug für den Überblick über die ganze Insel
     this.cam.max = 8;
     // Auf die eigene Seite zoomen, wenn der Bildschirm klein ist
     const mine = this.game.citiesOf(this.human);
@@ -318,14 +321,10 @@ const app = {
     this.divBarSig = sig;
     bar.innerHTML = divs.map((d) => {
       const heavy = d.units.filter((u) => u.type === 'heavy').length / d.units.length;
-      const regs = [];
-      for (const brig of d.f.children) {
-        for (const reg of brig.children) {
-          const alive = reg.units.filter((u) => g.units.includes(u));
-          const armor = reg.units.some((u) => u.type === 'heavy');
-          regs.push(natoIcon(armor ? 1 : 0, 16, 11, alive.length ? 0.35 + 0.65 * alive.length / 2 : 0.15, '', divisionColor(d.f)));
-        }
-      }
+      const regs = d.f.children.map((reg) => {
+        const alive = reg.units.filter((u) => g.units.includes(u)).length;
+        return natoIcon(reg.type === 'heavy' ? 1 : 0, 16, 11, alive ? 0.35 + 0.65 * alive / REGIMENT_MAX : 0.15, '', divisionColor(d.f));
+      });
       const sel = d.units.some((u) => this.ui.selection.has(u)) ? ' sel' : '';
       return `<button class="divcard${sel}" data-id="${d.f.id}" title="${d.f.name}: ${d.units.length} Kompanien">` +
         `<span class="sym">${natoIcon(heavy, 26, 18, 1, 'XX', divisionColor(d.f))}</span>` +

@@ -1,7 +1,7 @@
-import { DIFFICULTY } from './config.js?v=49';
-import { unitStrength } from './game.js?v=49';
-import { mulberry32 } from './rng.js?v=49';
-import { FrontManager } from './fronts.js?v=49';
+import { DIFFICULTY } from './config.js?v=50';
+import { unitStrength } from './game.js?v=50';
+import { mulberry32 } from './rng.js?v=50';
+import { FrontManager } from './fronts.js?v=50';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -21,6 +21,9 @@ export class AI {
     this.fronts = new FrontManager(game, player);
     this.front = null;
     this.nextFrontAttack = 30;
+    // Übergang bis zur eigenen Gliederungslogik der KI: Kompanien automatisch einteilen
+    game.orbat[player].autoOrganize(game.units);
+    this.nextOrganize = 5;
   }
 
   update(dt) {
@@ -68,6 +71,10 @@ export class AI {
     }
     if (!myUnits.length) return;
 
+    if (g.time >= this.nextOrganize) {
+      this.nextOrganize = g.time + 5;
+      g.orbat[me].autoOrganize(myUnits);
+    }
     this.manageFront(myUnits, enemies);
     const free = new Set(myUnits.filter((u) => !u.front));
 

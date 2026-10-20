@@ -2,10 +2,10 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE,
-} from './config.js?v=49';
-import { mulberry32 } from './rng.js?v=49';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=49';
-import { HQManager } from './hq.js?v=49';
+} from './config.js?v=50';
+import { mulberry32 } from './rng.js?v=50';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=50';
+import { HQManager } from './hq.js?v=50';
 
 export class Game {
   constructor(map) {
@@ -34,7 +34,7 @@ export class Game {
     this.visionVersion = 0;
     this.stats = [null, { lost: 0, built: 0, captured: 0 }, { lost: 0, built: 0, captured: 0 }];
 
-    // Jede Seite startet mit einer Armee: je eigene Stadt eine Division
+    // Startaufstellung: je eigene Stadt 8 Kompanien, noch ohne Division
     this.orbat = [null, new OrderOfBattle(1), new OrderOfBattle(2)];
     for (let p = 1; p <= 2; p++) {
       const own = this.cities.filter((c) => c.owner === p).sort((a, b) => a.y - b.y);
@@ -403,15 +403,13 @@ export class Game {
     }
   }
 
-  // Divisionen aus der festen Gliederung
+  // Gefallene aus der Gliederung austragen und Divisionen für die Rotation sammeln
   updateDivisions() {
     const divs = [];
     for (let p = 1; p <= 2; p++) {
+      this.orbat[p].prune();
       for (const f of this.orbat[p].all(DIVISION)) {
-        const members = unitsOf(f).filter((u) => this.units.includes(u));
-        const div = { owner: p, members, formation: f };
-        for (const u of members) u.division = div;
-        divs.push(div);
+        divs.push({ owner: p, members: unitsOf(f).filter((u) => this.units.includes(u)), formation: f });
       }
     }
     this.divisions = divs;
@@ -508,7 +506,6 @@ export class Game {
           if (c.timer >= UNIT_TYPES[c.prodType].buildTime) {
             c.timer = 0;
             const u = this.spawnUnit(c.owner, c.prodType, c);
-            this.orbat[c.owner].assign(u, this);
             unitCount[c.owner]++;
             this.stats[c.owner].built++;
             this.events.push({ type: 'spawn', unit: u, city: c });
