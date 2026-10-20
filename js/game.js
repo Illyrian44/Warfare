@@ -2,15 +2,14 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE,
-} from './config.js?v=48';
-import { mulberry32 } from './rng.js?v=48';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=48';
-import { HQManager } from './hq.js?v=48';
+} from './config.js?v=49';
+import { mulberry32 } from './rng.js?v=49';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=49';
+import { HQManager } from './hq.js?v=49';
 
 export class Game {
-  constructor(map, opts = {}) {
+  constructor(map) {
     this.map = map;
-    this.opts = opts;
     this.rng = mulberry32((map.seed ^ 0x5bd1e995) >>> 0);
     this.units = [];
     this.cities = map.cities.map((c, i) => ({
@@ -143,7 +142,7 @@ export class Game {
     const u = {
       id: this.nextId++, owner, type, x, y, hp: ut.hp, maxHp: ut.hp, r: ut.radius,
       path: [], target: null, td: 0, incoming: 0, angles: [], px: 0, py: 0,
-      stuck: 0, starving: false, regen: 0, ai: null,
+      stuck: 0, starving: false, ai: null,
     };
     this.units.push(u);
     return u;
@@ -194,7 +193,7 @@ export class Game {
   updateVision() {
     for (let p = 1; p <= 2; p++) this.vision[p].fill(0);
     for (const u of this.units) {
-      const t = this.map.terrainAt(u.x, u.y);
+      const t = this.map.cellTerrainAt(u.x, u.y);
       this.markVision(this.vision[u.owner], u.x, u.y, UNIT_VISION * TERRAIN_INFO[t].vision);
     }
     for (const c of this.cities) if (c.owner) this.markVision(this.vision[c.owner], c.x, c.y, CITY_VISION);
@@ -266,7 +265,7 @@ export class Game {
     for (const u of U) {
       const t = u.target;
       if (!t) continue;
-      const terr = map.terrainAt(u.x, u.y);
+      const terr = map.cellTerrainAt(u.x, u.y);
       const ut = UNIT_TYPES[u.type];
       const mod = TERRAIN_INFO[terr].attack * ut.terrainAttack[terr];
       const hpFactor = 0.5 + 0.5 * (u.hp / u.maxHp); // Angeschlagene treffen schwächer
@@ -275,7 +274,6 @@ export class Game {
     }
     for (const u of U) {
       if (u.angles.length >= 2 && surrounded(u.angles)) u.incoming *= SURROUND_BONUS;
-      u.surrounded = u.angles.length >= 2 && surrounded(u.angles);
     }
 
     // Versorgung und Gesundheit
@@ -296,7 +294,6 @@ export class Game {
         else if (owner === 0) regen = 2 * supply - 0.5;
         else regen = supply > 0.6 ? 0 : -1;
       }
-      u.regen = regen;
       u.hp = Math.min(u.maxHp, u.hp + regen * dt - u.incoming);
     }
 
@@ -455,7 +452,6 @@ export class Game {
         const goal = w.frontGoal;
         w.frontGoal = best.frontGoal;
         best.frontGoal = goal;
-        this.events.push({ type: 'divisionSwap', out: w, in: best });
       }
     }
   }

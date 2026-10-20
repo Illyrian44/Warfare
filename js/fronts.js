@@ -1,9 +1,8 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=48';
-import { DIVISION, formationOf } from './orbat.js?v=48';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=49';
+import { DIVISION, formationOf } from './orbat.js?v=49';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
-const ATTACK_OFFSET = 30;   // Grenzfront im Angriff: so weit in Feindesland drücken
 const ROTATE_AT = 0.35;     // Verwundete ziehen sich darunter zurück
 const ROTATE_AT_ATTACK = 0.2; // während eines Angriffs erst später
 const RETURN_AT = 0.9;      // und kehren ab hier zurück
@@ -28,7 +27,7 @@ export class FrontManager {
     for (const u of units) this.release(u);
     const f = {
       id: this.nextId++, owner: this.owner, kind, line, units: [...units], chains: [],
-      stance: 'hold', reinforce: true, rotate: true,
+      reinforce: true, rotate: true,
     };
     for (const u of f.units) u.front = f;
     this.fronts.push(f);
@@ -59,11 +58,6 @@ export class FrontManager {
     this.schedule(f);
   }
 
-  redraw(f, line) {
-    f.line = line;
-    this.refresh(f, true);
-  }
-
   // Angriff wie in Hearts of Iron: erst Ziel-Linie planen, dann auf Befehl vorstoßen
   planAttack(f, line) {
     // Phasenlinien tragen wie bei der NATO einen Decknamen
@@ -81,7 +75,6 @@ export class FrontManager {
     f.line = f.plan.line;
     f.attack = { line: f.plan.line, name: f.plan.name, started: this.game.time };
     f.plan = null;
-    f.stance = 'hold';
     this.refresh(f, true);
   }
 
@@ -146,7 +139,7 @@ export class FrontManager {
     f.units = f.units.filter((u) => u.hp > 0 && g.units.includes(u));
     if (!f.units.length && !f.reinforce) { this.remove(f); return; }
 
-    f.chains = f.kind === 'border' ? this.borderChains(f.stance) : [withNormals(f.line, (p, n) => this.facing(p, n))];
+    f.chains = f.kind === 'border' ? this.borderChains() : [withNormals(f.line, (p, n) => this.facing(p, n))];
     f.length = 0;
     for (const c of f.chains) f.length += chainLength(c);
 
@@ -186,7 +179,7 @@ export class FrontManager {
       if (!goalMoved && Math.hypot(u.x - s.x, u.y - s.y) < 10) continue;
       if (u.target) continue; // im Gefecht die Stellung halten, keine neuen Marschbefehle
       if (u.swapUntil > g.time) continue; // Platztausch innerhalb der Division läuft
-      if (u.hqOrder > g.time) continue;   // Befehl des Brigade-HQ hat Vorrang
+      if (u.hqOrder > g.time) continue;   // Befehl des Divisions-HQ hat Vorrang
       // Mit Feind in der Nähe nicht zurückweichen, nur weil sich die Grenze verschoben hat
       // (kleine Verschiebungen ignorieren, bei echtem Durchbruch geordnet zurück)
       // Feindkontakt: Stellung halten wie in HOI4. Nur wer bereits an der Front steht
@@ -347,7 +340,7 @@ export class FrontManager {
   }
 
   // Grenzzellen zum Gegner (ohne Kontakt: zu fremdem Land) zu Linien verketten
-  borderChains(stance) {
+  borderChains() {
     const g = this.game;
     const map = g.map;
     const { w, h } = map;
@@ -439,7 +432,6 @@ export class FrontManager {
     chains.length = 0;
     chains.push(...kept);
 
-    const offset = stance === 'attack' ? ATTACK_OFFSET : -HOLD_OFFSET;
     // Feste Richtung und Reihenfolge, damit die Einheiten bei jeder Neuberechnung
     // ihre Plätze behalten (sonst kehrt sich die Linie um und alle tauschen quer)
     const key = (i) => { const x = i % w, y = (i / w) | 0; return x * 0.3 + y; };
@@ -462,7 +454,7 @@ export class FrontManager {
         const ol = Math.hypot(ox, oy) || 1;
         const n = { x: ox / ol, y: oy / ol };
         const bx = (cx + 0.5) * map.worldW / w, by = (cy + 0.5) * map.worldH / h;
-        let px = bx + n.x * offset, py = by + n.y * offset;
+        let px = bx - n.x * HOLD_OFFSET, py = by - n.y * HOLD_OFFSET;
         if (!map.passableAt(px, py)) { px = bx; py = by; }
         pts.push({ x: px, y: py, nx: n.x, ny: n.y, bx, by });
       }
@@ -542,7 +534,6 @@ export function chainLength(c) {
   return L;
 }
 
-// n Plätze gleichmäßig über alle Teillinien verteilen
 // Punkt bei Bogenlänge t über alle Teillinien
 export function pointAt(chains, t) {
   let acc = 0;
@@ -561,6 +552,7 @@ export function pointAt(chains, t) {
   return c && c.length ? { ...c[c.length - 1] } : null;
 }
 
+// n Plätze gleichmäßig über alle Teillinien verteilen
 function distribute(chains, n) {
   if (!n || !chains.length) return [];
   const total = chains.reduce((a, c) => a + chainLength(c), 0);

@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=48';
-import { Game } from './game.js?v=48';
-import { AI } from './ai.js?v=48';
-import { Renderer } from './render.js?v=48';
-import { Input } from './input.js?v=48';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=48';
-import { DIVISION, unitsOf, divisionColor } from './orbat.js?v=48';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=48';
+import { generateMap } from './map.js?v=49';
+import { Game } from './game.js?v=49';
+import { AI } from './ai.js?v=49';
+import { Renderer } from './render.js?v=49';
+import { Input } from './input.js?v=49';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=49';
+import { DIVISION, unitsOf, divisionColor } from './orbat.js?v=49';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=49';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -23,7 +23,17 @@ const app = {
   lastHud: 0,
 
   start(seed, size, difficulty) {
-    const map = generateMap(seed, size);
+    let map;
+    try {
+      map = generateMap(seed, size);
+    } catch {
+      $('menuError').textContent = `Karte #${seed} ließ sich nicht erzeugen – bitte eine andere Karten-Nummer wählen.`;
+      $('menuError').hidden = false;
+      $('end').hidden = true;
+      $('menu').hidden = false;
+      return;
+    }
+    $('menuError').hidden = true;
     this.game = new Game(map);
     this.ai = new AI(this.game, 2, difficulty);
     this.fronts = new FrontManager(this.game, this.human);
@@ -243,6 +253,7 @@ const app = {
     const n = this.ui.selection.size;
     $('selInfo').textContent = n ? `${n} ausgewählt` : '';
     $('deselectBtn').hidden = !n;
+    $('haltBtn').hidden = !n;
     if (this.fronts) this.updateFrontPanel();
   },
 
@@ -277,7 +288,6 @@ const app = {
       if (ev.type === 'attackDone') this.toast('Angriffsziel erreicht – die Front hält die neue Linie', 'good');
     }
     this.fronts.events.length = 0;
-    this.ai.events.length = 0; // Angriffspläne der KI bleiben geheim
   },
 
   showEnd(winner) {
@@ -422,9 +432,19 @@ $('startBtn').onclick = () => {
 };
 $('pauseBtn').onclick = () => app.togglePause();
 $('speedBtn').onclick = () => app.setSpeed(app.speed >= 3 ? 1 : app.speed + 1);
-$('helpBtn').onclick = () => { $('help').hidden = false; if (!app.paused) app.togglePause(); };
-$('helpClose').onclick = () => { $('help').hidden = true; if (app.paused) app.togglePause(); };
-$('menuHelpBtn').onclick = () => { $('help').hidden = false; };
+// Die Hilfe hebt nur eine Pause auf, die sie selbst ausgelöst hat
+let helpPaused = false;
+$('helpBtn').onclick = () => {
+  $('help').hidden = false;
+  helpPaused = !app.paused;
+  if (helpPaused) app.togglePause();
+};
+$('helpClose').onclick = () => {
+  $('help').hidden = true;
+  if (helpPaused && app.paused) app.togglePause();
+  helpPaused = false;
+};
+$('menuHelpBtn').onclick = () => { $('help').hidden = false; helpPaused = false; };
 $('menuBtn').onclick = () => {
   if (!app.paused) app.togglePause();
   $('seedInput').value = randomSeed();
@@ -461,6 +481,7 @@ $('disbandBtn').onclick = () => {
 };
 $('frontCancel').onclick = () => app.setFrontMode(null);
 $('frontClose').onclick = () => app.selectFront(null);
+$('haltBtn').onclick = () => app.stopSelection();
 $('deselectBtn').onclick = () => { app.ui.selection.clear(); app.updateSelectionInfo(); };
 $('centerBtn').onclick = () => app.fitCamera();
 $('againBtn').onclick = () => app.start(app.current.seed, app.current.size, app.current.difficulty);

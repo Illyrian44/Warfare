@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=48';
-import { classify } from './map.js?v=48';
-import { frontBadge, pointAt } from './fronts.js?v=48';
-import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=48';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=49';
+import { classify } from './map.js?v=49';
+import { frontBadge, pointAt } from './fronts.js?v=49';
+import { LEVELS, REGIMENT, DIVISION, ARMY, NOMINAL, formationOf, divisionColor } from './orbat.js?v=49';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -426,7 +426,7 @@ export class Renderer {
     ctx.font = `bold ${12 * px}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(f.kind === 'border' && f.stance === 'attack' ? `⚔${f.units.length}` : String(f.units.length), b.x, b.y + 0.5 * px);
+    ctx.fillText(String(f.units.length), b.x, b.y + 0.5 * px);
   }
 
   drawCity(c, px, ui) {
@@ -743,8 +743,6 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
   return friend ? hw : d;
 }
 
-// Stufe nach Stärke: die höchste Stufe, deren Sollstärke die Gruppe erreicht
-// (Division erst ab 8 Kompanien usw.). Name nach dem Verband, zu dem die meisten gehören.
 // Stufe und Name aus der Gliederung: kleinster gemeinsamer Verband der Kompanien
 // (Regiment, Brigade oder Division), dazu ein Zähler anwesend/Sollstärke
 function labelFor(members) {

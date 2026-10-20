@@ -1,5 +1,5 @@
-import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=48';
-import { mulberry32, makeNoise, fbm } from './rng.js?v=48';
+import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=49';
+import { mulberry32, makeNoise, fbm } from './rng.js?v=49';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -63,6 +63,12 @@ export class GameMap {
   terrainAt(wx, wy) {
     if (wx < 0 || wy < 0 || wx >= this.worldW || wy >= this.worldH) return T.DEEP;
     return classify(this.sample(this.height, wx, wy), this.sample(this.forest, wx, wy));
+  }
+
+  // Gelände des Zellrasters, wie es Bewegung und Wegfindung verwenden
+  cellTerrainAt(wx, wy) {
+    if (wx < 0 || wy < 0 || wx >= this.worldW || wy >= this.worldH) return T.DEEP;
+    return this.cells[this.cellIndex(wx, wy)];
   }
 
   passableAt(wx, wy) {

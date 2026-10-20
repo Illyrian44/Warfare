@@ -1,7 +1,7 @@
-import { DIFFICULTY } from './config.js?v=48';
-import { unitStrength } from './game.js?v=48';
-import { mulberry32 } from './rng.js?v=48';
-import { FrontManager } from './fronts.js?v=48';
+import { DIFFICULTY } from './config.js?v=49';
+import { unitStrength } from './game.js?v=49';
+import { mulberry32 } from './rng.js?v=49';
+import { FrontManager } from './fronts.js?v=49';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -21,7 +21,6 @@ export class AI {
     this.fronts = new FrontManager(game, player);
     this.front = null;
     this.nextFrontAttack = 30;
-    this.events = [];
   }
 
   update(dt) {
@@ -48,7 +47,7 @@ export class AI {
 
   order(u, x, y, role, tag) {
     if (u.swapUntil > this.game.time) return; // Platztausch innerhalb der Division läuft
-    if (u.hqOrder > this.game.time) return;   // Befehl des Brigade-HQ hat Vorrang
+    if (u.hqOrder > this.game.time) return;   // Befehl des Divisions-HQ hat Vorrang
     if (u.ai && u.ai.role === role && u.ai.tag === tag && u.path.length) return;
     const path = this.pathFor(u, x, y);
     if (!path) return; // Rechenbudget erschöpft, nächster Denkschritt
@@ -74,6 +73,7 @@ export class AI {
 
     // Angeschlagene Einheiten zurückziehen
     for (const u of myUnits) {
+      if (u.front) continue; // Front-Einheiten heilen über die Rotation ihrer Front
       const frac = u.hp / u.maxHp;
       if (u.ai && u.ai.role === 'retreat') {
         if (frac > 0.85 || !myCities.length) u.ai = null;
@@ -275,7 +275,6 @@ export class AI {
     this.fronts.planAttack(f, line);
     this.fronts.startAttack(f);
     this.nextFrontAttack = g.time + 20;
-    this.events.push({ type: 'enemyAttack', front: f, target });
   }
 
   backToBorder(f) {
@@ -283,7 +282,6 @@ export class AI {
     f.line = null;
     f.attack = null;
     f.plan = null;
-    f.stance = 'hold';
     this.fronts.schedule(f);
     this.nextFrontAttack = Math.max(this.nextFrontAttack, this.game.time + 15);
   }

@@ -1,6 +1,6 @@
-import { unitStrength } from './game.js?v=48';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=48';
-import { pointAt } from './fronts.js?v=48';
+import { unitStrength } from './game.js?v=49';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=49';
+import { pointAt } from './fronts.js?v=49';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -205,7 +205,6 @@ export class HQManager {
       this.send(u, bx - uy * off, by + ux * off, 'abriegeln', helper);
     });
     f.sealUntil = g.time + SEAL_COOLDOWN;
-    g.events.push({ type: 'hqOrder', owner: p, kind: 'seal', formation: f });
     return true;
   }
 
