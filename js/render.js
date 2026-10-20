@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=59';
-import { classify } from './map.js?v=59';
-import { frontBadge, pointAt } from './fronts.js?v=59';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=59';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=60';
+import { classify } from './map.js?v=60';
+import { frontBadge, pointAt } from './fronts.js?v=60';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=60';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -39,6 +39,75 @@ export class Renderer {
     this.fogImg = this.fogCanvas.getContext('2d').createImageData(w, h);
     this.terrVersion = -1;
     this.fogVersion = -1;
+    this.supplyCanvas = makeCanvas(w, h);
+    this.supplyImg = this.supplyCanvas.getContext('2d').createImageData(w, h);
+    this.supplyStamp = null;
+  }
+
+  // Kartenebene „Nachschub“: eigenes Gebiet nach Lieferquote eingefärbt (grün = voll,
+  // gelb = knapp, rot = nichts kommt an, dunkelrot = abgeschnitten)
+  updateSupplyOverlay() {
+    const g = this.game, sup = g.supply;
+    const net = sup.nets[this.human];
+    if (this.supplyStamp === net.time) return;
+    this.supplyStamp = net.time;
+    const d = this.supplyImg.data;
+    const tr = g.territory;
+    const n = g.map.w * g.map.h;
+    const mix = (a, b, t) => a + (b - a) * t;
+    for (let i = 0; i < n; i++) {
+      const o = i * 4;
+      if (tr[i] !== this.human) { d[o + 3] = 0; continue; }
+      const h = net.hours[i];
+      let r, gg, b;
+      if (h === Infinity) { r = 120; gg = 20; b = 20; } else {
+        const e = sup.efficiency(h);
+        if (e >= 0.5) { const t = (e - 0.5) * 2; r = mix(242, 76, t); gg = mix(201, 209, t); b = mix(76, 122, t); }
+        else { const t = e * 2; r = mix(255, 242, t); gg = mix(91, 201, t); b = mix(75, 76, t); }
+      }
+      d[o] = r; d[o + 1] = gg; d[o + 2] = b; d[o + 3] = 125;
+    }
+    this.supplyCanvas.getContext('2d').putImageData(this.supplyImg, 0, 0);
+  }
+
+  // Nachschubebene: Färbung, Auslastung der Depots und Nachschubweg der Auswahl
+  drawSupply(ui, px) {
+    const { ctx, game } = this;
+    const { worldW, worldH } = game.map;
+    this.updateSupplyOverlay();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(this.supplyCanvas, 0, 0, worldW, worldH);
+    // Nachschubweg vom Depot zur Mitte der Auswahl
+    const sel = [...ui.selection].filter((u) => u.owner === this.human && u.hp > 0);
+    if (sel.length) {
+      const cx = sel.reduce((a, u) => a + u.x, 0) / sel.length, cy = sel.reduce((a, u) => a + u.y, 0) / sel.length;
+      const path = game.supply.route(this.human, cx, cy);
+      if (path.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(path[0].x, path[0].y);
+        for (const p of path) ctx.lineTo(p.x, p.y);
+        ctx.setLineDash([6 * px, 4 * px]);
+        ctx.lineWidth = 3 * px;
+        ctx.strokeStyle = 'rgba(90,60,20,0.9)';
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+    // Auslastung je Depot
+    ctx.font = `bold ${11 * px}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (const c of game.cities) {
+      if (c.owner !== this.human) continue;
+      const load = c.supplyLoad || 0;
+      const text = `Nachschub ${Math.round(load * 100)} %`;
+      const y = c.y + CITY_RADIUS + 9;
+      ctx.lineWidth = 3 * px;
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.strokeText(text, c.x, y);
+      ctx.fillStyle = load > 1 ? '#c0392b' : load > 0.8 ? '#a07800' : '#1d6b3a';
+      ctx.fillText(text, c.x, y);
+    }
   }
 
   buildTerrain() {
@@ -186,6 +255,7 @@ export class Renderer {
     this.updateOverlays();
     ctx.drawImage(this.terrCanvas, 0, 0, worldW, worldH);
     ctx.drawImage(this.fogCanvas, 0, 0, worldW, worldH);
+    if (ui.showSupply) this.drawSupply(ui, 1 / cam.zoom);
 
     const px = 1 / cam.zoom; // eine Bildschirm-Einheit in Weltkoordinaten
     const me = this.human;
@@ -602,6 +672,25 @@ export function drawNatoSymbol(ctx, u, friend, px, highlight, lowSupply) {
     ctx.fillStyle = frac > 0.6 ? '#4cd17a' : frac > 0.3 ? '#f2c94c' : '#ff5b4b';
     ctx.fillRect(x - hw, by, bw * Math.max(0, frac), bh);
   }
+  if (friend && u.supply < SUPPLY.warnBelow) drawSupplyWarning(ctx, x + (friend ? hw : d), top, px);
+}
+
+// Warnzeichen „knapper Nachschub“: gelbes Dreieck mit Ausrufezeichen an der Ecke
+function drawSupplyWarning(ctx, x, y, px) {
+  const s = 5 * px;
+  ctx.beginPath();
+  ctx.moveTo(x, y - s);
+  ctx.lineTo(x + s, y + s * 0.75);
+  ctx.lineTo(x - s, y + s * 0.75);
+  ctx.closePath();
+  ctx.fillStyle = '#ffd23f';
+  ctx.fill();
+  ctx.lineWidth = Math.max(0.5, 0.9 * px);
+  ctx.strokeStyle = '#000';
+  ctx.stroke();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x - 0.45 * px, y - s * 0.45, 0.9 * px, s * 0.7);
+  ctx.fillRect(x - 0.45 * px, y + s * 0.38, 0.9 * px, 0.9 * px);
 }
 
 function polylineMid(line) {
@@ -772,6 +861,9 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, lowSuppl
   ctx.fillRect(x - hw, barY, bw, bh);
   ctx.fillStyle = frac > 0.6 ? '#4cd17a' : frac > 0.3 ? '#f2c94c' : '#ff5b4b';
   ctx.fillRect(x - hw, barY, bw * frac, bh);
+  if (friend && members.reduce((s, u) => s + u.supply, 0) / members.length < SUPPLY.warnBelow) {
+    drawSupplyWarning(ctx, x + hw, friend ? y - hh : y - d, px);
+  }
   return friend ? hw : d;
 }
 

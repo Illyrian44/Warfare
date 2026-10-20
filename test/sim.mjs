@@ -96,9 +96,8 @@ for (const [seed, size] of CASES) {
     while (!g.winner && g.time < MAX_TIME) {
       const t = performance.now();
       for (const ai of ais) ai.update(STEP);
-      g.step(STEP);
-      g.events.length = 0;
-      worst = Math.max(worst, performance.now() - t);
+      // Prüfen zwischen KI und Spielschritt: dann sind alle Zwischenspeicher dieses Schritts
+      // schon berechnet, und die Prüfung verändert den Spielverlauf nicht
       if (++steps % 30 === 0) {
         checkState(g, label, ais);
         maxDivs = Math.max(maxDivs, g.orbat[1].all(DIVISION).length + g.orbat[2].all(DIVISION).length);
@@ -108,6 +107,9 @@ for (const [seed, size] of CASES) {
           if (ais[p - 1].fronts.fronts.some((f) => f.attack)) attacks[p]++;
         }
       }
+      g.step(STEP);
+      g.events.length = 0;
+      worst = Math.max(worst, performance.now() - t);
     }
     if (!g.winner) fail(`${label}: nach ${MAX_TIME / 60} Minuten Spielzeit noch kein Sieger`);
     // Die KI bildet Divisionen für ihre Fronten und behält eine Reserve ohne Division

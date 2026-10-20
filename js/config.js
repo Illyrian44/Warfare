@@ -62,6 +62,10 @@ export const SUPPLY = {
   interval: 2,                       // Sekunden zwischen Neuberechnungen des Netzes je Seite
   tick: 0.5,                         // Sekunden zwischen zwei Lieferungen
   convoys: false,                    // vorbereitet: LKW-Kolonnen statt Sofortlieferung (noch nicht eingebaut)
+  combatMin: 0.5,                    // Kampfkraft mit leerem Vorrat (volle ab halbem Vorrat)
+  fuelLow: 0.3,                      // darunter fehlt Panzern der Treibstoff ...
+  fuelMinSpeed: 0.35,                // ... und sie fahren mit leerem Tank nur noch so schnell
+  warnBelow: 0.35,                   // Warnzeichen am Symbol
 };
 
 export const DIVISION_ROTATE = 0.25; // darunter tauscht eine Kompanie mit einer frischen

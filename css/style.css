@@ -327,6 +327,9 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 .divcard .fr { font-weight: 400; color: var(--accent); }
 .divcard .str { display: block; height: 3px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
 .divcard .str i { display: block; height: 100%; background: var(--good); }
+.divcard .sup { grid-column: 2; display: block; height: 3px; margin-top: 2px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
+.divcard .sup i { display: block; height: 100%; background: #e0a43a; }
+.divcard .sup.low i { background: var(--bad); }
 .divcard .regs { grid-column: 1 / span 2; display: flex; gap: 2px; margin-top: 3px; }
 .divcard .regs svg { display: block; }
 

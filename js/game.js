@@ -1,12 +1,12 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY,
-  UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE,
-} from './config.js?v=59';
-import { mulberry32 } from './rng.js?v=59';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=59';
-import { HQManager } from './hq.js?v=59';
-import { SupplyNetwork } from './supply.js?v=59';
+  UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY,
+} from './config.js?v=60';
+import { mulberry32 } from './rng.js?v=60';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=60';
+import { HQManager } from './hq.js?v=60';
+import { SupplyNetwork } from './supply.js?v=60';
 
 export class Game {
   constructor(map) {
@@ -260,7 +260,9 @@ export class Game {
       const ut = UNIT_TYPES[u.type];
       const mod = TERRAIN_INFO[terr].attack * ut.terrainAttack[terr];
       const hpFactor = 0.5 + 0.5 * (u.hp / u.maxHp); // Angeschlagene treffen schwächer
-      t.incoming += ut.dps * mod * hpFactor * dt;
+      // Ohne Munition und Nachschub sinkt die Kampfkraft (volle Kraft ab halbem Vorrat)
+      const supplyFactor = SUPPLY.combatMin + (1 - SUPPLY.combatMin) * Math.min(1, u.supply * 2);
+      t.incoming += ut.dps * mod * hpFactor * supplyFactor * dt;
       t.angles.push(Math.atan2(u.y - t.y, u.x - t.x));
     }
     for (const u of U) {
@@ -332,6 +334,10 @@ export class Game {
     const ut = UNIT_TYPES[u.type];
     let spd = ut.speed * (map.speedAt(u.x, u.y) || 0.5);
     if (u.target) spd *= ENGAGED_SPEED;
+    // Panzern geht bei knappem Vorrat der Treibstoff aus
+    if (u.type === 'heavy' && u.supply < SUPPLY.fuelLow) {
+      spd *= SUPPLY.fuelMinSpeed + (1 - SUPPLY.fuelMinSpeed) * u.supply / SUPPLY.fuelLow;
+    }
     let mx = 0, my = 0;
     let wantMove = 0;
     if (u.path.length) {

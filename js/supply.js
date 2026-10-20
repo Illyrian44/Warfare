@@ -1,5 +1,5 @@
-import { CELL, KM, TERRAIN_INFO, HOURS_PER_SECOND, SUPPLY } from './config.js?v=59';
-import { MinHeap } from './map.js?v=59';
+import { CELL, KM, TERRAIN_INFO, HOURS_PER_SECOND, SUPPLY } from './config.js?v=60';
+import { MinHeap } from './map.js?v=60';
 
 // Nachschub wie in HOI4, vereinfacht: Depot (Stadt) -> Route über eigenes Gebiet -> Kompanie.
 //
@@ -7,8 +7,10 @@ import { MinHeap } from './map.js?v=59';
 //   1. Jede Kompanie verbraucht ihren Vorrat (u.supply, 0..1), im Gefecht schneller.
 //   2. Sie fordert Verbrauch plus Auffüllen bei ihrem Depot an. Wie viel ankommt, hängt
 //      von der Fahrzeit der LKW ab (u.supplyEff: voll bis fullHours, nichts ab noneHours).
-//   3. Reicht die Lieferleistung eines Depots nicht, wird der Mangel gleichmäßig auf alle
-//      seine Kompanien verteilt.
+//   3. Alle Depots, die über eigenes Gebiet verbunden sind, bilden einen Pool (wie die
+//      Eisenbahn in HOI4, die Nachschub aus dem ganzen Land zum Frontknoten bringt).
+//      Reicht die Lieferleistung eines Pools nicht, wird der Mangel gleichmäßig auf alle
+//      seine Kompanien verteilt. Ein Kessel mit eigener Stadt bildet einen eigenen Pool.
 //   4. deliver() bringt die Menge an. Heute sofort; mit SUPPLY.convoys würde dispatch()
 //      stattdessen eine Kolonne auf route() losschicken, die nach der Fahrzeit liefert.
 //      Bedarf, Netz, Verteilung und Vorrat bleiben dafür unverändert.
@@ -21,7 +23,7 @@ export class SupplyNetwork {
     // immer wieder neu besucht
     this.nets = [null, 1, 2].map((p) => p && {
       hours: new Float64Array(n).fill(Infinity), depot: new Int16Array(n).fill(-1),
-      parent: new Int32Array(n).fill(-1), danger: new Uint8Array(n),
+      parent: new Int32Array(n).fill(-1), danger: new Uint8Array(n), pool: new Int32Array(n),
     });
     this.netTimer = [0, 0, SUPPLY.interval / 2]; // Seiten versetzt rechnen
     this.tickTimer = 0;
@@ -102,7 +104,35 @@ export class SupplyNetwork {
         heap.push(ni, nh);
       }
     }
+    this.pools(p);
     net.time = g.time;
+  }
+
+  // Zusammenhängende Teile des eigenen Gebiets (für LKW befahrbar) nummerieren;
+  // Depots im selben Teil teilen sich ihre Lieferleistung
+  pools(p) {
+    const g = this.game, map = g.map, { w, h } = map;
+    const pool = this.nets[p].pool;
+    const tr = g.territory;
+    pool.fill(-1);
+    let id = 0;
+    for (const c of g.cities) {
+      if (c.owner !== p) continue;
+      const s = map.cellIndex(c.x, c.y);
+      if (pool[s] >= 0) continue;
+      pool[s] = id;
+      const stack = [s];
+      while (stack.length) {
+        const i = stack.pop();
+        const x = i % w;
+        for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+          if (j < 0 || j >= w * h || pool[j] >= 0 || tr[j] !== p || !SUPPLY.truckKmh[map.cells[j]]) continue;
+          pool[j] = id;
+          stack.push(j);
+        }
+      }
+      id++;
+    }
   }
 
   // Bestes erreichbares Feld für eine Position (Kompanien am Rand des eigenen Gebiets
@@ -152,13 +182,24 @@ export class SupplyNetwork {
       if (!requests.has(u.depot)) requests.set(u.depot, []);
       requests.get(u.depot).push({ u, amount: want });
     }
+    // Anforderungen je Pool sammeln (Seite + Nummer des zusammenhängenden Gebiets)
+    const poolOf = (c) => (c.owner ? c.owner + ':' + this.nets[c.owner].pool[g.map.cellIndex(c.x, c.y)] : null);
+    const pools = new Map(); // Pool -> { cities, list }
     for (const [cityId, list] of requests) {
       const city = g.cities[cityId];
-      if (!city || !list.length || city.owner !== list[0].u.owner) continue;
+      if (!city || city.owner !== list[0].u.owner) continue;
+      const key = poolOf(city);
+      if (!pools.has(key)) pools.set(key, { list: [] });
+      for (const r of list) pools.get(key).list.push({ ...r, city });
+    }
+    const capacity = new Map();
+    for (const c of g.cities) if (c.owner) capacity.set(poolOf(c), (capacity.get(poolOf(c)) || 0) + SUPPLY.depotPerHour);
+    for (const [key, { list }] of pools) {
       const load = list.reduce((s, r) => s + r.amount * SUPPLY.demand[r.u.type], 0);
-      const ratio = Math.min(1, SUPPLY.depotPerHour * dh / load);
-      city.supplyLoad = load / (SUPPLY.depotPerHour * dh); // Auslastung (für Anzeige und KI)
-      for (const r of list) this.dispatch(city, r.u, r.amount * ratio);
+      const cap = (capacity.get(key) || 0) * dh;
+      const ratio = load > 0 ? Math.min(1, cap / load) : 1;
+      for (const c of g.cities) if (poolOf(c) === key) c.supplyLoad = load / cap; // Auslastung des Pools
+      for (const r of list) this.dispatch(r.city, r.u, r.amount * ratio);
     }
   }
 
