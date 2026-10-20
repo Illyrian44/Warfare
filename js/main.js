@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=53';
-import { Game } from './game.js?v=53';
-import { AI } from './ai.js?v=53';
-import { Renderer } from './render.js?v=53';
-import { Input } from './input.js?v=53';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=53';
-import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=53';
-import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=53';
+import { generateMap } from './map.js?v=54';
+import { Game } from './game.js?v=54';
+import { AI } from './ai.js?v=54';
+import { Renderer, isFrontShown } from './render.js?v=54';
+import { Input } from './input.js?v=54';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=54';
+import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=54';
+import { DIFFICULTY, UNITS_PER_CITY } from './config.js?v=54';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -16,7 +16,7 @@ const app = {
   renderer: null,
   human: 1,
   cam: { x: 0, y: 0, zoom: 1, min: 0.2, max: 6 },
-  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null },
+  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null, showFronts: false },
   paused: false,
   speed: 1,
   settings: loadSettings(),
@@ -43,6 +43,8 @@ const app = {
     this.renderer = new Renderer(canvas, this.game, this.human);
     this.ui.selection.clear();
     this.ui.revealAll = false;
+    this.ui.showFronts = false;
+    $('showFrontsBtn').classList.remove('active');
     this.paused = false;
     this.setSpeed(1);
     this.current = { seed, size, difficulty };
@@ -211,9 +213,17 @@ const app = {
     this.updateFrontPanel();
   },
 
+  // Alle eigenen Fronten ein- oder ausblenden
+  toggleShowFronts() {
+    this.ui.showFronts = !this.ui.showFronts;
+    $('showFrontsBtn').classList.toggle('active', this.ui.showFronts);
+  },
+
+  // Nur sichtbare Fronten lassen sich antippen
   pickFrontBadge(w) {
     const tol = Math.max(8, 14 / this.cam.zoom);
     for (const f of this.fronts.fronts) {
+      if (!isFrontShown(f, this.ui)) continue;
       const b = frontBadge(f);
       if (b && Math.hypot(b.x - w.x, b.y - w.y) < tol * 1.3) return f;
     }
@@ -225,6 +235,7 @@ const app = {
     const badge = this.pickFrontBadge(w);
     if (badge) return badge;
     for (const f of this.fronts.fronts) {
+      if (!isFrontShown(f, this.ui)) continue;
       for (const c of f.chains) {
         for (let i = 1; i < c.length; i++) if (segDist(w, c[i - 1], c[i]) < tol * 0.7) return f;
       }
@@ -547,7 +558,7 @@ function frame(now) {
       if (steps === 12) acc = 0;
     }
     app.handleEvents();
-    app.renderer.draw(app.cam, app.ui, app.fronts, app.ai.fronts);
+    app.renderer.draw(app.cam, app.ui, app.fronts);
     if (now - app.lastHud > 250) { app.updateHud(); app.lastHud = now; }
   }
   requestAnimationFrame(frame);
@@ -617,6 +628,7 @@ $('divBar').onclick = (e) => {
   if (card) app.selectDivision(+card.dataset.id);
 };
 $('frontBtn').onclick = () => app.toggleFrontMode();
+$('showFrontsBtn').onclick = () => app.toggleShowFronts();
 $('borderBtn').onclick = () => app.borderFront();
 $('planBtn').onclick = () => app.setFrontMode({ plan: app.ui.front });
 $('attackBtn').onclick = () => {

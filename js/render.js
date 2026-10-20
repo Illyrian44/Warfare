@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=53';
-import { classify } from './map.js?v=53';
-import { frontBadge, pointAt } from './fronts.js?v=53';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf } from './orbat.js?v=53';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=54';
+import { classify } from './map.js?v=54';
+import { frontBadge, pointAt } from './fronts.js?v=54';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=54';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -14,6 +14,15 @@ const TERRAIN_RGB = {
 
 const PX_PER_CELL = 5;  // Auflösung des Geländebilds
 const TERR_PX = 3;      // Auflösung der Gebietsfarben
+
+// Fronten sind nur zu sehen, wenn sie gebraucht werden: Front der ausgewählten Division,
+// geöffnetes Frontmenü, Angriff in Planung oder „Fronten“ eingeschaltet
+export function isFrontShown(f, ui) {
+  if (ui.showFronts || f === ui.front) return true;
+  if (ui.frontMode && ui.frontMode.plan === f) return true;
+  for (const u of ui.selection) if (divisionOf(u) === f.division) return true;
+  return false;
+}
 
 export class Renderer {
   constructor(canvas, game, human) {
@@ -163,7 +172,7 @@ export class Renderer {
     }
   }
 
-  draw(cam, ui, fronts, enemyFronts) {
+  draw(cam, ui, fronts) {
     const { ctx, canvas, game } = this;
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -182,8 +191,11 @@ export class Renderer {
     const me = this.human;
     const visible = (u) => u.owner === me || ui.revealAll || game.isVisible(me, u.x, u.y);
 
-    if (enemyFronts) for (const f of enemyFronts.fronts) this.drawFront(f, px, false, !ui.revealAll);
-    if (fronts) for (const f of fronts.fronts) this.drawFront(f, px, f === ui.front);
+    // Feindliche Fronten bleiben verborgen; eigene nur bei Bedarf, dazu ungedeckte Grenzstücke
+    if (fronts) {
+      this.drawUncovered(fronts.uncovered(), px);
+      for (const f of fronts.fronts) if (isFrontShown(f, ui)) this.drawFront(f, px, f === ui.front);
+    }
 
     // Geplante Wege eigener Einheiten
     ctx.lineWidth = 1.5 * px;
@@ -297,27 +309,26 @@ export class Renderer {
     }
   }
 
-  // Frontlinie wie in Hearts of Iron: dicke Linie mit Zacken Richtung Feind
-  drawFront(f, px, selected, fogged = false) {
-    const { ctx, game } = this;
-    const color = PLAYER_COLORS[f.owner || this.human];
-    // Angriffspläne des Gegners bleiben geheim: weder Pfeil noch Ziellinie zeigen
-    if (fogged && (f.attack || f.plan)) return;
-    if (fogged) {
-      // Fremde Fronten nur in eigener Sichtweite zeigen: Linie an unsichtbaren Stellen auftrennen
-      const seen = (p) => game.isVisible(this.human, p.x, p.y);
-      const parts = [];
-      for (const c of f.chains) {
-        let cur = [];
-        for (const p of c) {
-          if (seen(p)) cur.push(p);
-          else { if (cur.length >= 2) parts.push(cur); cur = []; }
-        }
-        if (cur.length >= 2) parts.push(cur);
-      }
-      if (!parts.length) return;
-      f = { ...f, chains: parts, hideBadge: true };
+  // Grenzstücke ohne Front: dezent rot gestrichelt
+  drawUncovered(parts, px) {
+    const { ctx } = this;
+    ctx.setLineDash([6 * px, 6 * px]);
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = 'rgba(255,80,60,0.8)';
+    ctx.lineWidth = 3 * px;
+    for (const c of parts) {
+      ctx.beginPath();
+      ctx.moveTo(c[0].x, c[0].y);
+      for (const p of c) ctx.lineTo(p.x, p.y);
+      ctx.stroke();
     }
+    ctx.setLineDash([]);
+  }
+
+  // Frontlinie wie in Hearts of Iron: dicke Linie mit Zacken Richtung Feind
+  drawFront(f, px, selected) {
+    const { ctx } = this;
+    const color = PLAYER_COLORS[f.owner || this.human];
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     for (const c of f.chains) {
@@ -362,7 +373,7 @@ export class Renderer {
 
     // NATO-Führungszeichen: Phasenlinie als Ziel und Hauptangriffsachse.
     // Geplant = gestrichelt, laufend = durchgezogen (wie in APP-6)
-    if (!fogged && (f.plan || f.attack)) {
+    if (f.plan || f.attack) {
       const order = f.plan || f.attack;
       const planned = !!f.plan;
       drawPhaseLine(ctx, order.line, order.name, px, color, planned);
@@ -377,7 +388,7 @@ export class Renderer {
     }
 
     // Grenzen der Divisionsabschnitte als Querstriche, darunter Farbband der Division
-    if (!fogged && f.sections && f.sections.length) {
+    if (f.sections && f.sections.length) {
       for (const sec of f.sections) {
         if (!sec.div) continue;
         ctx.beginPath();
@@ -412,7 +423,7 @@ export class Renderer {
     }
 
     // Enden eines Grenzabschnitts: Querstrich wie an Divisionsgrenzen
-    if (!fogged && f.kind === 'segment') {
+    if (f.kind === 'segment') {
       const chains = f.chains.filter((c) => c.length >= 2);
       if (chains.length) {
         const first = chains[0], last = chains[chains.length - 1];
@@ -430,7 +441,7 @@ export class Renderer {
       }
     }
 
-    const b = f.hideBadge ? null : frontBadge(f);
+    const b = frontBadge(f);
     if (!b) return;
     const r = 12 * px;
     ctx.beginPath();

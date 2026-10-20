@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=53';
-import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=53';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=54';
+import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=54';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -195,6 +195,26 @@ export class FrontManager {
       const s = unitsOf(d).reduce((a, u) => a + UNIT_TYPES[u.type].strength * (0.4 + 0.6 * u.hp / u.maxHp), 0);
       return { d, t: c ? projectOnChains(chains, c) : 0, s };
     }).sort((a, b) => a.t - b.t);
+  }
+
+  // Grenzstücke, die keine Grenzfront und kein Grenzabschnitt deckt (zum Anzeigen);
+  // höchstens alle 0,5 s neu berechnet
+  uncovered() {
+    const g = this.game;
+    const key = this.fronts.map((f) => f.id + f.kind + (f.anchors ? f.anchors.map((a) => (a ? a.x : '-')).join() : '')).join('|');
+    if (this.gapCache && g.time - this.gapCache.time < 0.5 && this.gapCache.key === key) return this.gapCache.parts;
+    const chains = this.border();
+    const total = chains.reduce((s, c) => s + chainLength(c), 0);
+    const covered = this.fronts.filter((f) => f.kind !== 'line').map((f) => this.rangeOf(f, chains)).sort((a, b) => a[0] - b[0]);
+    const parts = [];
+    let t = 0;
+    for (const [t0, t1] of covered) {
+      if (t0 - t > MIN_SECTION) parts.push(...sliceChains(chains, t, t0));
+      t = Math.max(t, t1);
+    }
+    if (total - t > MIN_SECTION) parts.push(...sliceChains(chains, t, total));
+    this.gapCache = { time: g.time, key, parts };
+    return parts;
   }
 
   // Nachbarn: Fronten dieser Seite, deren Enden nah an den eigenen Enden liegen
