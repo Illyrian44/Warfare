@@ -86,6 +86,33 @@ export class GameMap {
     return TERRAIN_INFO[this.cells[i]].passable;
   }
 
+  // Zusammenhängende Landmassen (einmal berechnet): zwischen verschiedenen Gebieten
+  // gibt es keinen Weg, A* müsste sonst die ganze Landmasse absuchen
+  regionOf(i) {
+    if (!this.regions) {
+      const { w, h } = this;
+      const reg = new Int32Array(w * h).fill(-1);
+      let id = 0;
+      for (let s = 0; s < w * h; s++) {
+        if (reg[s] >= 0 || !this.cellPassable(s)) continue;
+        const stack = [s];
+        reg[s] = id;
+        while (stack.length) {
+          const c = stack.pop();
+          const cx = c % w;
+          for (const n of [cx > 0 ? c - 1 : -1, cx < w - 1 ? c + 1 : -1, c - w, c + w]) {
+            if (n < 0 || n >= w * h || reg[n] >= 0 || !this.cellPassable(n)) continue;
+            reg[n] = id;
+            stack.push(n);
+          }
+        }
+        id++;
+      }
+      this.regions = reg;
+    }
+    return this.regions[i];
+  }
+
   // A* auf dem Zellgitter, Kosten = Weglänge / Geländetempo. Liefert Weltpunkte.
   // opts.cost(i): Zusatzkosten je Zelle (z. B. Feindgebiet), opts.safe(x, y): Abkürzungen nur über sichere Punkte
   findPath(sx, sy, tx, ty, opts = null) {
@@ -99,6 +126,7 @@ export class GameMap {
       ty = (Math.floor(goal / w) + 0.5) * CELL;
     }
     if (start === goal) return [{ x: tx, y: ty }];
+    if (this.cellPassable(start) && this.regionOf(start) !== this.regionOf(goal)) return null;
     const n = w * h;
     const g = new Float32Array(n).fill(Infinity);
     const parent = new Int32Array(n).fill(-1);
