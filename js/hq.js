@@ -1,6 +1,6 @@
-import { unitStrength } from './game.js?v=61';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=61';
-import { pointAt } from './fronts.js?v=61';
+import { unitStrength } from './game.js?v=62';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=62';
+import { pointAt } from './fronts.js?v=62';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -185,7 +185,7 @@ export class HQManager {
     for (const reg of own.concat(neighbors)) {
       if (best && !helper && !own.includes(reg)) break; // eigenes Regiment gefunden
       const comps = reg.units.filter((u) => u.hp > 0);
-      if (!comps.length || !comps.every((u) => this.controllable(u))) continue;
+      if (!comps.length || !comps.every((u) => this.controllable(u) && u.org > u.maxOrg * 0.5)) continue;
       // Nur Regimenter ohne Feinddruck: sonst reißt das Abriegeln neue Lücken
       if (comps.some((u) => enemies.some((e) => Math.hypot(e.x - u.x, e.y - u.y) < PRESSURE_RADIUS))) continue;
       const cx = comps.reduce((a, u) => a + u.x, 0) / comps.length;
@@ -222,7 +222,7 @@ export class HQManager {
       // Ruhige Kompanie der Division (kein Druck) in Reichweite suchen
       let donor = null, dd = Infinity;
       for (const r of rated) {
-        if (r === hot || r.pressure > 0 || !this.controllable(r.u)) continue;
+        if (r === hot || r.pressure > 0 || !this.controllable(r.u) || r.u.org < r.u.maxOrg * 0.6) continue;
         const d = Math.hypot(r.u.x - hot.u.x, r.u.y - hot.u.y);
         if (d < dd && d < DONOR_RANGE) { dd = d; donor = r; }
       }

@@ -1,8 +1,8 @@
-import { DIFFICULTY } from './config.js?v=61';
-import { unitStrength } from './game.js?v=61';
-import { mulberry32 } from './rng.js?v=61';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=61';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=61';
+import { DIFFICULTY, SUPPLY, KM } from './config.js?v=62';
+import { unitStrength } from './game.js?v=62';
+import { mulberry32 } from './rng.js?v=62';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=62';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=62';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -83,15 +83,16 @@ export class AI {
     this.manageAttacks(enemies);
     const free = new Set(myUnits.filter((u) => !u.front));
 
-    // Angeschlagene Einheiten zurückziehen
+    // Angeschlagene, desorganisierte oder abgeschnittene Einheiten zurückziehen
     for (const u of myUnits) {
       if (u.front) continue; // Front-Einheiten heilen über die Rotation ihrer Front
-      const frac = u.hp / u.maxHp;
+      const frac = Math.min(u.hp / u.maxHp, u.org / u.maxOrg * 1.5);
+      const cutOff = !u.supplyEff && u.supply < 0.5 && !u.target;
       if (u.ai && u.ai.role === 'retreat') {
-        if (frac > 0.85 || !myCities.length) u.ai = null;
+        if ((frac > 0.85 && u.supplyEff > 0) || !myCities.length) u.ai = null;
         else { free.delete(u); continue; }
       }
-      if (frac < this.cfg.retreatAt && myCities.length) {
+      if ((frac < this.cfg.retreatAt || cutOff) && myCities.length) {
         const c = nearest(myCities, u);
         if (Math.hypot(c.x - u.x, c.y - u.y) > 50) {
           this.order(u, c.x + (this.rng() - 0.5) * 30, c.y + (this.rng() - 0.5) * 30, 'retreat', c.id);
@@ -290,13 +291,24 @@ export class AI {
     const g = this.game;
     const sum = (list) => list.reduce((a, u) => a + unitStrength(u), 0);
     const pressure = (units) => sum(enemies.filter((e) => units.some((u) => Math.hypot(u.x - e.x, u.y - e.y) < 180)));
+    const mean = (units, fn) => (units.length ? units.reduce((s, u) => s + fn(u), 0) / units.length : 0);
     for (const f of [...this.fronts.fronts]) {
-      // Laufenden Angriff abbrechen, wenn das Kräfteverhältnis kippt; beendeten auflösen
-      if (f.attack ? sum(f.units) < pressure(f.units) * 0.9 : f.kind === 'line') this.backToBorder(f);
+      // Laufenden Angriff abbrechen, wenn das Kräfteverhältnis kippt oder die Organisation
+      // der Division zusammenbricht; beendeten auflösen
+      if (f.attack ? sum(f.units) < pressure(f.units) * 0.9 || mean(f.units, (u) => u.org / u.maxOrg) < 0.3
+        : f.kind === 'line') this.backToBorder(f);
     }
     if (g.time < this.nextFrontAttack) return;
+    // Angreifen nur mit gut organisierten, versorgten Divisionen
     const ready = this.fronts.fronts.filter((f) => !f.attack && f.kind !== 'line' &&
-      f.units.filter((u) => !u.rotating).length >= 4);
+      f.units.filter((u) => !u.rotating && !u.broken).length >= 4 &&
+      mean(f.units, (u) => u.org / u.maxOrg) >= 0.6 && mean(f.units, (u) => u.supply) >= 0.5);
+    // Nur Ziele in Nachschubreichweite: heutige Fahrzeit an der Front plus Weg zum Ziel
+    const reach = (c, p) => {
+      const i = g.supply.cellFor(this.me, p.x, p.y);
+      const base = i >= 0 ? g.supply.nets[this.me].hours[i] : Infinity;
+      return base + Math.hypot(c.x - p.x, c.y - p.y) / KM / SUPPLY.truckKmh[2] <= SUPPLY.noneHours * 0.75;
+    };
     const targets = g.cities.filter((c) => c.owner !== this.me);
     if (!ready.length || !targets.length) return;
     const center = (f) => centerOf(f.division);
@@ -304,10 +316,12 @@ export class AI {
     for (const c of targets) {
       for (const f of ready) {
         const p = center(f);
-        const d = p ? Math.hypot(c.x - p.x, c.y - p.y) + (c.owner === this.foe ? 0 : 80) : Infinity;
+        if (!p || !reach(c, p)) continue;
+        const d = Math.hypot(c.x - p.x, c.y - p.y) + (c.owner === this.foe ? 0 : 80);
         if (d < bd) { bd = d; target = c; }
       }
     }
+    if (!target) return;
     const attackers = ready
       .map((f) => ({ f, d: Math.hypot(target.x - center(f).x, target.y - center(f).y) }))
       .sort((a, b) => a.d - b.d)

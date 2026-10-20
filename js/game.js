@@ -2,11 +2,11 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=61';
-import { mulberry32 } from './rng.js?v=61';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=61';
-import { HQManager } from './hq.js?v=61';
-import { SupplyNetwork } from './supply.js?v=61';
+} from './config.js?v=62';
+import { mulberry32 } from './rng.js?v=62';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=62';
+import { HQManager } from './hq.js?v=62';
+import { SupplyNetwork } from './supply.js?v=62';
 
 export class Game {
   constructor(map) {
@@ -480,11 +480,15 @@ export class Game {
     for (const div of this.divisions) {
       if (div.members.length < 2) continue;
       const busy = (u) => u.swapUntil > this.time || u.rotating || u.broken;
+      // Abgekämpft: wenig Lebenspunkte oder kurz vor dem Zerschlagen
+      const worn = (u) => Math.min(u.hp / u.maxHp, u.org / u.maxOrg);
       const wounded = div.members
-        .filter((u) => u.target && !busy(u) && u.hp < u.maxHp * DIVISION_ROTATE)
-        .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp);
+        .filter((u) => u.target && !busy(u) && worn(u) < DIVISION_ROTATE)
+        .sort((a, b) => worn(a) - worn(b));
       if (!wounded.length) continue;
-      const fresh = div.members.filter((u) => !u.target && !busy(u) && u.hp > u.maxHp * 0.6);
+      // Ablösung nur durch einsatzbereite, versorgte Kompanien
+      const fresh = div.members.filter((u) => !u.target && !busy(u) && u.hp > u.maxHp * 0.6 &&
+        u.org > u.maxOrg * 0.7 && u.supply > 0.4);
       for (const w of wounded) {
         let best = null, bd = Infinity;
         for (const f of fresh) {
@@ -572,6 +576,10 @@ function surrounded(angles) {
   return maxGap < Math.PI;
 }
 
+// Kampfwert für Kräftevergleiche (KI, HQs): Typ, Lebenspunkte, Organisation und Nachschub;
+// zerschlagene Kompanien kämpfen nicht und zählen nicht
 export function unitStrength(u) {
-  return UNIT_TYPES[u.type].strength * (0.4 + 0.6 * u.hp / u.maxHp);
+  if (u.broken) return 0;
+  const supply = SUPPLY.combatMin + (1 - SUPPLY.combatMin) * Math.min(1, u.supply * 2);
+  return UNIT_TYPES[u.type].strength * (0.4 + 0.6 * u.hp / u.maxHp) * (0.5 + 0.5 * u.org / u.maxOrg) * supply;
 }
