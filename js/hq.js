@@ -1,6 +1,6 @@
-import { unitStrength } from './game.js?v=60';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=60';
-import { pointAt } from './fronts.js?v=60';
+import { unitStrength } from './game.js?v=61';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=61';
+import { pointAt } from './fronts.js?v=61';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -78,7 +78,7 @@ export class HQManager {
   // laufenden Platztauschen, Rotation oder Gefecht
   controllable(u) {
     const t = this.game.time;
-    if (u.target || u.rotating || u.swapUntil > t || u.hqOrder > t) return false;
+    if (u.target || u.rotating || u.broken || u.swapUntil > t || u.hqOrder > t) return false;
     if (u.front) return !u.front.attack;
     if (u.ai && (u.ai.role === 'attack' || u.ai.role === 'stage' || u.ai.role === 'retreat')) return false;
     return !u.path.length;

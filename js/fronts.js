@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=60';
-import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=60';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=61';
+import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=61';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -499,7 +499,7 @@ export class FrontManager {
         }
       }
       if (u.rotating && (frac >= RETURN_AT || !f.rotate)) u.rotating = false;
-      if (!u.rotating) active.push(u);
+      if (!u.rotating && !u.broken) active.push(u); // Zerschlagene kehren erst erholt zurück
     }
 
     // Divisionsabschnitte: jede Division bekommt einen zusammenhängenden Abschnitt der

@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=60';
-import { classify } from './map.js?v=60';
-import { frontBadge, pointAt } from './fronts.js?v=60';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=60';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=61';
+import { classify } from './map.js?v=61';
+import { frontBadge, pointAt } from './fronts.js?v=61';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=61';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -622,6 +622,7 @@ function symbolPath(ctx, x, y, hw, hh, friend) {
 }
 
 export function drawNatoSymbol(ctx, u, friend, px, highlight, lowSupply) {
+  if (u.broken) ctx.globalAlpha = 0.5; // zerschlagen: blass, bis wieder einsatzbereit
   // Mindestgröße auf dem Bildschirm, damit die Symbole auch herausgezoomt lesbar bleiben
   const base = u.type === 'heavy' ? 1.25 : 1;
   const hw = Math.max(u.r * 1.45, 7 * px * base);
@@ -663,16 +664,24 @@ export function drawNatoSymbol(ctx, u, friend, px, highlight, lowSupply) {
   // Größenzeichen I (Kompanie) nur bei ausreichendem Zoom
   if (hw / px > 10) drawEchelon(ctx, x, top, 'I', px);
 
-  // Lebensbalken unter dem Symbol
-  const frac = u.hp / u.maxHp;
-  if (frac < 0.999) {
-    const bw = hw * 2, bh = Math.max(1, 2.2 * px), by = bottom + 1.5 * px;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(x - hw, by, bw, bh);
-    ctx.fillStyle = frac > 0.6 ? '#4cd17a' : frac > 0.3 ? '#f2c94c' : '#ff5b4b';
-    ctx.fillRect(x - hw, by, bw * Math.max(0, frac), bh);
-  }
+  // Lebensbalken und darunter Organisation (blau)
+  drawBars(ctx, x - hw, bottom + 1.5 * px, hw * 2, Math.max(1, 2.2 * px), u.hp / u.maxHp, u.org / u.maxOrg, px);
+  ctx.globalAlpha = 1;
   if (friend && u.supply < SUPPLY.warnBelow) drawSupplyWarning(ctx, x + (friend ? hw : d), top, px);
+}
+
+// Balken für Lebenspunkte (grün/gelb/rot) und Organisation (blau); nur, was nicht voll ist
+function drawBars(ctx, x, y, w, h, hp, org, px) {
+  const bars = [];
+  if (hp < 0.999) bars.push([Math.max(0, hp), hp > 0.6 ? '#4cd17a' : hp > 0.3 ? '#f2c94c' : '#ff5b4b']);
+  if (org < 0.999) bars.push([Math.max(0, org), '#5ab4ff']);
+  for (const [frac, color] of bars) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w * frac, h);
+    y += h + 0.6 * px;
+  }
 }
 
 // Warnzeichen „knapper Nachschub“: gelbes Dreieck mit Ausrufezeichen an der Ecke
@@ -851,16 +860,11 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, lowSuppl
     ctx.fillText(count, lx, y + 9 * px);
   }
 
-  // Gemeinsamer Lebensbalken
-  let hp = 0, max = 0;
-  for (const u of members) { hp += u.hp; max += u.maxHp; }
-  const frac = hp / max;
+  // Gemeinsamer Lebens- und Organisationsbalken
+  let hp = 0, max = 0, org = 0, maxOrg = 0;
+  for (const u of members) { hp += u.hp; max += u.maxHp; org += u.org; maxOrg += u.maxOrg; }
   const bottom = friend ? y + hh : y + d;
-  const bw = hw * 2, bh = Math.max(1, 2.4 * px), barY = bottom + 1.8 * px;
-  ctx.fillStyle = 'rgba(0,0,0,0.6)';
-  ctx.fillRect(x - hw, barY, bw, bh);
-  ctx.fillStyle = frac > 0.6 ? '#4cd17a' : frac > 0.3 ? '#f2c94c' : '#ff5b4b';
-  ctx.fillRect(x - hw, barY, bw * frac, bh);
+  drawBars(ctx, x - hw, bottom + 1.8 * px, hw * 2, Math.max(1, 2.4 * px), hp / max, org / maxOrg, px);
   if (friend && members.reduce((s, u) => s + u.supply, 0) / members.length < SUPPLY.warnBelow) {
     drawSupplyWarning(ctx, x + hw, friend ? y - hh : y - d, px);
   }

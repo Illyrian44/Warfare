@@ -33,6 +33,20 @@ export const UNIT_TYPES = {
   },
 };
 
+// Organisation wie in HOI4: Kampfbereitschaft einer Kompanie. Schaden trifft sie stärker
+// als die Lebenspunkte; bei 0 ist die Kompanie zerschlagen, zieht sich zurück und kämpft
+// nicht, bis sie wieder returnAt erreicht hat. Erholung nur außerhalb des Gefechts.
+export const ORG = {
+  max: { light: 60, heavy: 35 },  // Infanterie hält länger durch, Panzer brechen schneller ein
+  damage: 2,                      // Organisationsverlust relativ zum Lebenspunkteverlust
+  hpShare: 0.6,                   // Anteil des Schadens, der Lebenspunkte kostet
+  recoverPerHour: 0.15,           // Erholung je Stunde (Anteil des Maximums) bei vollem Nachschub
+  march: 0.5,                     // beim Marschieren nur halb so schnell
+  starvePerHour: 0.05,            // ohne Nachschub (Vorrat unter 15 %) sinkt sie so schnell
+  returnAt: 0.5,                  // zerschlagene Kompanien sind ab hier wieder einsatzbereit
+  retreatKm: 6,                   // so weit ziehen sie sich vom Feind zurück
+};
+
 export const ATTACK_RANGE = 24;        // plus beide Radien
 export const ENEMY_GAP = 6;            // Mindestabstand zu Feinden (plus Radien)
 export const ENGAGED_SPEED = 0.45;     // Tempo im Kampf

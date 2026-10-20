@@ -19,12 +19,20 @@ let failed = 0;
 const fail = (msg) => { failed++; console.error('  FEHLER: ' + msg); };
 
 const overlapSince = new Map();
+const brokenStuck = new Map(); // zerschlagene Kompanien, die ohne Rückzugsweg im Gefecht stehen
 
 function checkState(g, label, ais) {
   // Versorgung: Vorrat und Lieferquote im gültigen Bereich
   for (const u of g.units) {
     if (!(u.supply >= 0 && u.supply <= 1)) fail(`${label}: Kompanie ${u.id} hat Vorrat ${u.supply}`);
     if (!(u.supplyEff >= 0 && u.supplyEff <= 1)) fail(`${label}: Kompanie ${u.id} hat Lieferquote ${u.supplyEff}`);
+    if (!(u.org >= 0 && u.org <= u.maxOrg)) fail(`${label}: Kompanie ${u.id} hat Organisation ${u.org}`);
+    if (u.broken && u.org >= u.maxOrg * 0.5) fail(`${label}: Kompanie ${u.id} ist zerschlagen trotz Organisation ${u.org.toFixed(1)}`);
+    // (ausgenommen: eingeschlossen in der letzten eigenen Stadt, es gibt keinen Rückzugsort)
+    const trapped = g.cities.filter((c) => c.owner === u.owner).length <= 1;
+    if (u.broken && u.path.length === 0 && u.target && !trapped) brokenStuck.set(u, (brokenStuck.get(u) || 0) + 1);
+    else brokenStuck.delete(u);
+    if (brokenStuck.get(u) === 6) fail(`${label}: zerschlagene Kompanie ${u.id} steht seit 5 s ohne Rückzugsweg im Gefecht`);
   }
   // Keine Einheit dauerhaft auf unbegehbarem Gelände
   for (const u of g.units) {

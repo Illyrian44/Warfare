@@ -1,8 +1,8 @@
-import { DIFFICULTY } from './config.js?v=60';
-import { unitStrength } from './game.js?v=60';
-import { mulberry32 } from './rng.js?v=60';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=60';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=60';
+import { DIFFICULTY } from './config.js?v=61';
+import { unitStrength } from './game.js?v=61';
+import { mulberry32 } from './rng.js?v=61';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=61';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=61';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -53,7 +53,7 @@ export class AI {
   }
 
   order(u, x, y, role, tag) {
-    if (u.swapUntil > this.game.time) return; // Platztausch innerhalb der Division läuft
+    if (u.swapUntil > this.game.time || u.broken) return; // Platztausch läuft bzw. zerschlagen
     if (u.hqOrder > this.game.time) return;   // Befehl des Divisions-HQ hat Vorrang
     if (u.ai && u.ai.role === role && u.ai.tag === tag && u.path.length) return;
     const path = this.pathFor(u, x, y);

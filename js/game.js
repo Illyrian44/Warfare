@@ -1,12 +1,12 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY,
-  UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY,
-} from './config.js?v=60';
-import { mulberry32 } from './rng.js?v=60';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=60';
-import { HQManager } from './hq.js?v=60';
-import { SupplyNetwork } from './supply.js?v=60';
+  UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
+} from './config.js?v=61';
+import { mulberry32 } from './rng.js?v=61';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=61';
+import { HQManager } from './hq.js?v=61';
+import { SupplyNetwork } from './supply.js?v=61';
 
 export class Game {
   constructor(map) {
@@ -142,6 +142,7 @@ export class Game {
     }
     const u = {
       id: this.nextId++, owner, type, x, y, hp: ut.hp, maxHp: ut.hp, r: ut.radius,
+      org: ORG.max[type], maxOrg: ORG.max[type], broken: false,
       path: [], target: null, td: 0, incoming: 0, angles: [], px: 0, py: 0,
       stuck: 0, ai: null, supply: 1, supplyEff: 1, supplyHours: 0, depot: -1,
     };
@@ -255,7 +256,7 @@ export class Game {
     // Schaden
     for (const u of U) {
       const t = u.target;
-      if (!t) continue;
+      if (!t || u.broken) continue; // Zerschlagene kämpfen nicht
       const terr = map.cellTerrainAt(u.x, u.y);
       const ut = UNIT_TYPES[u.type];
       const mod = TERRAIN_INFO[terr].attack * ut.terrainAttack[terr];
@@ -274,7 +275,10 @@ export class Game {
     this.hq.update(dt);
     this.divTimer -= dt;
     if (this.divTimer <= 0) { this.divTimer = 0.5; this.updateDivisions(); this.rotateDivisions(); }
-    // Heilen nur mit gut gefülltem Vorrat und nicht im Gefecht; ohne Nachschub Abnutzung
+    // Heilen nur mit gut gefülltem Vorrat und nicht im Gefecht; ohne Nachschub Abnutzung.
+    // Schaden trifft Lebenspunkte (hpShare) und stärker die Organisation.
+    const hours = dt * HOURS_PER_SECOND;
+    const broke = [];
     for (const u of U) {
       let regen = 0;
       if (u.supply < 0.15) regen = -3 * (0.15 - u.supply) / 0.15;
@@ -282,7 +286,17 @@ export class Game {
         const own = this.territory[map.cellIndex(u.x, u.y)] === u.owner;
         regen = (own ? 4 : 1.5) * (u.supply - 0.5) / 0.5;
       }
-      u.hp = Math.min(u.maxHp, u.hp + regen * dt - u.incoming);
+      u.hp = Math.min(u.maxHp, u.hp + regen * dt - u.incoming * ORG.hpShare);
+      this.updateOrg(u, hours);
+      if (u.org <= 0 && !u.broken) broke.push(u);
+      else if (u.broken && u.org >= ORG.returnAt * u.maxOrg) u.broken = false;
+      // Folgt der Feind, zieht sich die Zerschlagene weiter zurück (höchstens alle 2 s)
+      else if (u.broken && u.target && !u.path.length && this.time >= (u.nextRetreat || 0)) broke.push(u);
+    }
+    let retreats = 3; // Wegsuchen je Schritt begrenzen
+    for (const u of broke) {
+      if (!u.broken) this.breakUnit(u);
+      else if (retreats-- > 0) this.retreat(u);
     }
 
     // Bewegung (höchstens 2 neue Wegsuchen für Festgefahrene je Schritt)
@@ -329,11 +343,64 @@ export class Game {
     }
   }
 
+  // Organisation: Verlust durch Schaden; außerhalb des Gefechts Erholung je nach
+  // Nachschub (beim Marsch langsamer); ohne Nachschub sinkt sie und erreicht ihr Maximum nicht
+  updateOrg(u, hours) {
+    if (u.incoming > 0) u.org -= u.incoming * ORG.damage * u.maxOrg / u.maxHp;
+    const fed = Math.min(1, u.supply * 2);
+    const cap = u.maxOrg * (0.5 + 0.5 * fed);
+    if (u.supply < 0.15 || u.org > cap) u.org -= ORG.starvePerHour * u.maxOrg * hours;
+    else if (!u.target) u.org += ORG.recoverPerHour * u.maxOrg * fed * (u.path.length ? ORG.march : 1) * hours;
+    u.org = Math.max(0, Math.min(u.maxOrg, u.org));
+  }
+
+  // Zerschlagen: die Kompanie bricht den Kampf ab und zieht sich vom Feind weg ins eigene
+  // Gebiet zurück – auch von einer Front. Laufende Befehle (HQ, KI, Platztausch) enden.
+  breakUnit(u) {
+    u.broken = true;
+    u.hqOrder = 0;
+    u.swapUntil = 0;
+    u.ai = null;
+    this.retreat(u);
+    this.events.push({ type: 'broken', unit: u });
+  }
+
+  // Rückzugsweg: vom Feind weg ins eigene Gebiet, sonst zur nächsten eigenen Stadt. Steht die
+  // Kompanie schon in einer Stadt, weicht sie wie in HOI4 zur nächsten anderen aus und gibt
+  // die belagerte Stadt auf; gibt es keine andere, ist sie eingeschlossen und bleibt
+  retreat(u) {
+    u.nextRetreat = this.time + 2;
+    let dx = 0, dy = 0;
+    for (const e of this.units) {
+      if (e.owner === u.owner || Math.abs(e.x - u.x) > 150 || Math.abs(e.y - u.y) > 150) continue;
+      const d = Math.hypot(e.x - u.x, e.y - u.y) || 1;
+      dx += (u.x - e.x) / d; dy += (u.y - e.y) / d;
+    }
+    let city = null, cd = Infinity, fallback = null;
+    for (const c of this.cities) {
+      if (c.owner !== u.owner) continue;
+      const d = Math.hypot(c.x - u.x, c.y - u.y);
+      if (d < 4 * KM) { fallback = c; continue; } // in dieser Stadt steht sie schon
+      if (d < cd) { cd = d; city = c; }
+    }
+    city = city || fallback;
+    if (!dx && !dy && city) { dx = city.x - u.x; dy = city.y - u.y; }
+    const l = Math.hypot(dx, dy) || 1;
+    let tx = u.x + dx / l * ORG.retreatKm * KM, ty = u.y + dy / l * ORG.retreatKm * KM;
+    // Landet der Rückzug nicht im eigenen Gebiet, geht es zur nächsten eigenen Stadt
+    const inCity = this.cities.some((c) => c.owner === u.owner && Math.hypot(c.x - u.x, c.y - u.y) < 4 * KM);
+    if (city && (inCity || this.territory[this.map.cellIndex(tx, ty)] !== u.owner || !this.map.passableAt(tx, ty))) {
+      tx = city.x; ty = city.y;
+    }
+    u.path = this.map.findPath(u.x, u.y, tx, ty) || (city && this.map.findPath(u.x, u.y, city.x, city.y)) || [];
+    u.stuck = 0;
+  }
+
   moveUnit(u, dt) {
     const map = this.map;
     const ut = UNIT_TYPES[u.type];
     let spd = ut.speed * (map.speedAt(u.x, u.y) || 0.5);
-    if (u.target) spd *= ENGAGED_SPEED;
+    if (u.target && !u.broken) spd *= ENGAGED_SPEED; // Zerschlagene lösen sich vom Feind
     // Panzern geht bei knappem Vorrat der Treibstoff aus
     if (u.type === 'heavy' && u.supply < SUPPLY.fuelLow) {
       spd *= SUPPLY.fuelMinSpeed + (1 - SUPPLY.fuelMinSpeed) * u.supply / SUPPLY.fuelLow;
@@ -345,7 +412,7 @@ export class Game {
       const dx = p.x - u.x, dy = p.y - u.y;
       const d = Math.hypot(dx, dy);
       // Front-Einheiten im Gefecht weichen nicht zurück: kein Marsch vom Feind weg
-      const retreating = u.front && !u.rotating && !(u.swapUntil > this.time) && u.target &&
+      const retreating = u.front && !u.rotating && !u.broken && !(u.swapUntil > this.time) && u.target &&
         dx * (u.target.x - u.x) + dy * (u.target.y - u.y) < 0;
       // Bei Feindkontakt stehen bleiben statt den Gegner wegzuschieben
       const pressing = u.target && u.td <= u.r + u.target.r + ENEMY_GAP + 3 &&
@@ -412,7 +479,7 @@ export class Game {
   rotateDivisions() {
     for (const div of this.divisions) {
       if (div.members.length < 2) continue;
-      const busy = (u) => u.swapUntil > this.time || u.rotating;
+      const busy = (u) => u.swapUntil > this.time || u.rotating || u.broken;
       const wounded = div.members
         .filter((u) => u.target && !busy(u) && u.hp < u.maxHp * DIVISION_ROTATE)
         .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp);
@@ -456,7 +523,7 @@ export class Game {
       const present = [0, 0, 0];
       for (const u of this.units) {
         if (Math.abs(u.x - c.x) > CITY_CAPTURE_RADIUS || Math.abs(u.y - c.y) > CITY_CAPTURE_RADIUS) continue;
-        if (Math.hypot(u.x - c.x, u.y - c.y) <= CITY_CAPTURE_RADIUS) present[u.owner]++;
+        if (!u.broken && Math.hypot(u.x - c.x, u.y - c.y) <= CITY_CAPTURE_RADIUS) present[u.owner]++;
       }
       const invaders = [1, 2].filter((p) => p !== c.owner && present[p] > 0);
       const defended = c.owner && present[c.owner] > 0;
