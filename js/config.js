@@ -39,7 +39,7 @@ export const UNIT_TYPES = {
 export const ORG = {
   max: { light: 60, heavy: 35 },  // Infanterie hält länger durch, Panzer brechen schneller ein
   damage: 2,                      // Organisationsverlust relativ zum Lebenspunkteverlust
-  hpShare: 0.6,                   // Anteil des Schadens, der Lebenspunkte kostet
+  hpShare: 0.8,                   // Anteil des Schadens, der Lebenspunkte kostet (0,6 machte Partien zu zäh)
   recoverPerHour: 0.15,           // Erholung je Stunde (Anteil des Maximums) bei vollem Nachschub
   march: 0.5,                     // beim Marschieren nur halb so schnell
   starvePerHour: 0.05,            // ohne Nachschub (Vorrat unter 15 %) sinkt sie so schnell

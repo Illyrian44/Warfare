@@ -18,7 +18,9 @@ Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https:
 - **Maßstab:** 1 Kartenfeld = 1 km, die mittlere Insel misst 160 × 96 km. Bei Tempo 1× vergehen in einer Sekunde 6 Minuten Spielzeit; alle Geschwindigkeiten stehen als km/h in `js/config.js` (Straßen ×1,6).
 - **Gelände:** Ebene, Wald (−25 % Angriff), Hügel (+50 % Angriff, mehr Sicht), Wasser (−50 % Angriff, langsam), Gebirge und tiefes Wasser sind unpassierbar.
 - **Kampf** läuft automatisch. Eingekesselte Einheiten nehmen 50 % mehr Schaden.
-- **Versorgung:** Heilung nahe eigener Städte, Schaden tief im Feindesland. Jede Stadt versorgt 10 Einheiten, überzählige hungern.
+- **Nachschub** (`js/supply.js`): Jede eigene Stadt ist ein Depot. Ein Dijkstra über das eigene Gebiet berechnet die LKW-Fahrzeit zu jedem Feld (Straße 50 km/h, Gelände 4–20 km/h, Feindgebiet sperrt, 2 km um Feinde vierfache Zeit). Jede Kompanie hat einen Vorrat (1/6 je Stunde, im Gefecht doppelt) und fordert Nachschub an; voll bis 3 h Fahrt, nichts ab 8 h. Verbundene Depots teilen sich ihre Lieferleistung, Mangel wird gleichmäßig verteilt (Panzer zählen 1,5-fach); Kessel sind abgeschnitten. Wirkung: Heilen nur mit Vorrat, sonst Abnutzung, Kampfkraft bis 50 %, Panzer ohne Treibstoff langsam. Kartenebene „Nachschub“ (N). LKW-Kolonnen sind vorbereitet (`dispatch()`/`deliver()`/`route()`, `SUPPLY.convoys`), aber noch nicht eingebaut.
+- **Organisation:** Kampfbereitschaft je Kompanie (Infanterie 60, Panzer 35). Schaden trifft sie stärker als die Lebenspunkte; bei 0 ist die Kompanie zerschlagen, kämpft nicht, erobert nichts und zieht sich zurück (auch von der Front), ab 50 % ist sie wieder einsatzbereit. Erholung außerhalb des Gefechts je nach Nachschub. KI und HQs berücksichtigen Organisation und Nachschub.
+- **Städte** produzieren Einheiten, bis zu 10 je eigener Stadt.
 - **Gliederung:** Division (XX) → Regiment (III) → Kompanie (I). Alle Kompanien starten ohne Division; Spieler und KI fassen sie nach Bedarf zu Divisionen zusammen (höchstens 12 Kompanien) oder nehmen sie wieder heraus. Die Regimenter (2–3 Kompanien, Infanterie und Panzer getrennt) ordnet das Spiel selbst. Leere Divisionen lösen sich auf und geben Nummer und Farbe frei. Kompanien ohne Division sind die Reserve: frei verfügbar, aber ohne HQ, Front und Rotation. Innerhalb einer Division rotieren Kompanien: Unter 25 % im Gefecht tauscht eine Kompanie den Platz mit einer frischen in der Nähe.
 - **Fronten wie in Hearts of Iron:** Jede Front gehört zu genau einer Division, ihre Kompanien verteilen sich darauf und halten sie. Eine gezeichnete Linie nahe der Grenze rastet als Grenzabschnitt ein und wandert mit der Grenze; „Grenze“ mit mehreren Divisionen teilt die Grenze nach Stärke auf. Abschnitte werden über eine feste Achse quer zur Stoßrichtung abgegrenzt, benachbarte teilen sich einen Ankerpunkt (keine Lücken, keine Überlappung); ein neuer Abschnitt kürzt ältere. Angriffe wie in HOI4: Division mit Front auswählen → „➜ Angriff planen“ → Ziellinie ziehen (NATO-Phasenlinie mit Decknamen und Hauptangriffsachse nach APP-6; geplant gestrichelt, laufend durchgezogen) → „▶ Angriff starten“. Optional ziehen sich Verwundete zum Heilen zurück (Rotation).
 - **Sichtbarkeit der Fronten:** Auf der Karte erscheint nur die Front der ausgewählten Division; „Fronten“ (V) blendet alle eigenen ein. Grenzstücke ohne Front sind rot gestrichelt. Fronten und Angriffspläne des Gegners bleiben verborgen.
@@ -44,9 +46,10 @@ Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https:
 | Front zeichnen | Division wählen, „〰 Front“ (F), dann Linie ziehen | ebenso |
 | Grenze halten | Division(en) wählen, „⛨ Grenze“ (G) | ebenso |
 | Alle Fronten zeigen | „Fronten“ (V) | ebenso |
+| Nachschub zeigen | „Nachschub“ (N) | ebenso |
 | Produktion wechseln | Eigene Stadt anklicken (ohne Auswahl) | Stadt antippen |
 
-Tasten: Leertaste Pause · A alle auswählen · S anhalten · D/Umschalt+D Division · F Front · G Grenze · V Fronten · Esc abwählen · 1/2/3 Tempo.
+Tasten: Leertaste Pause · A alle auswählen · S anhalten · D/Umschalt+D Division · F Front · G Grenze · V Fronten · N Nachschub · Esc abwählen · 1/2/3 Tempo.
 
 ## Aufbau
 
@@ -57,8 +60,9 @@ js/config.js        Spielwerte (Gelände, Einheiten, Schwierigkeit)
 js/rng.js           Zufallszahlen und Rauschen für die Karte
 js/map.js           Kartengenerator (punktsymmetrische Insel), Straßen und A*-Wegfindung
 js/orbat.js         Gliederung: Divisionen, Regimenter, Kompanien
-js/game.js          Simulation: Bewegung, Kampf, Versorgung, Städte, Gebiet, Sicht, Rotation
+js/game.js          Simulation: Bewegung, Kampf, Organisation, Städte, Gebiet, Sicht, Rotation
 js/hq.js            Divisions-HQs: Kräfteausgleich, Abriegeln, Funk zwischen Nachbarfronten
+js/supply.js        Nachschub: Depots, LKW-Netz über eigenes Gebiet, Vorräte, Verteilung
 js/fronts.js        Fronten je Division, Grenzabschnitte, Angriffe
 js/ai.js            KI-Gegner: Gliederung, Fronten, Angriffe, Reserve
 js/render.js        Canvas-Darstellung
@@ -72,6 +76,6 @@ scripts/bump-version.sh  Versionsnummer gegen veraltete Browser-Caches
 
 GitHub Pages veröffentlicht die Seite direkt aus dem Branch `main` (Settings → Pages → „Deploy from a branch“). Jeder Push aktualisiert das Spiel nach etwa einer Minute.
 
-Vor dem Veröffentlichen `npm test` ausführen (Node 18 oder neuer): Die KI spielt auf allen drei Kartengrößen gegen sich selbst, geprüft werden Abstürze, das Spielende, die Gliederung (Höchststärken, Regimenter) und die Fronten (eine je Division, keine überlappenden Grenzabschnitte).
+Vor dem Veröffentlichen `npm test` ausführen (Node 18 oder neuer): Die KI spielt auf allen drei Kartengrößen gegen sich selbst, geprüft werden Abstürze, das Spielende, die Gliederung (Höchststärken, Regimenter), die Fronten (eine je Division, keine überlappenden Grenzabschnitte), Nachschub und Organisation (Wertebereiche, Zerschlagene ziehen sich zurück). Der Test prüft zwischen KI und Spielschritt und verändert den Spielverlauf nicht: dieselbe Karte ergibt im Test und im Spiel denselben Ablauf.
 
 Nach Änderungen am Code `./scripts/bump-version.sh` ausführen. Das erhöht die Versionsnummer an allen Skript-Verweisen, damit Browser (vor allem auf dem Handy) nicht die alten Dateien aus dem Cache laden.
