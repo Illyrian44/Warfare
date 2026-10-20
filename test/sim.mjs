@@ -21,6 +21,11 @@ const fail = (msg) => { failed++; console.error('  FEHLER: ' + msg); };
 const overlapSince = new Map();
 
 function checkState(g, label, ais) {
+  // Versorgung: Vorrat und Lieferquote im gültigen Bereich
+  for (const u of g.units) {
+    if (!(u.supply >= 0 && u.supply <= 1)) fail(`${label}: Kompanie ${u.id} hat Vorrat ${u.supply}`);
+    if (!(u.supplyEff >= 0 && u.supplyEff <= 1)) fail(`${label}: Kompanie ${u.id} hat Lieferquote ${u.supplyEff}`);
+  }
   // Keine Einheit dauerhaft auf unbegehbarem Gelände
   for (const u of g.units) {
     const t = g.map.cellTerrainAt(u.x, u.y);

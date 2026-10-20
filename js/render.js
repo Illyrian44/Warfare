@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=58';
-import { classify } from './map.js?v=58';
-import { frontBadge, pointAt } from './fronts.js?v=58';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=58';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS } from './config.js?v=59';
+import { classify } from './map.js?v=59';
+import { frontBadge, pointAt } from './fronts.js?v=59';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=59';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -250,7 +250,7 @@ export class Renderer {
         const sel = group.members.some((u) => ui.selection.has(u));
         const inFront = ui.front && group.members.some((u) => u.front === ui.front);
         const hw = drawFormationSymbol(ctx, group.x, group.y, group.members, p === me, px,
-          sel ? '#fff' : inFront ? '#f2c94c' : null, group.members.some((u) => u.starving) && flash,
+          sel ? '#fff' : inFront ? '#f2c94c' : null, group.members.some((u) => u.supply < 0.2) && flash,
           labelFor(group.members));
         for (const u of group.members) drawn.add(u);
         if (p === me) this.divHits.push({ x: group.x, y: group.y, r: hw, members: group.members });
@@ -258,7 +258,7 @@ export class Renderer {
     }
     for (const u of game.units) {
       if (drawn.has(u) || !visible(u)) continue;
-      drawNatoSymbol(ctx, u, u.owner === me, px, highlightOf(u), u.starving && flash);
+      drawNatoSymbol(ctx, u, u.owner === me, px, highlightOf(u), u.supply < 0.2 && flash);
     }
 
     // Divisions-HQs hinter der Linie (keine Kampfeinheiten)
@@ -551,7 +551,7 @@ function symbolPath(ctx, x, y, hw, hh, friend) {
   }
 }
 
-export function drawNatoSymbol(ctx, u, friend, px, highlight, starving) {
+export function drawNatoSymbol(ctx, u, friend, px, highlight, lowSupply) {
   // Mindestgröße auf dem Bildschirm, damit die Symbole auch herausgezoomt lesbar bleiben
   const base = u.type === 'heavy' ? 1.25 : 1;
   const hw = Math.max(u.r * 1.45, 7 * px * base);
@@ -570,8 +570,8 @@ export function drawNatoSymbol(ctx, u, friend, px, highlight, starving) {
   symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
   ctx.fillStyle = fillFor([u], friend);
   ctx.fill();
-  ctx.strokeStyle = starving ? '#ffd23f' : '#000';
-  ctx.lineWidth = starving ? line * 2 : line;
+  ctx.strokeStyle = lowSupply ? '#ffd23f' : '#000';
+  ctx.lineWidth = lowSupply ? line * 2 : line;
   ctx.stroke();
 
   // Innenleben: X = Infanterie (leicht), Oval = Panzer (schwer)
@@ -700,7 +700,7 @@ function drawAxisOfAdvance(ctx, from, to, px, color, planned) {
 
 // Verbandssymbol (APP-6): Größenzeichen (III, XX), Innenzeichen nach Zusammensetzung
 // (X = Infanterie, Oval = Panzer, beides = Panzergrenadiere), Name und Stärke
-function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving, label) {
+function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, lowSupply, label) {
   const { level, echelon, name, count } = label;
   // Mindestens etwas größer als eine Kompanie; beim Hineinzoomen wächst das Symbol mit
   // der Karte, und Linien, Schrift und Größenzeichen skalieren proportional mit
@@ -719,8 +719,8 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, starving
   symbolPath(ctx, x, y, friend ? hw : d, hh, friend);
   ctx.fillStyle = fillFor(members, friend);
   ctx.fill();
-  ctx.strokeStyle = starving ? '#ffd23f' : '#000';
-  ctx.lineWidth = starving ? line * 2 : line;
+  ctx.strokeStyle = lowSupply ? '#ffd23f' : '#000';
+  ctx.lineWidth = lowSupply ? line * 2 : line;
   ctx.stroke();
 
   const heavy = members.filter((u) => u.type === 'heavy').length;

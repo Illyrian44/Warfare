@@ -1,11 +1,12 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
-  CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, SUPPLY_FULL, SUPPLY_NONE,
+  CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE,
-} from './config.js?v=58';
-import { mulberry32 } from './rng.js?v=58';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=58';
-import { HQManager } from './hq.js?v=58';
+} from './config.js?v=59';
+import { mulberry32 } from './rng.js?v=59';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=59';
+import { HQManager } from './hq.js?v=59';
+import { SupplyNetwork } from './supply.js?v=59';
 
 export class Game {
   constructor(map) {
@@ -26,7 +27,6 @@ export class Game {
     this.winner = 0;
     this.terrTimer = 0;
     this.visTimer = 0;
-    this.starveTimer = 0;
     this.divisions = [];
     this.repathBudget = 2;
     this.divTimer = 0;
@@ -41,6 +41,7 @@ export class Game {
       this.orbat[p].createStart(this, own);
     }
     this.partitionTerritory();
+    this.supply = new SupplyNetwork(this);
     this.hq = new HQManager(this);
     this.hq.place();
     this.updateVision();
@@ -142,7 +143,7 @@ export class Game {
     const u = {
       id: this.nextId++, owner, type, x, y, hp: ut.hp, maxHp: ut.hp, r: ut.radius,
       path: [], target: null, td: 0, incoming: 0, angles: [], px: 0, py: 0,
-      stuck: 0, starving: false, ai: null,
+      stuck: 0, ai: null, supply: 1, supplyEff: 1, supplyHours: 0, depot: -1,
     };
     this.units.push(u);
     return u;
@@ -208,16 +209,6 @@ export class Game {
   unitsOf(p) { return this.units.filter((u) => u.owner === p); }
   capacity(p) { return this.citiesOf(p).length * UNITS_PER_CITY; }
 
-  nearestOwnCityDist(u) {
-    let best = Infinity;
-    for (const c of this.cities) {
-      if (c.owner !== u.owner) continue;
-      const d = Math.hypot(c.x - u.x, c.y - u.y);
-      if (d < best) best = d;
-    }
-    return best;
-  }
-
   step(dt) {
     if (this.winner) return;
     this.time += dt;
@@ -277,22 +268,17 @@ export class Game {
     }
 
     // Versorgung und Gesundheit
-    this.starveTimer -= dt;
-    if (this.starveTimer <= 0) { this.updateStarvation(); this.starveTimer = 0.5; }
+    this.supply.step(dt);
     this.hq.update(dt);
     this.divTimer -= dt;
     if (this.divTimer <= 0) { this.divTimer = 0.5; this.updateDivisions(); this.rotateDivisions(); }
+    // Heilen nur mit gut gefülltem Vorrat und nicht im Gefecht; ohne Nachschub Abnutzung
     for (const u of U) {
-      let regen;
-      if (u.starving) regen = -3;
-      else if (u.target) regen = 0;
-      else {
-        const d = this.nearestOwnCityDist(u);
-        const supply = d <= SUPPLY_FULL ? 1 : d >= SUPPLY_NONE ? 0 : 1 - (d - SUPPLY_FULL) / (SUPPLY_NONE - SUPPLY_FULL);
-        const owner = this.territory[map.cellIndex(u.x, u.y)];
-        if (owner === u.owner) regen = 0.5 + 3.5 * supply;
-        else if (owner === 0) regen = 2 * supply - 0.5;
-        else regen = supply > 0.6 ? 0 : -1;
+      let regen = 0;
+      if (u.supply < 0.15) regen = -3 * (0.15 - u.supply) / 0.15;
+      else if (!u.target && u.supply > 0.5) {
+        const own = this.territory[map.cellIndex(u.x, u.y)] === u.owner;
+        regen = (own ? 4 : 1.5) * (u.supply - 0.5) / 0.5;
       }
       u.hp = Math.min(u.maxHp, u.hp + regen * dt - u.incoming);
     }
@@ -451,17 +437,6 @@ export class Game {
         w.frontGoal = best.frontGoal;
         best.frontGoal = goal;
       }
-    }
-  }
-
-  updateStarvation() {
-    for (const u of this.units) u.starving = false;
-    for (let p = 1; p <= 2; p++) {
-      const own = this.unitsOf(p);
-      const excess = own.length - this.capacity(p);
-      if (excess <= 0) continue;
-      own.sort((a, b) => this.nearestOwnCityDist(b) - this.nearestOwnCityDist(a));
-      for (let k = 0; k < excess; k++) own[k].starving = true;
     }
   }
 

@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=58';
-import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=58';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=59';
+import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=59';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen

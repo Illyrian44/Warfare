@@ -43,8 +43,26 @@ export const CITY_CAPTURE_RADIUS = 20;
 export const CAPTURE_TIME = 4;         // Sekunden
 export const UNITS_PER_CITY = 10;
 
-export const SUPPLY_FULL = 200;        // volle Versorgung bis zu dieser Distanz
-export const SUPPLY_NONE = 900;        // keine Versorgung ab dieser Distanz
+// Versorgung: jede eigene Stadt ist ein Depot und beliefert die Kompanien, die sie über
+// eigenes Gebiet am schnellsten erreicht. LKW fahren auf Straßen schnell; Feindgebiet
+// sperrt, Feindnähe bremst. Mengen in Grundlasten (1 = voller Vorrat einer Kompanie).
+export const SUPPLY = {
+  roadKmh: 50,                       // LKW auf Straßen und Brücken
+  truckKmh: [0, 4, 20, 12, 10, 0],   // LKW abseits von Straßen, je Gelände (Index wie T)
+  fullHours: 3,                      // bis zu dieser Fahrzeit kommt alles an
+  noneHours: 8,                      // ab dieser Fahrzeit kommt nichts mehr an
+  enemyKm: 2,                        // in diesem Umkreis um Feinde ...
+  enemySlow: 4,                      // ... dauert der Transport so viel länger
+  reach: 3,                          // Zellen: Kompanien am Rand des eigenen Gebiets nutzen das nächste erreichbare Feld
+  usePerHour: 1 / 6,                 // Verbrauch je Stunde (ein voller Vorrat reicht 6 h)
+  combatUse: 2,                      // im Gefecht doppelt so viel
+  refillPerHour: 0.5,                // so schnell wird ein leerer Vorrat höchstens aufgefüllt
+  demand: { light: 1, heavy: 1.5 },  // Panzer brauchen zusätzlich Treibstoff
+  depotPerHour: UNITS_PER_CITY / 6 * 1.25, // Lieferleistung je Stadt (Grundlasten je Stunde)
+  interval: 2,                       // Sekunden zwischen Neuberechnungen des Netzes je Seite
+  tick: 0.5,                         // Sekunden zwischen zwei Lieferungen
+  convoys: false,                    // vorbereitet: LKW-Kolonnen statt Sofortlieferung (noch nicht eingebaut)
+};
 
 export const DIVISION_ROTATE = 0.25; // darunter tauscht eine Kompanie mit einer frischen
 export const ROAD_SPEED = 1.6;   // Tempo auf Straßen (Ebene = 1)
