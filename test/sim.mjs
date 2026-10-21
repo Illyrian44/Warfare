@@ -82,6 +82,8 @@ function checkState(g, label, ais) {
     for (const f of ai.fronts.fronts) {
       if (!f.division || f.division.dissolved) fail(`${label}: Front ${f.id} ohne bestehende Division`);
       if (divs.has(f.division)) fail(`${label}: ${f.division.name} hat zwei Fronten`);
+      // Angriffe sind Aufträge: die KI-Division bleibt ihrem Grenzabschnitt zugewiesen
+      if (f.kind === 'line') fail(`${label}: Front von ${f.division.name} ist zur freien Linie geworden`);
       divs.add(f.division);
       for (const u of f.units) {
         if (!g.units.includes(u)) continue;

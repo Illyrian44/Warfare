@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM } from './config.js?v=64';
-import { unitStrength } from './game.js?v=64';
-import { mulberry32 } from './rng.js?v=64';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=64';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=64';
+import { DIFFICULTY, SUPPLY, KM } from './config.js?v=65';
+import { unitStrength } from './game.js?v=65';
+import { mulberry32 } from './rng.js?v=65';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=65';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=65';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -275,10 +275,12 @@ export class AI {
     if (changed || this.needSplit || gap > GAP_RESPLIT) this.splitFronts();
   }
 
-  // Alle Divisionen, die nicht gerade angreifen, teilen sich die Grenze wie beim Spieler
+  // Alle Divisionen teilen sich die Grenze wie beim Spieler. Während eines Angriffs wird
+  // nicht neu aufgeteilt (das würde ihn abbrechen), sondern danach.
   splitFronts() {
     const ob = this.game.orbat[this.me];
-    const holders = ob.all(DIVISION).filter((d) => !(d.front && d.front.attack));
+    if (this.fronts.fronts.some((f) => f.attack)) { this.needSplit = true; return; }
+    const holders = ob.all(DIVISION);
     this.needSplit = false;
     if (!holders.length) return;
     for (const d of holders) for (const u of unitsOf(d)) u.ai = null; // eigene Aufträge enden
@@ -294,9 +296,10 @@ export class AI {
     const mean = (units, fn) => (units.length ? units.reduce((s, u) => s + fn(u), 0) / units.length : 0);
     for (const f of [...this.fronts.fronts]) {
       // Laufenden Angriff abbrechen, wenn das Kräfteverhältnis kippt oder die Organisation
-      // der Division zusammenbricht; beendeten auflösen
-      if (f.attack ? sum(f.units) < pressure(f.units) * 0.9 || mean(f.units, (u) => u.org / u.maxOrg) < 0.3
-        : f.kind === 'line') this.backToBorder(f);
+      // der Division zusammenbricht
+      if (f.attack && (sum(f.units) < pressure(f.units) * 0.9 || mean(f.units, (u) => u.org / u.maxOrg) < 0.3)) {
+        this.backToBorder(f);
+      }
     }
     if (g.time < this.nextFrontAttack) return;
     // Angreifen nur mit gut organisierten, versorgten Divisionen
@@ -351,12 +354,11 @@ export class AI {
     this.nextFrontAttack = g.time + 20;
   }
 
-  // Nach dem Angriff (oder bei Abbruch) übernimmt die Division wieder einen Grenzabschnitt
+  // Angriff abbrechen: die Division hält wieder ihren Grenzabschnitt (er bleibt ihr während
+  // des Angriffs zugewiesen)
   backToBorder(f) {
-    f.attack = null;
     f.plan = null;
-    this.needSplit = true;
-    this.splitFronts();
+    this.fronts.stopAttack(f);
     this.nextFrontAttack = Math.max(this.nextFrontAttack, this.game.time + 15);
   }
 

@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=64';
-import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=64';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=65';
+import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=65';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -201,7 +201,7 @@ export class FrontManager {
     const [a0, a1] = this.rangeOf(f);
     const [fa, fb] = f.kind === 'segment' ? f.anchors : [null, null];
     for (const o of [...this.fronts]) {
-      if (o === f || o.kind === 'line' || o.attack) continue;
+      if (o === f || o.kind === 'line') continue; // auch angreifende: sie behalten ihren Abschnitt
       const [b0, b1] = this.rangeOf(o);
       if (b1 <= a0 || b0 >= a1) continue; // keine Überschneidung
       // was links bzw. rechts vom neuen Abschnitt übrig bliebe (als Grenzlänge)
@@ -381,13 +381,25 @@ export class FrontManager {
     f.plan = null;
   }
 
+  // Angriff als Auftrag an die Front: die Division bleibt ihrem Abschnitt (bzw. ihrer
+  // Grenze) zugewiesen, ihre Kompanien rücken nur bis zur Ziellinie vor. Danach halten sie
+  // wieder ihren Abschnitt, der mit der vorgerückten Grenze mitwandert. Nur eine frei
+  // gezeichnete Front ('line') rückt selbst auf die Ziellinie vor.
   startAttack(f) {
     if (!f.plan) return;
-    f.kind = 'line';
-    f.line = f.plan.line;
     f.attack = { line: f.plan.line, name: f.plan.name, started: this.game.time };
     f.plan = null;
+    for (const u of f.units) u.frontGoal = null;
     this.prepare(f);
+  }
+
+  // Angriff beenden (erreicht oder abgebrochen): zurück zum Halten des eigenen Abschnitts
+  stopAttack(f, reached = false) {
+    if (!f.attack) return;
+    if (reached && f.kind === 'line') f.line = f.attack.line;
+    f.attack = null;
+    for (const u of f.units) u.frontGoal = null;
+    this.schedule(f);
   }
 
   // Linie und Besetzung sofort, die Wege erst im nächsten Durchgang (verteilt die Rechenlast)
@@ -503,8 +515,14 @@ export class FrontManager {
     }
 
     // Divisionsabschnitte: jede Division bekommt einen zusammenhängenden Abschnitt der
-    // Front, Länge nach ihrer Stärke. Kompanien bleiben in ihrem Abschnitt.
-    const { slots, ordered } = this.sectionSlots(f, active);
+    // Front, Länge nach ihrer Stärke. Kompanien bleiben in ihrem Abschnitt. Im Angriff
+    // liegen die Plätze auf der Ziellinie, die Front selbst bleibt unverändert.
+    let target = f.chains, targetLen = f.length;
+    if (f.attack) {
+      target = [withNormals(f.attack.line, (p, n) => this.facing(p, n))];
+      targetLen = chainLength(target[0]);
+    }
+    const { slots, ordered } = this.sectionSlots(f, active, target, targetLen, !f.attack);
     if (!slots.length) return;
     let pending = false;
     const shared = new Map(); // Wege für nebeneinander stehende Einheiten mit ähnlichem Ziel teilen
@@ -561,7 +579,7 @@ export class FrontManager {
     if (f.attack && active.length) {
       const arrived = active.filter((u) => u.frontGoal && Math.hypot(u.x - u.frontGoal.x, u.y - u.frontGoal.y) < 30).length;
       if (arrived >= active.length * 0.7) {
-        f.attack = null;
+        this.stopAttack(f, true);
         this.events.push({ type: 'attackDone', front: f });
       }
     }
@@ -598,11 +616,13 @@ export class FrontManager {
     return false;
   }
 
-  sectionSlots(f, active) {
-    const total = f.length || 0;
-    if (!active.length || total < 1) return { slots: distribute(f.chains, active.length), ordered: active };
+  // Plätze auf einer Linie (chains, Länge total) verteilen, je Division ein zusammenhängender
+  // Abschnitt. Nur auf der eigenen Frontlinie (own) werden Abschnitte und Anteile gemerkt;
+  // ein Angriff verteilt auf der Ziellinie, ohne sie zu verändern.
+  sectionSlots(f, active, chains = f.chains, total = f.length || 0, own = true) {
+    if (!active.length || total < 1) return { slots: distribute(chains, active.length), ordered: active };
     // Lage jeder Kompanie auf der Linie: bevorzugt ihr bisheriger Platz (stabile Reihenfolge)
-    const posOf = (u) => projectOnChains(f.chains, u.frontGoal && u.front === f ? u.frontGoal : u);
+    const posOf = (u) => projectOnChains(chains, u.frontGoal && u.front === f ? u.frontGoal : u);
     const groups = new Map();
     for (const u of active) {
       const d = formationOf(u, DIVISION) || null;
@@ -626,23 +646,24 @@ export class FrontManager {
       const old = prev.get(d.div);
       d.strength = old === undefined ? target : old * 0.85 + target * 0.15;
     }
-    f.shares = new Map(divs.map((d) => [d.div, d.strength]));
+    if (own) f.shares = new Map(divs.map((d) => [d.div, d.strength]));
     const sum = divs.reduce((s, d) => s + d.strength, 0) || 1;
     const slots = [], ordered = [];
-    f.sections = [];
+    const sections = [];
     let start = 0;
     for (const d of divs) {
       const len = total * d.strength / sum;
       const n = d.list.length;
       for (let k = 0; k < n; k++) {
-        const pt = pointAt(f.chains, start + (k + 0.5) * len / n);
+        const pt = pointAt(chains, start + (k + 0.5) * len / n);
         if (!pt) continue;
         slots.push(pt);
         ordered.push(d.list[k].u);
       }
-      f.sections.push({ div: d.div, from: start, to: start + len });
+      sections.push({ div: d.div, from: start, to: start + len });
       start += len;
     }
+    if (own) f.sections = sections;
     return { slots, ordered };
   }
 

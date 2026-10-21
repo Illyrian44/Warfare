@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=64';
-import { Game } from './game.js?v=64';
-import { AI } from './ai.js?v=64';
-import { Renderer, isFrontShown } from './render.js?v=64';
-import { Input } from './input.js?v=64';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=64';
-import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=64';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=64';
+import { generateMap } from './map.js?v=65';
+import { Game } from './game.js?v=65';
+import { AI } from './ai.js?v=65';
+import { Renderer, isFrontShown } from './render.js?v=65';
+import { Input } from './input.js?v=65';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=65';
+import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=65';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=65';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -262,6 +262,7 @@ const app = {
     $('planBtn').hidden = !!cur.plan;
     $('planBtn').textContent = cur.attack ? '➜ Neues Ziel' : '➜ Angriff planen';
     $('attackBtn').hidden = !cur.plan;
+    $('stopAttackBtn').hidden = !cur.attack;
     $('cancelPlanBtn').hidden = !cur.plan;
     $('rotateBtn').classList.toggle('active', cur.rotate);
     const off = this.fronts.detached(cur);
@@ -461,7 +462,7 @@ const app = {
     }
     g.events.length = 0;
     for (const ev of this.fronts.events) {
-      if (ev.type === 'attackDone') this.toast('Angriffsziel erreicht – die Front hält die neue Linie', 'good');
+      if (ev.type === 'attackDone') this.toast(`${ev.front.division.name}: Angriffsziel erreicht – sie hält wieder ihren Frontabschnitt`, 'good');
       else if (ev.type === 'frontLost') {
         this.toast(`${ev.division.name} hat keinen Frontabschnitt mehr`);
         this.divBarSig = null;
@@ -675,6 +676,11 @@ $('planBtn').onclick = () => app.setFrontMode({ plan: app.ui.front });
 $('attackBtn').onclick = () => {
   app.fronts.startAttack(app.ui.front);
   app.toast('Angriff läuft!', 'good');
+  app.updateFrontPanel();
+};
+$('stopAttackBtn').onclick = () => {
+  app.fronts.stopAttack(app.ui.front);
+  app.toast('Angriff gestoppt – die Division hält ihren Frontabschnitt');
   app.updateFrontPanel();
 };
 $('cancelPlanBtn').onclick = () => { app.fronts.cancelPlan(app.ui.front); app.updateFrontPanel(); };
