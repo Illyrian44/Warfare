@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 const v = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim();
 const load = (name) => import(new URL(`../js/${name}.js?v=${v}`, import.meta.url));
 const { mapFromData } = await load('map');
+const unitsOfDiv = (div) => div.children.flatMap((r) => r.units).map((u) => u.type);
 const mapData = new Map();
 const realMap = (id, seed) => {
   if (!mapData.has(id)) mapData.set(id, JSON.parse(readFileSync(new URL(`../maps/${id}.json`, import.meta.url), 'utf8')));
@@ -50,6 +51,10 @@ function checkState(g, label, ais) {
     const t = g.map.cellTerrainAt(u.x, u.y);
     if (!TERRAIN_INFO[t].passable) u.badTime = (u.badTime || 0) + 1; else u.badTime = 0;
     if (u.badTime > 10) { fail(`${label}: Einheit ${u.id} steckt auf unbegehbarem Gelände (${u.x.toFixed(0)}, ${u.y.toFixed(0)})`); u.badTime = -1e9; }
+  }
+  // Ausbildung nur in eigenen Städten
+  for (const o of g.production.orders) {
+    if (g.cities[o.city].owner !== o.owner) fail(`${label}: Auftrag ${o.id} von Seite ${o.owner} in fremder Stadt ${g.cities[o.city].name}`);
   }
   // Wirtschaft: Geld und Manpower nie negativ, Manpower höchstens bis zum Vorrat
   for (const p of g.players) {
@@ -176,6 +181,36 @@ function checkState(g, label, ais) {
   const grown = terr() - t60;
   if (grown > 20) fail(`Haltende Grenzfront nimmt von selbst Land ein (+${grown} Felder in 2 Minuten)`);
   else console.log('ok   Haltende Grenzfront bleibt stehen');
+}
+
+// --- Baumenü: Ausbildung, Vorlagen, Abbruch, Ausrüstung ---------------------------------
+{
+  const g = new Game(realMap('balkan', 5), { players: 2 });
+  const prod = g.production, e = g.eco[1];
+  e.money = 5000; e.manpower = 9000; e.mpCap = 20000;
+  const home = g.starts[1];
+  const before = { money: e.money, manpower: e.manpower };
+  const one = prod.order(1, home, 'light');
+  if (!one || e.money !== before.money - 30 || e.manpower !== before.manpower - 150) fail('Baumenü: Kompanie wird nicht korrekt bezahlt');
+  prod.cancel(one.id);
+  if (e.money !== before.money || e.manpower !== before.manpower) fail('Baumenü: Abbruch erstattet die Kosten nicht');
+  if (prod.order(1, g.starts[2], 'light')) fail('Baumenü: Ausbildung in einer fremden Stadt möglich');
+  const group = prod.orderTemplate(1, home, 'mixed');
+  if (!group || group.length !== 9) fail('Baumenü: Vorlage „Gemischte Division“ bestellt nicht 9 Kompanien');
+  for (let s = 0; s < 30 * 120 && prod.ordersOf(1).length; s++) { prod.step(STEP); g.events.length = 0; }
+  const div = g.orbat[1].all(DIVISION).at(-1);
+  const types = div ? unitsOfDiv(div) : [];
+  if (!div || types.length !== 9 || types.filter((t) => t === 'heavy').length !== 3) fail(`Baumenü: Vorlage ergibt ${types.length} Kompanien statt 6 Inf. + 3 Pz.`);
+  // Großstadt (Hauptstadt) bildet 3 gleichzeitig aus: 9 Kompanien in 3 Durchgängen
+  if (g.time !== 0) fail('Baumenü-Test darf die Spielzeit nicht verändern');
+  if (div) {
+    if (!prod.upgrade(1, div, 'artillery') || div.equip.artillery !== 1) fail('Baumenü: Artillerie lässt sich nicht verbessern');
+    const u = div.children[0].units[0];
+    if (Math.abs(u.atk - 1.15) > 1e-9) fail(`Baumenü: Artillerie wirkt nicht (atk ${u.atk})`);
+    prod.upgrade(1, div, 'artillery');
+    if (prod.upgrade(1, div, 'artillery')) fail('Baumenü: Ausrüstung über die höchste Stufe hinaus');
+  }
+  if (!failed) console.log('ok   Baumenü: Ausbildung, Vorlagen, Abbruch und Ausrüstung');
 }
 
 for (const [seed, size, np] of CASES) {

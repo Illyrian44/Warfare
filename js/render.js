@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=83';
-import { classify } from './map.js?v=83';
-import { frontBadge, pointAt } from './fronts.js?v=83';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=83';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=85';
+import { classify } from './map.js?v=85';
+import { frontBadge, pointAt } from './fronts.js?v=85';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=85';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -577,12 +577,13 @@ export class Renderer {
     ctx.fillStyle = PLAYER_COLORS[c.owner];
     ctx.fill();
 
-    if (c.owner && known) {
-      const build = UNIT_TYPES[c.prodType].buildTime;
+    // Ausbildung (nur bei eigenen Städten sichtbar): Ring = Fortschritt des ersten Auftrags
+    const training = c.owner === me ? game.production.active(c.id) : [];
+    if (training.length) {
+      const o = training[0];
       ctx.beginPath();
-      ctx.arc(c.x, c.y, R + 3, -Math.PI / 2, -Math.PI / 2 + Math.min(1, c.timer / build) * Math.PI * 2);
-      // fertig, aber Geld oder Manpower reichen nicht: grauer Ring
-      ctx.strokeStyle = c.waiting ? 'rgba(200,200,200,0.8)' : PLAYER_COLORS[c.owner];
+      ctx.arc(c.x, c.y, R + 3, -Math.PI / 2, -Math.PI / 2 + Math.min(1, o.timer / UNIT_TYPES[o.type].buildTime) * Math.PI * 2);
+      ctx.strokeStyle = PLAYER_COLORS[c.owner];
       ctx.lineWidth = 2.2;
       ctx.stroke();
     }
@@ -595,12 +596,12 @@ export class Renderer {
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    if (c.owner === me) {
-      // Produktion als NATO-Zeichen: X = Infanterie, Oval = Panzer
+    if (training.length) {
+      // Was gerade ausgebildet wird, als NATO-Zeichen: X = Infanterie, Oval = Panzer
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 1.2;
       ctx.beginPath();
-      if (c.prodType === 'heavy') ctx.ellipse(c.x, c.y, 4.2, 2.4, 0, 0, Math.PI * 2);
+      if (training[0].type === 'heavy') ctx.ellipse(c.x, c.y, 4.2, 2.4, 0, 0, Math.PI * 2);
       else {
         ctx.moveTo(c.x - 3.2, c.y - 3.2); ctx.lineTo(c.x + 3.2, c.y + 3.2);
         ctx.moveTo(c.x + 3.2, c.y - 3.2); ctx.lineTo(c.x - 3.2, c.y + 3.2);

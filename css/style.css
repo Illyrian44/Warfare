@@ -167,11 +167,32 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   padding: 8px 10px 16px;
 }
 .cmdHead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: move; touch-action: none; user-select: none; -webkit-user-select: none; }
-.cmdHead #cmdTitle { flex: 1; }
+.cmdHead #cmdTitle, .cmdHead .spacer { flex: 1; }
+/* Baumenü */
+#buildPanel {
+  position: fixed; right: 12px; top: calc(64px + env(safe-area-inset-top));
+  width: min(94vw, 330px); max-height: calc(100vh - 230px); overflow-y: auto;
+  background: var(--panel); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px;
+  padding: 8px 10px 16px; font-size: 14px;
+}
+#buildPanel.dragging { opacity: 0.92; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5); }
+#buildPanel h4 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+#buildPanel select { width: 100%; min-height: 34px; background: rgba(0, 0, 0, 0.3); color: inherit; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 0 6px; }
+.buildRow { display: flex; flex-wrap: wrap; gap: 6px; }
+.buildRow button { flex: 1 1 140px; text-align: left; font-size: 13px; line-height: 1.25; padding: 6px 8px; }
+.buildRow button small { display: block; color: var(--muted); font-weight: 400; }
+.buildRow button:disabled { opacity: 0.45; }
+.buildRow button.on { outline: 2px solid var(--good, #4cd17a); }
+.queue { list-style: none; margin: 0; padding: 0; }
+.queue li { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 13px; }
+.queue li .what { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.queue li .bar { width: 54px; height: 6px; background: rgba(255, 255, 255, 0.12); border-radius: 3px; overflow: hidden; }
+.queue li .bar i { display: block; height: 100%; background: var(--good, #4cd17a); }
+.queue li button { min-height: 26px; padding: 0 8px; background: none; border: none; }
 .cmdHead .grip { color: var(--muted, #8a96a8); font-size: 15px; line-height: 1; }
 #cmdPanel.dragging { opacity: 0.92; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5); }
 /* Griff unten rechts: Befehlsfeld größer oder kleiner ziehen */
-#cmdResize {
+.cmdResize {
   position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
   cursor: nwse-resize; touch-action: none; border-bottom-right-radius: 12px;
   background: linear-gradient(135deg, transparent 0 55%, rgba(255, 255, 255, 0.35) 55% 62%, transparent 62% 72%, rgba(255, 255, 255, 0.35) 72% 79%, transparent 79%);
@@ -270,6 +291,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   .bar.bottom { align-items: flex-end; }
   .bar.bottom button { font-size: 14px; }
   #cmdPanel { bottom: calc(166px + env(safe-area-inset-bottom)); max-height: 46vh; overflow-y: auto; }
+  #buildPanel { top: calc(118px + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); max-height: 46vh; }
   #pausedBanner { top: 22%; font-size: 24px; }
   #frontBanner { bottom: calc(220px + env(safe-area-inset-bottom)); }
 }

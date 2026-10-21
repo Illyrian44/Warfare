@@ -1,12 +1,13 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
-  CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, WIN_SHARE, START_UNITS, ECONOMY,
+  CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=83';
-import { mulberry32 } from './rng.js?v=83';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=83';
-import { HQManager } from './hq.js?v=83';
-import { SupplyNetwork } from './supply.js?v=83';
+} from './config.js?v=85';
+import { mulberry32 } from './rng.js?v=85';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=85';
+import { HQManager } from './hq.js?v=85';
+import { SupplyNetwork } from './supply.js?v=85';
+import { Production } from './production.js?v=85';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -24,9 +25,8 @@ export class Game {
     this.units = [];
     // Alle Städte beginnen neutral, jede Seite startet mit einer Stadt
     this.cities = map.cities.map((c, i) => ({
-      id: i, x: c.x, y: c.y, owner: 0, name: c.name || '', prodType: 'light',
-      size: ECONOMY.sizeOf(c.pop || 0), capitalOf: 0,
-      timer: this.rng() * 4, capOwner: 0, capProgress: 0,
+      id: i, x: c.x, y: c.y, owner: 0, name: c.name || '',
+      size: ECONOMY.sizeOf(c.pop || 0), capitalOf: 0, capOwner: 0, capProgress: 0,
     }));
     const n = map.w * map.h;
     this.territory = new Uint8Array(n);
@@ -69,6 +69,7 @@ export class Game {
     }
     this.updateShares();
     this.updateEconomy(0);
+    this.production = new Production(this);
     this.supply = new SupplyNetwork(this);
     this.hq = new HQManager(this);
     this.hq.place();
@@ -314,7 +315,7 @@ export class Game {
       const hpFactor = 0.5 + 0.5 * (u.hp / u.maxHp); // Angeschlagene treffen schwächer
       // Ohne Munition und Nachschub sinkt die Kampfkraft (volle Kraft ab halbem Vorrat)
       const supplyFactor = SUPPLY.combatMin + (1 - SUPPLY.combatMin) * Math.min(1, u.supply * 2);
-      t.incoming += ut.dps * mod * hpFactor * supplyFactor * dt;
+      t.incoming += ut.dps * (u.atk || 1) * mod * hpFactor * supplyFactor * dt;
       t.angles.push(Math.atan2(u.y - t.y, u.x - t.x));
     }
     for (const u of U) {
@@ -369,6 +370,7 @@ export class Game {
     this.units = alive;
 
     this.updateEconomy(dt);
+    this.production.step(dt);
     this.updateCities(dt);
 
     this.terrTimer -= dt;
@@ -580,6 +582,23 @@ export class Game {
       }
     }
     this.divisions = divs;
+    // Ausrüstung folgt der Division: wer hinzukommt, bekommt sie, wer geht, verliert sie
+    for (const u of this.units) this.equip(u, u.regiment ? u.regiment.parent : null);
+  }
+
+  // Ausrüstung einer Division auf ihre Kompanien anwenden (Organisation, Kampfkraft)
+  applyEquipment(div) {
+    for (const u of unitsOf(div)) this.equip(u, div);
+  }
+
+  equip(u, div) {
+    const tr = div && div.equip ? div.equip.training : 0, ar = div && div.equip ? div.equip.artillery : 0;
+    const maxOrg = ORG.max[u.type] * (1 + UPGRADES.training.per * tr);
+    if (u.maxOrg !== maxOrg) {
+      u.org *= maxOrg / u.maxOrg; // Anteil bleibt gleich
+      u.maxOrg = maxOrg;
+    }
+    u.atk = 1 + UPGRADES.artillery.per * ar;
   }
 
   // Rotation innerhalb der Division: eine angeschlagene Kompanie im Gefecht tauscht
@@ -627,10 +646,6 @@ export class Game {
 
   updateCities(dt) {
     const slots = () => this.share.map(() => 0);
-    const unitCount = slots();
-    for (const u of this.units) unitCount[u.owner]++;
-    const cityCount = slots();
-    for (const c of this.cities) cityCount[c.owner]++;
 
     for (const c of this.cities) {
       const present = slots();
@@ -648,8 +663,7 @@ export class Game {
         c.capProgress += dt / CAPTURE_TIME;
         if (c.capProgress >= 1) {
           const old = c.owner;
-          cityCount[old]--; cityCount[a]++;
-          c.owner = a; c.capOwner = 0; c.capProgress = 0; c.timer = 0;
+          c.owner = a; c.capOwner = 0; c.capProgress = 0;
           this.stats[a].captured++;
           this.paint(a, c.x, c.y, CITY_BORDER);
           this.events.push({ type: 'capture', city: c, owner: a, old });
@@ -659,25 +673,6 @@ export class Game {
         if (c.capProgress === 0) c.capOwner = 0;
       }
 
-      if (c.owner) {
-        const cap = cityCount[c.owner] * UNITS_PER_CITY;
-        if (unitCount[c.owner] < cap) {
-          // Je voller die Armee, desto langsamer die Produktion
-          const fill = unitCount[c.owner] / cap;
-          const rate = fill < 0.5 ? 1 : 1 - (fill - 0.5) * 0.8; // Schwierigkeit wirkt aufs Einkommen
-          const build = UNIT_TYPES[c.prodType].buildTime;
-          c.timer = Math.min(build, c.timer + dt * rate);
-          // Fertig ausgebildet: erst einsetzen, wenn Geld und Manpower reichen
-          c.waiting = c.timer >= build && !this.pay(c.owner, UNIT_TYPES[c.prodType].cost);
-          if (c.timer >= build && !c.waiting) {
-            c.timer = 0;
-            const u = this.spawnUnit(c.owner, c.prodType, c);
-            unitCount[c.owner]++;
-            this.stats[c.owner].built++;
-            this.events.push({ type: 'spawn', unit: u, city: c });
-          }
-        }
-      }
     }
   }
 }

@@ -3,7 +3,7 @@
 // zusammen. Die Regimenter innerhalb einer Division ordnet das Spiel selbst. Divisionen
 // lassen sich zu Armeen gruppieren (beliebig viele, wie im Krieg flexibel).
 
-import { PLAYER_HUES } from './config.js?v=83';
+import { PLAYER_HUES } from './config.js?v=85';
 
 export const LEVELS = [
   { name: 'Kompanie', short: 'Kp.', echelon: 'I' },
@@ -69,6 +69,7 @@ export class OrderOfBattle {
     const div = {
       id: ++OrderOfBattle.nextId, level: DIVISION, owner: this.owner, parent: null, children: [],
       number: n, colorIndex: n - 1, name: `${n}. Div.`, refill: false,
+      equip: { training: 0, artillery: 0 }, // Ausrüstung aus dem Baumenü (siehe UPGRADES)
     };
     this.divisions.push(div);
     this.divisions.sort((a, b) => a.number - b.number);
@@ -258,18 +259,6 @@ export class OrderOfBattle {
       made.push(this.createDivision(group));
     }
     return made;
-  }
-
-  // „Auffüllen“: nächstgelegene Division mit eingeschaltetem Auffüllen und freiem Platz
-  refillFor(u) {
-    let best = null, bd = Infinity;
-    for (const div of this.divisions) {
-      if (!div.refill || strength(div) >= DIVISION_MAX) continue;
-      const c = centerOf(div);
-      const d = c ? Math.hypot(c.x - u.x, c.y - u.y) : Infinity;
-      if (d < bd) { bd = d; best = div; }
-    }
-    return best;
   }
 
   nearestWithSpace(p, maxDist) {

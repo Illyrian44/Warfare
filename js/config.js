@@ -55,7 +55,19 @@ export const SURROUND_BONUS = 1.5;     // Schadensbonus bei Einkesselung
 export const CITY_RADIUS = 12;
 export const CITY_CAPTURE_RADIUS = 20;
 export const CAPTURE_TIME = 4;         // Sekunden
-export const UNITS_PER_CITY = 10;
+export const UNITS_PER_CITY = 10;  // Richtwert für die KI und die Nachschubleistung je Stadt
+
+// Baumenü: Divisionsvorlagen (Zahl der Infanterie- und Panzerkompanien) und Ausrüstung je
+// Division (Stufen mit Preis in Geld; Wirkung je Stufe)
+export const TEMPLATES = [
+  { id: 'inf', name: 'Infanteriedivision', light: 9, heavy: 0 },
+  { id: 'mixed', name: 'Gemischte Division', light: 6, heavy: 3 },
+  { id: 'armor', name: 'Panzerdivision', light: 3, heavy: 6 },
+];
+export const UPGRADES = {
+  training: { name: 'Ausbildung', effect: 'Organisation +20 %', per: 0.2, cost: [150, 300] },
+  artillery: { name: 'Artillerie', effect: 'Kampfkraft +15 %', per: 0.15, cost: [200, 400] },
+};
 
 // Wirtschaft: Geld und Manpower je Seite. Städte liefern je nach Größe (aus der echten
 // Einwohnerzahl), die Hauptstadt (Startstadt) zählt immer als Großstadt, das Land bringt

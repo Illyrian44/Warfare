@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM } from './config.js?v=83';
-import { unitStrength } from './game.js?v=83';
-import { mulberry32 } from './rng.js?v=83';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=83';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=83';
+import { DIFFICULTY, SUPPLY, KM } from './config.js?v=85';
+import { unitStrength } from './game.js?v=85';
+import { mulberry32 } from './rng.js?v=85';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=85';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=85';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -42,6 +42,21 @@ export class AI {
     this.think();
   }
 
+  // Ausbildung über das Baumenü: freie Plätze der eigenen Städte füllen (große zuerst),
+  // solange die Kasse reicht und die Armee unter ihrem Richtwert liegt
+  build(myCities, myUnits) {
+    const g = this.game, prod = g.production;
+    let total = myUnits.length + prod.ordersOf(this.me).length;
+    const cities = myCities.slice().sort((a, b) => g.citySize(b) - g.citySize(a));
+    for (const c of cities) {
+      while (total < g.capacity(this.me) && prod.orders.filter((o) => o.city === c.id).length < prod.citySlots(c)) {
+        const type = this.rng() < this.cfg.heavyRatio ? 'heavy' : 'light';
+        if (!prod.order(this.me, c.id, type)) return;
+        total++;
+      }
+    }
+  }
+
   visibleEnemies() {
     const g = this.game;
     return g.units.filter((u) => g.hostile(u.owner, this.me) && (this.cfg.seeAll || g.isVisible(this.me, u.x, u.y)));
@@ -70,10 +85,7 @@ export class AI {
     const myCities = g.cities.filter((c) => c.owner === me);
     const enemies = this.visibleEnemies();
 
-    // Produktion festlegen
-    for (const c of myCities) {
-      if (c.timer < 1) c.prodType = this.rng() < this.cfg.heavyRatio ? 'heavy' : 'light';
-    }
+    this.build(myCities, myUnits);
     if (!myUnits.length) return;
 
     this.fronts.syncAll();

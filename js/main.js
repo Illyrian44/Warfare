@@ -1,16 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=83';
-import { Game } from './game.js?v=83';
-import { AI } from './ai.js?v=83';
-import { Renderer, isFrontShown } from './render.js?v=83';
-import { Input } from './input.js?v=83';
-import { formationSlots } from './formation.js?v=83';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=83';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=83';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS } from './config.js?v=83';
+import { loadMap, MAPS } from './map.js?v=85';
+import { Game } from './game.js?v=85';
+import { AI } from './ai.js?v=85';
+import { Renderer, isFrontShown } from './render.js?v=85';
+import { Input } from './input.js?v=85';
+import { formationSlots } from './formation.js?v=85';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=85';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=85';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES } from './config.js?v=85';
+import { templateCost } from './production.js?v=85';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '83'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '85'; // für Kartendaten, siehe scripts/bump-version.sh
 
 const app = {
   game: null,
@@ -471,25 +472,106 @@ const app = {
     this.updateSelectionInfo();
   },
 
-  // „Auffüllen“: neue Kompanie geht an die nächste Division mit freiem Platz und rückt
-  // zu ihr (oder an ihre Front) nach
-  refill(u) {
-    const ob = this.game.orbat[this.human];
-    const div = ob.refillFor(u);
-    if (!div) return false;
-    const mates = unitsOf(div).filter((o) => o !== u);
-    ob.add(div, [u]);
-    if (this.fronts.fronts.includes(div.front)) {
-      // Die Front der Division übernimmt die neue Kompanie
-      this.fronts.sync(div.front);
-      this.fronts.schedule(div.front);
-    } else if (mates.length) {
-      const cx = mates.reduce((a, o) => a + o.x, 0) / mates.length;
-      const cy = mates.reduce((a, o) => a + o.y, 0) / mates.length;
-      u.path = this.game.map.findPath(u.x, u.y, cx, cy) || [];
+  // --- Baumenü ---------------------------------------------------------------------
+
+  toggleBuild(open = $('buildPanel').hidden) {
+    $('buildPanel').hidden = !open;
+    $('buildBtn').classList.toggle('active', open);
+    this.buildSig = null;
+    if (open) this.updateBuildPanel();
+  },
+
+  // Eigene Stadt antippen: dort ausbilden
+  openBuildFor(city) {
+    this.ui.buildCity = city.id;
+    this.toggleBuild(true);
+  },
+
+  // Stadt für die Ausbildung: die gewählte, sonst die Hauptstadt, sonst die größte eigene
+  buildCity() {
+    const g = this.game;
+    const own = g.citiesOf(this.human);
+    if (!own.length) return null;
+    const chosen = own.find((c) => c.id === this.ui.buildCity);
+    if (chosen) return chosen;
+    return own.slice().sort((a, b) => g.citySize(b) - g.citySize(a))[0];
+  },
+
+  updateBuildPanel() {
+    if (!this.game || $('buildPanel').hidden) return;
+    const g = this.game, p = this.human, e = g.eco[p], prod = g.production;
+    const city = this.buildCity();
+    const div = this.selectedDivision();
+    const can = (c) => e.money >= c.money && e.manpower >= c.manpower;
+    const orders = prod.ordersOf(p);
+    const unitCost = (t) => UNIT_TYPES[t].cost;
+    const costs = [unitCost('light'), unitCost('heavy'), ...TEMPLATES.map(templateCost),
+      ...Object.values(UPGRADES).flatMap((u) => u.cost.map((m) => ({ money: m, manpower: 0 })))];
+    const pend = div ? prod.pendingFor(div) : 0;
+    const sig = [city && city.id, g.citiesOf(p).map((c) => c.id + ':' + g.citySize(c)).join(','),
+      div ? `${div.id}:${strength(div)}:${pend}:${div.refill}:${div.equip.training}:${div.equip.artillery}` : '-',
+      orders.map((o) => o.id).join(','), costs.map((c) => (can(c) ? 1 : 0)).join('')].join('|');
+    if (sig !== this.buildSig) {
+      this.buildSig = sig;
+      const price = (c, s) => `${c.money}💰${c.manpower ? ` ${c.manpower}👥` : ''}${s ? ` · ${s} s` : ''}`;
+      const sizeName = ['', 'Kleinstadt', 'Mittelstadt', 'Großstadt'];
+      let h = '';
+      if (!city) h += '<p class="muted">Ohne eigene Stadt ist keine Ausbildung möglich.</p>';
+      else {
+        h += '<h4>Ausbilden in</h4><select data-act="city">' + g.citiesOf(p)
+          .sort((a, b) => g.citySize(b) - g.citySize(a) || a.name.localeCompare(b.name))
+          .map((c) => `<option value="${c.id}"${c === city ? ' selected' : ''}>${c.name}${c.capitalOf === p ? ' ★' : ''} – ${sizeName[g.citySize(c)]}, ${prod.citySlots(c)} gleichzeitig</option>`).join('') + '</select>';
+        h += '<h4>Kompanien</h4><div class="buildRow">' + ['light', 'heavy'].map((t) =>
+          `<button data-act="unit" data-type="${t}"${can(unitCost(t)) ? '' : ' disabled'}>${t === 'light' ? '＋ Infanterie' : '＋ Panzer'}<small>${price(unitCost(t), UNIT_TYPES[t].buildTime)}</small></button>`).join('') + '</div>';
+        h += '<h4>Divisionen</h4><div class="buildRow">' + TEMPLATES.map((t) =>
+          `<button data-act="template" data-id="${t.id}"${can(templateCost(t)) ? '' : ' disabled'}>${t.name}<small>${t.light} Inf. + ${t.heavy} Pz. · ${price(templateCost(t))}</small></button>`).join('') + '</div>';
+      }
+      if (div) {
+        const room = DIVISION_MAX - strength(div) - pend;
+        h += `<h4>${div.name} ausbauen (${strength(div)}${pend ? ` +${pend}` : ''}/${DIVISION_MAX})</h4><div class="buildRow">` +
+          ['light', 'heavy'].map((t) => `<button data-act="reinforce" data-type="${t}"${room > 0 && can(unitCost(t)) ? '' : ' disabled'}>＋ ${t === 'light' ? 'Infanterie' : 'Panzer'}<small>${price(unitCost(t))} · nächste Stadt</small></button>`).join('') +
+          `<button data-act="refill" class="${div.refill ? 'on' : ''}">Auffüllen: ${div.refill ? 'an' : 'aus'}<small>bestellt Ersatz bis ${DIVISION_MAX} selbst</small></button>` +
+          Object.entries(UPGRADES).map(([k, u]) => {
+            const lvl = div.equip[k];
+            if (lvl >= u.cost.length) return `<button disabled>${u.name} (höchste Stufe)<small>${u.effect} je Stufe</small></button>`;
+            return `<button data-act="upgrade" data-key="${k}"${e.money >= u.cost[lvl] ? '' : ' disabled'}>${u.name} Stufe ${lvl + 1}<small>${u.effect} · ${u.cost[lvl]}💰</small></button>`;
+          }).join('') + '</div>';
+      } else {
+        h += '<h4>Division ausbauen</h4><p class="muted">Eine Division auswählen, um sie zu verstärken oder auszurüsten.</p>';
+      }
+      const typeName = (t) => (t === 'heavy' ? 'Panzer' : 'Infanterie');
+      h += `<h4>Aufträge (${orders.length})</h4>` + (orders.length ? '<ul class="queue">' + orders.slice(0, 14).map((o) =>
+        `<li data-order="${o.id}"><span class="what">${typeName(o.type)} · ${g.cities[o.city].name}${o.division ? ' → ' + o.division.name : o.group ? ' → neue Division' : ''}</span>` +
+        `<span class="bar"><i></i></span><button data-act="cancel" data-id="${o.id}" title="Abbrechen (Kosten zurück)">✕</button></li>`).join('') + '</ul>' +
+        (orders.length > 14 ? `<p class="muted">… und ${orders.length - 14} weitere</p>` : '') : '<p class="muted">Keine Aufträge.</p>');
+      $('buildBody').innerHTML = h;
     }
-    this.divBarSig = null;
-    return true;
+    // Fortschritt der Aufträge
+    for (const li of $('buildBody').querySelectorAll('li[data-order]')) {
+      const o = orders.find((x) => x.id === +li.dataset.order);
+      if (o) li.querySelector('i').style.width = `${Math.min(100, o.timer / UNIT_TYPES[o.type].buildTime * 100)}%`;
+    }
+  },
+
+  // Klick im Baumenü
+  buildAction(t) {
+    const g = this.game, p = this.human, prod = g.production;
+    const city = this.buildCity();
+    const div = this.selectedDivision();
+    const act = t.dataset.act;
+    const poor = () => this.toast('Dafür reichen Geld oder Manpower nicht');
+    if (act === 'unit' && city) { if (!prod.order(p, city.id, t.dataset.type)) poor(); }
+    else if (act === 'template' && city) {
+      if (prod.orderTemplate(p, city.id, t.dataset.id)) this.toast(`Division wird in ${city.name} ausgebildet – fertig nach der letzten Kompanie`);
+      else poor();
+    } else if (act === 'reinforce' && div) { if (!prod.reinforce(p, div, t.dataset.type)) poor(); }
+    else if (act === 'refill' && div) this.toggleRefill(div.id);
+    else if (act === 'upgrade' && div) {
+      if (prod.upgrade(p, div, t.dataset.key)) this.toast(`${div.name}: ${UPGRADES[t.dataset.key].name} verbessert`, 'good');
+      else poor();
+    } else if (act === 'cancel') prod.cancel(+t.dataset.id);
+    this.buildSig = null;
+    this.updateHud();
   },
 
   setSelectMode(on) {
@@ -577,7 +659,10 @@ const app = {
       } else if (ev.type === 'hqRadio' && ev.owner === this.human && ev.text.includes('übernimmt')) {
         this.toast('📻 ' + ev.text);
       } else if (ev.type === 'spawn' && ev.unit.owner === this.human) {
-        this.refill(ev.unit);
+        this.divBarSig = null;
+      } else if (ev.type === 'divisionTrained' && ev.division.owner === this.human) {
+        this.toast(`${ev.division.name} ist ausgebildet (${strength(ev.division)} Kompanien)`, 'good');
+        this.divBarSig = null;
       }
       else if (ev.type === 'capture') {
         if (ev.owner === this.human) this.toast(ev.old ? 'Feindliche Stadt erobert!' : 'Neutrale Stadt eingenommen!', 'good');
@@ -703,7 +788,7 @@ const app = {
     $('hudCities').innerHTML = side(this.human) + ' <span class="muted">Städte</span> ' +
       g.players.filter((p) => p !== this.human).map(side).join(' ') +
       (neutral ? ` <span class="dot grey"></span>${neutral}` : '');
-    $('hudUnits').innerHTML = `${myU}<span class="muted">/${myC * UNITS_PER_CITY} Einheiten</span>`;
+    $('hudUnits').innerHTML = `${myU}<span class="muted"> Einheiten</span>`;
     const e = g.eco[this.human];
     const k = (v) => (v >= 10000 ? `${(v / 1000).toFixed(0)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.floor(v)}`);
     $('hudEco').innerHTML =
@@ -712,6 +797,7 @@ const app = {
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     $('hudTime').textContent = `${m}:${String(s).padStart(2, '0')}`;
     this.updateCommands();
+    this.updateBuildPanel();
     const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
     $('autoBtn').hidden = !loose;
     $('autoBtn').textContent = `Auto-Gliederung (${loose})`;
@@ -799,6 +885,15 @@ $('menuBtn').onclick = () => {
 };
 $('resumeBtn').onclick = () => { $('menu').hidden = true; if (app.paused) app.togglePause(); };
 $('selectBtn').onclick = () => app.setSelectMode(!app.ui.selectMode);
+$('buildBtn').onclick = () => app.toggleBuild();
+$('buildClose').onclick = () => app.toggleBuild(false);
+$('buildBody').addEventListener('click', (e) => {
+  const t = e.target.closest('button[data-act]');
+  if (t && !t.disabled && app.game) app.buildAction(t);
+});
+$('buildBody').addEventListener('change', (e) => {
+  if (e.target.dataset.act === 'city') { app.ui.buildCity = +e.target.value; app.buildSig = null; app.updateBuildPanel(); }
+});
 $('allBtn').onclick = () => app.selectAll();
 $('divBar').onclick = (e) => {
   const tool = e.target.closest('[data-act]');
@@ -860,98 +955,101 @@ $('againBtn').onclick = () => app.start(app.current.seed, app.current.map, app.c
 $('newBtn').onclick = () => app.start(randomSeed(), app.current.map, app.current.difficulty, app.current.opponents);
 $('endMenuBtn').onclick = () => { $('end').hidden = true; $('menu').hidden = false; $('resumeBtn').hidden = true; };
 
-// Befehlsfeld verschieben (Titelzeile ziehen) und größer oder kleiner machen (Griff unten
-// rechts); Doppelklick bzw. Doppeltippen auf die Titelzeile setzt beides zurück. Lage und
-// Größe bleiben gespeichert, das Feld bleibt immer ganz im Bild.
-const PANEL_KEY = 'wod-cmdpanel';
+// Fenster (Befehlsfeld, Baumenü) verschieben (Titelzeile ziehen) und größer oder kleiner
+// machen (Griff unten rechts); Doppelklick bzw. Doppeltippen auf die Titelzeile setzt beides
+// zurück. Lage und Größe bleiben gespeichert, das Fenster bleibt immer ganz im Bild.
+// base/origin: Verschiebung und Bezugspunkt der Grundstellung aus dem CSS
 const PANEL_SCALE = [0.6, 1.6];
-const cmdPanel = $('cmdPanel');
-let panelPos = (() => { try { return JSON.parse(localStorage.getItem(PANEL_KEY)) || {}; } catch { return {}; } })();
-const savePanel = () => { try { localStorage.setItem(PANEL_KEY, JSON.stringify(panelPos)); } catch { /* egal */ } };
+function makeMovable(panel, key, base, origin) {
+  const head = panel.querySelector('.cmdHead');
+  const grip = panel.querySelector('.cmdResize');
+  let pos = (() => { try { return JSON.parse(localStorage.getItem(key)) || {}; } catch { return {}; } })();
+  const save = () => { try { localStorage.setItem(key, JSON.stringify(pos)); } catch { /* egal */ } };
 
-function placePanel() {
-  const st = cmdPanel.style;
-  const s = panelPos.scale || 1;
-  if (panelPos.x === undefined) {
-    // Grundstellung aus dem CSS (mittig über der unteren Leiste), nur skaliert
-    st.left = st.top = st.bottom = '';
-    st.transformOrigin = '50% 100%';
-    st.transform = s === 1 ? '' : `translateX(-50%) scale(${s})`;
-    return;
+  function place() {
+    const st = panel.style;
+    const s = pos.scale || 1;
+    if (pos.x === undefined) {
+      st.left = st.top = st.bottom = st.right = '';
+      st.transformOrigin = origin;
+      st.transform = s === 1 ? '' : `${base}scale(${s})`;
+      return;
+    }
+    st.transformOrigin = '0 0';
+    st.transform = `scale(${s})`;
+    st.bottom = st.right = 'auto';
+    st.left = pos.x + 'px';
+    st.top = pos.y + 'px';
+    if (panel.hidden) return;
+    const r = panel.getBoundingClientRect();
+    const x = Math.max(0, Math.min(pos.x, window.innerWidth - r.width));
+    const y = Math.max(0, Math.min(pos.y, window.innerHeight - r.height));
+    if (x !== pos.x || y !== pos.y) {
+      pos.x = x; pos.y = y;
+      st.left = x + 'px'; st.top = y + 'px';
+    }
   }
-  st.transformOrigin = '0 0';
-  st.transform = `scale(${s})`;
-  st.bottom = 'auto';
-  st.left = panelPos.x + 'px';
-  st.top = panelPos.y + 'px';
-  if (cmdPanel.hidden) return;
-  const r = cmdPanel.getBoundingClientRect();
-  const x = Math.max(0, Math.min(panelPos.x, window.innerWidth - r.width));
-  const y = Math.max(0, Math.min(panelPos.y, window.innerHeight - r.height));
-  if (x !== panelPos.x || y !== panelPos.y) {
-    panelPos.x = x; panelPos.y = y;
-    st.left = x + 'px'; st.top = y + 'px';
+
+  // Ab dem ersten Verschieben oder Skalieren gilt eine feste Lage (linke obere Ecke)
+  function pin() {
+    if (pos.x !== undefined) return;
+    const r = panel.getBoundingClientRect();
+    pos.x = r.left; pos.y = r.top;
+    place();
   }
-}
 
-// Ab dem ersten Verschieben oder Skalieren gilt eine feste Lage (linke obere Ecke)
-function pinPanel() {
-  if (panelPos.x !== undefined) return;
-  const r = cmdPanel.getBoundingClientRect();
-  panelPos.x = r.left; panelPos.y = r.top;
-  placePanel();
-}
+  function drag(handle, onMove) {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button, select') || e.button > 0) return;
+      e.preventDefault();
+      pin();
+      handle.setPointerCapture(e.pointerId);
+      const start = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y, s: pos.scale || 1, r: panel.getBoundingClientRect() };
+      panel.classList.add('dragging');
+      const move = (ev) => { onMove(ev, start); place(); };
+      const up = () => {
+        panel.classList.remove('dragging');
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+        save();
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
+  }
 
-function panelDrag(handle, onMove) {
-  handle.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('button') || e.button > 0) return;
-    e.preventDefault();
-    pinPanel();
-    handle.setPointerCapture(e.pointerId);
-    const start = { px: e.clientX, py: e.clientY, x: panelPos.x, y: panelPos.y, s: panelPos.scale || 1, r: cmdPanel.getBoundingClientRect() };
-    cmdPanel.classList.add('dragging');
-    const move = (ev) => { onMove(ev, start); placePanel(); };
-    const up = () => {
-      cmdPanel.classList.remove('dragging');
-      handle.removeEventListener('pointermove', move);
-      handle.removeEventListener('pointerup', up);
-      handle.removeEventListener('pointercancel', up);
-      savePanel();
-    };
-    handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', up);
-    handle.addEventListener('pointercancel', up);
+  // Doppelklick/Doppeltippen (vor dem Ziehen geprüft, damit es kein Ziehen startet)
+  let lastTap = 0;
+  head.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button, select')) return;
+    const now = performance.now();
+    if (now - lastTap < 350) {
+      lastTap = 0;
+      pos = {};
+      place();
+      save();
+      e.stopImmediatePropagation();
+      return;
+    }
+    lastTap = now;
   });
+  drag(head, (ev, st) => {
+    pos.x = st.x + ev.clientX - st.px;
+    pos.y = st.y + ev.clientY - st.py;
+  });
+  drag(grip, (ev, st) => {
+    // Neue Breite bis zum Zeiger, Höhe wächst im gleichen Verhältnis mit
+    const k = Math.max((ev.clientX - st.r.left) / st.r.width, (ev.clientY - st.r.top) / st.r.height);
+    pos.scale = Math.max(PANEL_SCALE[0], Math.min(PANEL_SCALE[1], Math.round(st.s * k * 100) / 100));
+  });
+  new ResizeObserver(() => place()).observe(panel);
+  window.addEventListener('resize', place);
+  place();
 }
-
-const cmdHead = cmdPanel.querySelector('.cmdHead');
-// Doppelklick/Doppeltippen (vor dem Ziehen geprüft, damit es kein Ziehen startet)
-let lastHeadTap = 0;
-cmdHead.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('button')) return;
-  const now = performance.now();
-  if (now - lastHeadTap < 350) {
-    lastHeadTap = 0;
-    panelPos = {};
-    placePanel();
-    savePanel();
-    e.stopImmediatePropagation();
-    return;
-  }
-  lastHeadTap = now;
-});
-panelDrag(cmdHead, (ev, st) => {
-  panelPos.x = st.x + ev.clientX - st.px;
-  panelPos.y = st.y + ev.clientY - st.py;
-});
-panelDrag($('cmdResize'), (ev, st) => {
-  // Neue Breite bis zum Zeiger, Höhe wächst im gleichen Verhältnis mit
-  const k = Math.max((ev.clientX - st.r.left) / st.r.width, (ev.clientY - st.r.top) / st.r.height);
-  panelPos.scale = Math.max(PANEL_SCALE[0], Math.min(PANEL_SCALE[1], Math.round(st.s * k * 100) / 100));
-});
-new ResizeObserver(() => placePanel()).observe(cmdPanel);
-window.addEventListener('resize', placePanel);
-placePanel();
+makeMovable($('cmdPanel'), 'wod-cmdpanel', 'translateX(-50%) ', '50% 100%');
+makeMovable($('buildPanel'), 'wod-buildpanel', '', '100% 0');
 
 function loadSettings() {
   try { return JSON.parse(localStorage.getItem('wod-settings')) || {}; } catch { return {}; }

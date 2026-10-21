@@ -1,5 +1,5 @@
-import { CITY_RADIUS } from './config.js?v=83';
-import { divisionOf, unitsOf } from './orbat.js?v=83';
+import { CITY_RADIUS } from './config.js?v=85';
+import { divisionOf, unitsOf } from './orbat.js?v=85';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -213,11 +213,7 @@ export class Input {
       return;
     }
     const city = this.pickOwnCity(g.world);
-    if (city && !sel.size) {
-      city.prodType = city.prodType === 'light' ? 'heavy' : 'light';
-      this.app.toast(city.prodType === 'heavy' ? 'Stadt baut jetzt: Panzer (schwer)' : 'Stadt baut jetzt: Infanterie (leicht)');
-      return;
-    }
+    if (city && !sel.size) { this.app.openBuildFor(city); return; } // eigene Stadt: dort ausbilden
     if (!sel.size) return;
     if (g.touch) this.app.moveSelectionTo(g.world, false); // Handy: Antippen bewegt die Auswahl
     else if (!g.shift) sel.clear();                         // PC: Klick ins Leere hebt sie auf
@@ -254,6 +250,7 @@ export class Input {
     }
     else if (k === 'v') app.toggleShowFronts();
     else if (k === 'n') app.toggleSupply();
+    else if (k === 'b') app.toggleBuild();
     else if (k === 'd') {
       if (e.shiftKey) app.removeFromDivision();
       else app.newDivision();
