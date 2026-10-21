@@ -1,6 +1,6 @@
-# War of Dots – Browser-Version
+# Phase Line
 
-Ein minimalistisches Echtzeit-Strategiespiel im Stil von [War of Dots](https://warofdots.net/), komplett im Browser spielbar – am PC und auf dem Handy – gegen eine KI.
+Ein Echtzeit-Strategiespiel mit Fronten, Divisionen und Armeen auf einer Lagekarte mit NATO-Symbolen, komplett im Browser spielbar – am PC und auf dem Handy – gegen eine KI. Entstanden aus einem Nachbau von [War of Dots](https://warofdots.net/).
 
 Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https://github.com/gamepycoder/War-of-dots-). Der Code hier ist eigenständig in JavaScript geschrieben.
 
