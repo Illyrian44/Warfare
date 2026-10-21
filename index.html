@@ -7,7 +7,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=85">
+  <link rel="stylesheet" href="css/style.css?v=87">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -116,7 +116,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 85</small>
+      <small id="version" class="muted">Version 87</small>
     </div>
   </div>
 
@@ -137,6 +137,7 @@
         <li><b>Angriff als Auftrag:</b> <i>➜ Angriff planen</i>: eine Ziellinie ziehen – sie wird zur NATO-Phasenlinie (z.&nbsp;B. „PL ADLER“), ein Angriffspfeil zeigt den Vorstoß; mehrere Divisionen oder eine Armee greifen unter einem gemeinsamen Decknamen an. <i>▶ Angriff starten</i> schickt sie los. Die Divisionen bleiben dabei ihrem Grenzabschnitt zugewiesen: Es entsteht keine neue Front im Feindesland, nach dem Angriff halten sie die vorgeschobene Grenze. <i>■ Angriff stoppen</i> bricht ab. <i>Rotation</i> zieht Verwundete zum Heilen ab, wenn kein Feind in der Nähe ist. Gibst du einer Kompanie einen eigenen Befehl, verlässt sie die Front; <i>↺ zurück an die Front</i> holt sie zurück. <i>Front auflösen</i> lässt die Division bestehen.</li>
         <li><b>Fronten sehen:</b> Auf der Karte erscheint nur die Front der ausgewählten Division. „Fronten“ (Taste V) blendet alle eigenen Fronten ein; nur sichtbare Fronten lassen sich antippen. Grenzstücke ohne Front sind rot gestrichelt markiert.</li>
         <li><b>Baumenü</b> („🏗 Bauen“, Taste B, oder eigene Stadt ohne Auswahl antippen): Wähle die Stadt, in der ausgebildet wird, und bestelle einzelne Kompanien oder ganze Divisionen nach Vorlage (Infanterie-, Gemischte und Panzerdivision – sie wird nach der letzten Kompanie zur Division). Ist eine Division ausgewählt, kannst du sie verstärken (Ausbildung in der nächsten eigenen Stadt, die neue Kompanie stößt dazu), „Auffüllen“ einschalten und ausrüsten: <i>Ausbildung</i> (Organisation +20&nbsp;% je Stufe) und <i>Artillerie</i> (Kampfkraft +15&nbsp;% je Stufe), je zwei Stufen. Bezahlt wird beim Auftrag; ✕ in der Auftragsliste bricht ab und erstattet alles. Fällt die Stadt, sind ihre Aufträge verloren.</li>
+        <li><b>Städte ausbauen</b> (im Baumenü unter der gewählten Stadt, je Stadt ein Bau zugleich, bis Stufe 3): 🏠 <i>Wohnviertel</i> +4 Manpower/s · 🏭 <i>Fabrik</i> +0,6 Geld/s, ohne Fabrik bildet die Stadt keine Panzer aus · ⛺ <i>Kaserne</i> +1 Ausbildungsplatz · 📦 <i>Depot</i> +50&nbsp;% Nachschubleistung · 🏰 <i>Festung</i> Verteidiger nehmen 15&nbsp;% weniger Schaden, die Eroberung dauert 50&nbsp;% länger · ⚓ <i>Hafen</i> (nur Küstenstädte) +0,4 Geld/s, Grundlage für den Seehandel – jeweils je Stufe. Jede Stufe kostet mehr und dauert länger; eroberte Städte behalten ihre Gebäude, ein laufender Bau geht verloren. Nah herangezoomt stehen die Gebäude unter dem Stadtnamen.</li>
         <li>Tasten: Leertaste Pause · A alle · S anhalten · D neue Division · Umschalt+D aus Division · F Front zeichnen und G Grenze (nur mit ausgewählten Divisionen) · V Fronten zeigen · N Nachschub · B Baumenü · Esc abwählen · 1/2/3 Tempo</li>
       </ul>
       <h3>Regeln</h3>
@@ -185,6 +186,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=85"></script>
+  <script type="module" src="js/main.js?v=87"></script>
 </body>
 </html>

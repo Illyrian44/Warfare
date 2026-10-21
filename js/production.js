@@ -1,5 +1,5 @@
-import { UNIT_TYPES, TEMPLATES, UPGRADES } from './config.js?v=85';
-import { DIVISION, DIVISION_MAX, strength, unitsOf, centerOf } from './orbat.js?v=85';
+import { UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX } from './config.js?v=87';
+import { DIVISION, DIVISION_MAX, strength, unitsOf, centerOf } from './orbat.js?v=87';
 
 // Ausbildung über das Baumenü: Aufträge je Stadt. Eine Stadt bildet je nach Größe 1 bis 3
 // Kompanien gleichzeitig aus (citySlots), die übrigen Aufträge warten in ihrer Reihenfolge.
@@ -17,8 +17,14 @@ export class Production {
     this.refillTimer = 0;
   }
 
+  // Ausbildungsplätze: Stadtgröße plus Kasernen
   citySlots(c) {
-    return this.game.citySize(c);
+    return this.game.citySize(c) + c.buildings.barracks;
+  }
+
+  // Panzer nur in Städten mit Fabrik
+  canTrain(c, type) {
+    return type !== 'heavy' || c.buildings.factory > 0;
   }
 
   ordersOf(p) { return this.orders.filter((o) => o.owner === p); }
@@ -27,7 +33,7 @@ export class Production {
   // Einzelne Kompanie (oder Verstärkung, wenn division gesetzt) in einer eigenen Stadt
   order(p, cityId, type, division = null, group = 0) {
     const c = this.game.cities[cityId];
-    if (!c || c.owner !== p || !UNIT_TYPES[type]) return null;
+    if (!c || c.owner !== p || !UNIT_TYPES[type] || !this.canTrain(c, type)) return null;
     if (!this.game.pay(p, UNIT_TYPES[type].cost)) return null;
     const o = { id: this.nextId++, owner: p, city: cityId, type, division, group, timer: 0 };
     this.orders.push(o);
@@ -38,7 +44,7 @@ export class Production {
   orderTemplate(p, cityId, templateId) {
     const t = TEMPLATES.find((x) => x.id === templateId);
     const c = this.game.cities[cityId];
-    if (!t || !c || c.owner !== p) return null;
+    if (!t || !c || c.owner !== p || (t.heavy && !this.canTrain(c, 'heavy'))) return null;
     const cost = templateCost(t);
     const e = this.game.eco[p];
     if (e.money < cost.money || e.manpower < cost.manpower) return null;
@@ -51,7 +57,7 @@ export class Production {
   // Verstärkung: in der eigenen Stadt, die der Division am nächsten liegt
   reinforce(p, div, type) {
     if (!div || div.dissolved || strength(div) + this.pendingFor(div) >= DIVISION_MAX) return null;
-    const c = this.nearestCity(p, centerOf(div));
+    const c = this.nearestCity(p, centerOf(div), type);
     return c ? this.order(p, c.id, type, div) : null;
   }
 
@@ -77,10 +83,10 @@ export class Production {
     if (o.group) this.finishGroup(o.group);
   }
 
-  nearestCity(p, pt) {
+  nearestCity(p, pt, type = 'light') {
     let best = null, bd = Infinity;
     for (const c of this.game.cities) {
-      if (c.owner !== p) continue;
+      if (c.owner !== p || !this.canTrain(c, type)) continue;
       const d = pt ? Math.hypot(c.x - pt.x, c.y - pt.y) : 0;
       if (d < bd) { bd = d; best = c; }
     }
@@ -93,8 +99,48 @@ export class Production {
     return this.orders.filter((o) => o.city === cityId).slice(0, c ? this.citySlots(c) : 0);
   }
 
+  // --- Städte ausbauen ---------------------------------------------------------------
+
+  // Preis und Bauzeit der nächsten Stufe (null: höchste Stufe erreicht oder nicht möglich)
+  nextBuilding(c, key) {
+    const b = BUILDINGS[key], lvl = c.buildings[key];
+    if (!b || lvl >= BUILDING_MAX || (b.coastal && !c.coastal)) return null;
+    return { level: lvl + 1, cost: { money: b.cost * (lvl + 1), manpower: 0 }, time: b.time * (1 + lvl / 2) };
+  }
+
+  // Eine Stadt baut immer nur ein Gebäude zugleich
+  construct(p, cityId, key) {
+    const c = this.game.cities[cityId];
+    if (!c || c.owner !== p || c.construction) return false;
+    const next = this.nextBuilding(c, key);
+    if (!next || !this.game.pay(p, next.cost)) return false;
+    c.construction = { key, timer: 0, time: next.time, cost: next.cost.money, owner: p };
+    return true;
+  }
+
+  cancelConstruction(cityId) {
+    const c = this.game.cities[cityId];
+    if (!c || !c.construction) return;
+    const e = this.game.eco[c.construction.owner];
+    e.money += c.construction.cost;
+    e.spent -= c.construction.cost;
+    c.construction = null;
+  }
+
   step(dt) {
     const g = this.game;
+    // Bauarbeiten; wechselt die Stadt den Besitzer, ist der Bau verloren
+    for (const c of g.cities) {
+      const k = c.construction;
+      if (!k) continue;
+      if (c.owner !== k.owner) { c.construction = null; continue; }
+      k.timer += dt;
+      if (k.timer >= k.time) {
+        c.buildings[k.key]++;
+        c.construction = null;
+        g.events.push({ type: 'built', city: c, key: k.key, level: c.buildings[k.key] });
+      }
+    }
     // Aufträge in verlorenen Städten verfallen
     const lost = this.orders.filter((o) => g.cities[o.city].owner !== o.owner);
     if (lost.length) {

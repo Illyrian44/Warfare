@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM } from './config.js?v=85';
-import { unitStrength } from './game.js?v=85';
-import { mulberry32 } from './rng.js?v=85';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=85';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=85';
+import { DIFFICULTY, SUPPLY, KM } from './config.js?v=87';
+import { unitStrength } from './game.js?v=87';
+import { mulberry32 } from './rng.js?v=87';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=87';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=87';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -50,10 +50,31 @@ export class AI {
     const cities = myCities.slice().sort((a, b) => g.citySize(b) - g.citySize(a));
     for (const c of cities) {
       while (total < g.capacity(this.me) && prod.orders.filter((o) => o.city === c.id).length < prod.citySlots(c)) {
-        const type = this.rng() < this.cfg.heavyRatio ? 'heavy' : 'light';
+        const type = this.rng() < this.cfg.heavyRatio && prod.canTrain(c, 'heavy') ? 'heavy' : 'light';
         if (!prod.order(this.me, c.id, type)) return;
         total++;
       }
+    }
+    this.construct(cities);
+  }
+
+  // Städte ausbauen, wenn Geld übrig ist: zuerst eine Fabrik (Panzer), dann je nach Engpass
+  // Wohnviertel (Manpower), Kaserne (Ausbildungsplätze) oder weitere Fabriken (Geld)
+  construct(cities) {
+    const g = this.game, prod = g.production, e = g.eco[this.me];
+    if (e.money < 250 || cities.some((c) => c.construction)) return;
+    const tryBuild = (c, key) => {
+      const next = prod.nextBuilding(c, key);
+      return next && e.money >= next.cost.money + 120 && prod.construct(this.me, c.id, key);
+    };
+    const big = cities[0];
+    if (!big) return;
+    if (!cities.some((c) => c.buildings.factory) && tryBuild(big, 'factory')) return;
+    const busy = prod.ordersOf(this.me).length >= cities.reduce((s, c) => s + prod.citySlots(c), 0);
+    const order = e.manpower < 400 ? ['housing', 'barracks', 'factory'] : busy ? ['barracks', 'factory', 'housing'] : ['factory', 'housing', 'barracks'];
+    for (const key of order) {
+      const c = cities.find((x) => prod.nextBuilding(x, key));
+      if (c && tryBuild(c, key)) return;
     }
   }
 

@@ -1,5 +1,5 @@
-import { CELL, KM, TERRAIN_INFO, HOURS_PER_SECOND, SUPPLY } from './config.js?v=85';
-import { MinHeap } from './map.js?v=85';
+import { CELL, KM, TERRAIN_INFO, HOURS_PER_SECOND, SUPPLY } from './config.js?v=87';
+import { MinHeap } from './map.js?v=87';
 
 // Nachschub wie in HOI4, vereinfacht: Depot (Stadt) -> Route über eigenes Gebiet -> Kompanie.
 //
@@ -195,7 +195,8 @@ export class SupplyNetwork {
       for (const r of list) pools.get(key).list.push({ ...r, city });
     }
     const capacity = new Map();
-    for (const c of g.cities) if (c.owner) capacity.set(poolOf(c), (capacity.get(poolOf(c)) || 0) + SUPPLY.depotPerHour);
+    // Lieferleistung je Stadt, mit jeder Depot-Stufe +50 %
+    for (const c of g.cities) if (c.owner) capacity.set(poolOf(c), (capacity.get(poolOf(c)) || 0) + SUPPLY.depotPerHour * (1 + 0.5 * c.buildings.depot));
     for (const [key, { list }] of pools) {
       const load = list.reduce((s, r) => s + r.amount * SUPPLY.demand[r.u.type], 0);
       const cap = (capacity.get(key) || 0) * dh;

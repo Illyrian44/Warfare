@@ -1,17 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=85';
-import { Game } from './game.js?v=85';
-import { AI } from './ai.js?v=85';
-import { Renderer, isFrontShown } from './render.js?v=85';
-import { Input } from './input.js?v=85';
-import { formationSlots } from './formation.js?v=85';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=85';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=85';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES } from './config.js?v=85';
-import { templateCost } from './production.js?v=85';
+import { loadMap, MAPS } from './map.js?v=87';
+import { Game } from './game.js?v=87';
+import { AI } from './ai.js?v=87';
+import { Renderer, isFrontShown } from './render.js?v=87';
+import { Input } from './input.js?v=87';
+import { formationSlots } from './formation.js?v=87';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=87';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=87';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX } from './config.js?v=87';
+import { templateCost } from './production.js?v=87';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '85'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '87'; // für Kartendaten, siehe scripts/bump-version.sh
 
 const app = {
   game: null,
@@ -509,6 +509,7 @@ const app = {
       ...Object.values(UPGRADES).flatMap((u) => u.cost.map((m) => ({ money: m, manpower: 0 })))];
     const pend = div ? prod.pendingFor(div) : 0;
     const sig = [city && city.id, g.citiesOf(p).map((c) => c.id + ':' + g.citySize(c)).join(','),
+      city ? Object.values(city.buildings).join('') + (city.construction ? city.construction.key : '-') : '',
       div ? `${div.id}:${strength(div)}:${pend}:${div.refill}:${div.equip.training}:${div.equip.artillery}` : '-',
       orders.map((o) => o.id).join(','), costs.map((c) => (can(c) ? 1 : 0)).join('')].join('|');
     if (sig !== this.buildSig) {
@@ -518,13 +519,24 @@ const app = {
       let h = '';
       if (!city) h += '<p class="muted">Ohne eigene Stadt ist keine Ausbildung möglich.</p>';
       else {
-        h += '<h4>Ausbilden in</h4><select data-act="city">' + g.citiesOf(p)
+        h += '<h4>Stadt</h4><select data-act="city">' + g.citiesOf(p)
           .sort((a, b) => g.citySize(b) - g.citySize(a) || a.name.localeCompare(b.name))
           .map((c) => `<option value="${c.id}"${c === city ? ' selected' : ''}>${c.name}${c.capitalOf === p ? ' ★' : ''} – ${sizeName[g.citySize(c)]}, ${prod.citySlots(c)} gleichzeitig</option>`).join('') + '</select>';
+        const tanks = prod.canTrain(city, 'heavy');
         h += '<h4>Kompanien</h4><div class="buildRow">' + ['light', 'heavy'].map((t) =>
-          `<button data-act="unit" data-type="${t}"${can(unitCost(t)) ? '' : ' disabled'}>${t === 'light' ? '＋ Infanterie' : '＋ Panzer'}<small>${price(unitCost(t), UNIT_TYPES[t].buildTime)}</small></button>`).join('') + '</div>';
+          `<button data-act="unit" data-type="${t}"${can(unitCost(t)) && prod.canTrain(city, t) ? '' : ' disabled'}>${t === 'light' ? '＋ Infanterie' : '＋ Panzer'}<small>${prod.canTrain(city, t) ? price(unitCost(t), UNIT_TYPES[t].buildTime) : 'braucht eine Fabrik in der Stadt'}</small></button>`).join('') + '</div>';
         h += '<h4>Divisionen</h4><div class="buildRow">' + TEMPLATES.map((t) =>
-          `<button data-act="template" data-id="${t.id}"${can(templateCost(t)) ? '' : ' disabled'}>${t.name}<small>${t.light} Inf. + ${t.heavy} Pz. · ${price(templateCost(t))}</small></button>`).join('') + '</div>';
+          `<button data-act="template" data-id="${t.id}"${can(templateCost(t)) && (tanks || !t.heavy) ? '' : ' disabled'}>${t.name}<small>${t.light} Inf. + ${t.heavy} Pz. · ${price(templateCost(t))}</small></button>`).join('') + '</div>';
+        // Stadt ausbauen: je Gebäude Stufe, Wirkung und nächste Stufe
+        const k = city.construction;
+        h += `<h4>${city.name} ausbauen</h4>`;
+        if (k) h += `<ul class="queue"><li data-build="${city.id}"><span class="what">${BUILDINGS[k.key].icon} ${BUILDINGS[k.key].name} Stufe ${city.buildings[k.key] + 1} im Bau</span><span class="bar"><i></i></span><button data-act="unbuild" title="Bau abbrechen (Kosten zurück)">✕</button></li></ul>`;
+        h += '<div class="buildRow">' + Object.entries(BUILDINGS).filter(([, b]) => !b.coastal || city.coastal).map(([key, b]) => {
+          const lvl = city.buildings[key], next = prod.nextBuilding(city, key);
+          const label = `${b.icon} ${b.name}${lvl ? ` ${lvl}/${BUILDING_MAX}` : ''}`;
+          if (!next) return `<button disabled>${label}<small>${b.effect} je Stufe · voll ausgebaut</small></button>`;
+          return `<button data-act="build" data-key="${key}"${!k && can(next.cost) ? '' : ' disabled'}>${label}<small>${b.effect} je Stufe · ${next.cost.money}💰 · ${Math.round(next.time)} s</small></button>`;
+        }).join('') + '</div>';
       }
       if (div) {
         const room = DIVISION_MAX - strength(div) - pend;
@@ -546,7 +558,9 @@ const app = {
         (orders.length > 14 ? `<p class="muted">… und ${orders.length - 14} weitere</p>` : '') : '<p class="muted">Keine Aufträge.</p>');
       $('buildBody').innerHTML = h;
     }
-    // Fortschritt der Aufträge
+    // Fortschritt der Aufträge und des Baus
+    const bl = $('buildBody').querySelector('li[data-build]');
+    if (bl && city && city.construction) bl.querySelector('i').style.width = `${Math.min(100, city.construction.timer / city.construction.time * 100)}%`;
     for (const li of $('buildBody').querySelectorAll('li[data-order]')) {
       const o = orders.find((x) => x.id === +li.dataset.order);
       if (o) li.querySelector('i').style.width = `${Math.min(100, o.timer / UNIT_TYPES[o.type].buildTime * 100)}%`;
@@ -570,6 +584,10 @@ const app = {
       if (prod.upgrade(p, div, t.dataset.key)) this.toast(`${div.name}: ${UPGRADES[t.dataset.key].name} verbessert`, 'good');
       else poor();
     } else if (act === 'cancel') prod.cancel(+t.dataset.id);
+    else if (act === 'build' && city) {
+      if (prod.construct(p, city.id, t.dataset.key)) this.toast(`${city.name}: ${BUILDINGS[t.dataset.key].name} wird gebaut`);
+      else poor();
+    } else if (act === 'unbuild' && city) prod.cancelConstruction(city.id);
     this.buildSig = null;
     this.updateHud();
   },
@@ -660,6 +678,9 @@ const app = {
         this.toast('📻 ' + ev.text);
       } else if (ev.type === 'spawn' && ev.unit.owner === this.human) {
         this.divBarSig = null;
+      } else if (ev.type === 'built' && ev.city.owner === this.human) {
+        this.toast(`${ev.city.name}: ${BUILDINGS[ev.key].name} Stufe ${ev.level} fertig`, 'good');
+        this.buildSig = null;
       } else if (ev.type === 'divisionTrained' && ev.division.owner === this.human) {
         this.toast(`${ev.division.name} ist ausgebildet (${strength(ev.division)} Kompanien)`, 'good');
         this.divBarSig = null;

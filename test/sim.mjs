@@ -195,6 +195,8 @@ function checkState(g, label, ais) {
   prod.cancel(one.id);
   if (e.money !== before.money || e.manpower !== before.manpower) fail('Baumenü: Abbruch erstattet die Kosten nicht');
   if (prod.order(1, g.starts[2], 'light')) fail('Baumenü: Ausbildung in einer fremden Stadt möglich');
+  if (prod.orderTemplate(1, home, 'mixed') || prod.order(1, home, 'heavy')) fail('Baumenü: Panzer ohne Fabrik ausgebildet');
+  g.cities[home].buildings.factory = 1;
   const group = prod.orderTemplate(1, home, 'mixed');
   if (!group || group.length !== 9) fail('Baumenü: Vorlage „Gemischte Division“ bestellt nicht 9 Kompanien');
   for (let s = 0; s < 30 * 120 && prod.ordersOf(1).length; s++) { prod.step(STEP); g.events.length = 0; }
@@ -210,7 +212,23 @@ function checkState(g, label, ais) {
     prod.upgrade(1, div, 'artillery');
     if (prod.upgrade(1, div, 'artillery')) fail('Baumenü: Ausrüstung über die höchste Stufe hinaus');
   }
-  if (!failed) console.log('ok   Baumenü: Ausbildung, Vorlagen, Abbruch und Ausrüstung');
+  // Städte ausbauen: Preis, Bauzeit, nur ein Bau je Stadt, Abbruch, Häfen nur an der Küste
+  const city = g.cities[home];
+  const m0 = e.money;
+  if (!prod.construct(1, home, 'housing') || e.money !== m0 - 120) fail('Städtebau: Wohnviertel wird nicht korrekt bezahlt');
+  if (prod.construct(1, home, 'barracks')) fail('Städtebau: zwei Bauten gleichzeitig in einer Stadt');
+  const slots0 = prod.citySlots(city);
+  for (let s = 0; s < 30 * 25; s++) prod.step(STEP);
+  if (city.buildings.housing !== 1 || city.construction) fail('Städtebau: Wohnviertel nach 20 s nicht fertig');
+  prod.construct(1, home, 'barracks');
+  prod.cancelConstruction(home);
+  if (city.construction || e.money !== m0 - 120) fail('Städtebau: Abbruch erstattet nicht');
+  prod.construct(1, home, 'barracks');
+  for (let s = 0; s < 30 * 16; s++) prod.step(STEP);
+  if (prod.citySlots(city) !== slots0 + 1) fail('Städtebau: Kaserne bringt keinen Ausbildungsplatz');
+  const inland = g.cities.find((c) => !c.coastal), coast = g.cities.find((c) => c.coastal);
+  if (!inland || !coast || prod.nextBuilding(inland, 'port') || !prod.nextBuilding(coast, 'port')) fail('Städtebau: Häfen nicht nur an der Küste');
+  if (!failed) console.log('ok   Baumenü und Städtebau: Ausbildung, Vorlagen, Abbruch, Ausrüstung, Gebäude');
 }
 
 for (const [seed, size, np] of CASES) {

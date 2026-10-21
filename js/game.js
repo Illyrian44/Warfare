@@ -1,13 +1,13 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
-  CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY,
+  CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=85';
-import { mulberry32 } from './rng.js?v=85';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=85';
-import { HQManager } from './hq.js?v=85';
-import { SupplyNetwork } from './supply.js?v=85';
-import { Production } from './production.js?v=85';
+} from './config.js?v=87';
+import { mulberry32 } from './rng.js?v=87';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=87';
+import { HQManager } from './hq.js?v=87';
+import { SupplyNetwork } from './supply.js?v=87';
+import { Production } from './production.js?v=87';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -27,8 +27,20 @@ export class Game {
     this.cities = map.cities.map((c, i) => ({
       id: i, x: c.x, y: c.y, owner: 0, name: c.name || '',
       size: ECONOMY.sizeOf(c.pop || 0), capitalOf: 0, capOwner: 0, capProgress: 0,
+      buildings: Object.fromEntries(Object.keys(BUILDINGS).map((k) => [k, 0])), construction: null,
+      coastal: false,
     }));
     const n = map.w * map.h;
+    // Küstenstädte (Meer in höchstens 2 Feldern Abstand) können einen Hafen bauen
+    for (const c of this.cities) {
+      const cx = Math.floor(c.x / CELL), cy = Math.floor(c.y / CELL);
+      for (let dy = -2; dy <= 2 && !c.coastal; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const x = cx + dx, y = cy + dy;
+          if (x >= 0 && y >= 0 && x < map.w && y < map.h && map.cells[y * map.w + x] === T.DEEP && !map.off[y * map.w + x]) { c.coastal = true; break; }
+        }
+      }
+    }
     this.territory = new Uint8Array(n);
     this.vision = slots().map((_, p) => (p ? new Uint8Array(n) : null));
     this.prodMult = slots().map(() => 1);
@@ -140,11 +152,17 @@ export class Game {
       this.ecoTimer = 1;
       for (const p of this.players) {
         const e = this.eco[p];
-        let size = 0;
-        for (const c of this.cities) if (c.owner === p) size += this.citySize(c);
+        let size = 0, money = 0, mp = 0;
+        for (const c of this.cities) {
+          if (c.owner !== p) continue;
+          size += this.citySize(c);
+          // Gebäude: Fabrik und Hafen bringen Geld, Wohnviertel Manpower
+          money += c.buildings.factory * 0.6 + c.buildings.port * 0.4;
+          mp += c.buildings.housing * 4;
+        }
         const m = this.prodMult[p];
-        e.income = (size * ECONOMY.cityMoney + this.share[p] * 100 * ECONOMY.landMoney) * m;
-        e.mpRate = size * ECONOMY.cityManpower * m;
+        e.income = (size * ECONOMY.cityMoney + money + this.share[p] * 100 * ECONOMY.landMoney) * m;
+        e.mpRate = (size * ECONOMY.cityManpower + mp) * m;
         e.mpCap = Math.max(1000, e.mpRate * ECONOMY.manpowerCap);
       }
     }
@@ -320,6 +338,15 @@ export class Game {
     }
     for (const u of U) {
       if (u.angles.length >= 2 && surrounded(u.angles)) u.incoming *= SURROUND_BONUS;
+    }
+    // Festung: Verteidiger in und um ihre Stadt nehmen weniger Schaden
+    for (const c of this.cities) {
+      const lvl = c.owner ? c.buildings.fort : 0;
+      if (!lvl) continue;
+      const r = CITY_CAPTURE_RADIUS * 1.5;
+      for (const u of U) {
+        if (u.owner === c.owner && u.incoming && Math.abs(u.x - c.x) < r && Math.abs(u.y - c.y) < r) u.incoming *= 1 - 0.15 * lvl;
+      }
     }
 
     // Versorgung und Gesundheit
@@ -660,7 +687,7 @@ export class Game {
       if (invaders.length === 1 && !defended) {
         const a = invaders[0];
         if (c.capOwner !== a) { c.capOwner = a; c.capProgress = 0; }
-        c.capProgress += dt / CAPTURE_TIME;
+        c.capProgress += dt / (CAPTURE_TIME * (1 + 0.5 * c.buildings.fort)); // Festung hält länger
         if (c.capProgress >= 1) {
           const old = c.owner;
           c.owner = a; c.capOwner = 0; c.capProgress = 0;

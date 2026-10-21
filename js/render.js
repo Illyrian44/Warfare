@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=85';
-import { classify } from './map.js?v=85';
-import { frontBadge, pointAt } from './fronts.js?v=85';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=85';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=87';
+import { classify } from './map.js?v=87';
+import { frontBadge, pointAt } from './fronts.js?v=87';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=87';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -618,6 +618,16 @@ export class Renderer {
       ctx.strokeText(c.name, c.x, c.y + R + 4 * px);
       ctx.fillStyle = '#fff';
       ctx.fillText(c.name, c.x, c.y + R + 4 * px);
+      // Gebäude der eigenen Städte (nah herangezoomt): Symbol und Stufe, 🔨 = im Bau
+      if (c.owner === me && px < 1.3) {
+        const parts = Object.entries(c.buildings).filter(([, l]) => l).map(([k, l]) => BUILDINGS[k].icon + l);
+        if (c.construction) parts.push('🔨');
+        if (parts.length) {
+          ctx.font = `${9 * px}px system-ui, sans-serif`;
+          ctx.strokeText(parts.join(' '), c.x, c.y + R + 17 * px);
+          ctx.fillText(parts.join(' '), c.x, c.y + R + 17 * px);
+        }
+      }
     }
   }
 }

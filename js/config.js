@@ -64,6 +64,18 @@ export const TEMPLATES = [
   { id: 'mixed', name: 'Gemischte Division', light: 6, heavy: 3 },
   { id: 'armor', name: 'Panzerdivision', light: 3, heavy: 6 },
 ];
+// Städte ausbauen: Gebäude mit bis zu drei Stufen. Preis (Geld) und Bauzeit (s) wachsen mit
+// der Stufe: cost × (Stufe + 1), time × (1 + Stufe / 2). Häfen nur an der Küste.
+export const BUILDINGS = {
+  housing: { name: 'Wohnviertel', icon: '🏠', effect: '+4 Manpower/s', cost: 120, time: 20 },
+  factory: { name: 'Fabrik', icon: '🏭', effect: '+0,6 Geld/s · ab Stufe 1 Panzer', cost: 150, time: 25 },
+  barracks: { name: 'Kaserne', icon: '⛺', effect: '+1 Ausbildungsplatz', cost: 100, time: 15 },
+  depot: { name: 'Depot', icon: '📦', effect: '+50 % Nachschubleistung', cost: 80, time: 15 },
+  fort: { name: 'Festung', icon: '🏰', effect: 'Verteidiger −15 % Schaden, Eroberung +50 % Zeit', cost: 100, time: 20 },
+  port: { name: 'Hafen', icon: '⚓', effect: '+0,4 Geld/s · Seehandel', cost: 140, time: 25, coastal: true },
+};
+export const BUILDING_MAX = 3;
+
 export const UPGRADES = {
   training: { name: 'Ausbildung', effect: 'Organisation +20 %', per: 0.2, cost: [150, 300] },
   artillery: { name: 'Artillerie', effect: 'Kampfkraft +15 %', per: 0.15, cost: [200, 400] },
