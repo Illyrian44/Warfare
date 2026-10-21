@@ -1,5 +1,5 @@
-import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=72';
-import { mulberry32, makeNoise, fbm } from './rng.js?v=72';
+import { CELL, T, TERRAIN_INFO, MAP_SIZES, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=73';
+import { mulberry32, makeNoise, fbm } from './rng.js?v=73';
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
