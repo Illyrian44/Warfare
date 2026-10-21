@@ -7,7 +7,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=74">
+  <link rel="stylesheet" href="css/style.css?v=76">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -86,6 +86,13 @@
         <button data-value="medium">Mittel</button>
         <button data-value="hard">Schwer</button>
       </div>
+      <label>KI-Gegner</label>
+      <div class="choice" id="oppChoice">
+        <button data-value="1">1</button>
+        <button data-value="2">2</button>
+        <button data-value="3">3</button>
+        <button data-value="4">4</button>
+      </div>
       <label>Kartengröße</label>
       <div class="choice" id="sizeChoice">
         <button data-value="small">Klein</button>
@@ -101,7 +108,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 74</small>
+      <small id="version" class="muted">Version 76</small>
     </div>
   </div>
 
@@ -109,7 +116,7 @@
     <div class="panel help">
       <h2>So wird gespielt</h2>
       <h3>Ziel</h3>
-      <p>Erobere alle Städte des Gegners (rot) und vernichte seine Armee. Du bist <b class="blue-t">blau</b>. Jede Runde beginnt pausiert: Gliedere in Ruhe deine Divisionen und setze Fronten, dann geht es mit der Leertaste oder ▶ los.</p>
+      <p>Halte 70&nbsp;% des Landes – oder bleib als Letzter übrig. Du bist <b class="blue-t">blau</b> und spielst gegen 1 bis 4 KI-Gegner (rot, grün, gelb, violett), die auch untereinander kämpfen. Jeder beginnt mit einer Stadt, etwas Land und 4 Kompanien; der Rest der Karte und alle übrigen Städte sind neutral. Wer weder Städte noch Truppen hat, scheidet aus. Oben siehst du je Seite Städte und Landanteil. Jede Runde beginnt pausiert: Gliedere in Ruhe deine Divisionen und setze Fronten, dann geht es mit der Leertaste oder ▶ los.</p>
       <h3>Steuerung</h3>
       <ul>
         <li><b>Auswählen:</b> Eigene Einheit anklicken bzw. antippen. Wiederholtes Klicken auf dieselbe Stelle geht die Stufen durch: <i>gezeigte Gruppe → ganze Division → einzelne Kompanie</i> → wieder die Gruppe. PC: Rahmen mit linker Maustaste aufziehen (Umschalt = hinzufügen; zerschlagene Kompanien werden nicht erfasst), Klick ins Leere hebt die Auswahl auf. Handy: „▢ Auswahl“ und dann Rahmen ziehen.</li>
@@ -149,9 +156,9 @@
         <li><b>Organisation</b> (blauer Balken): die Kampfbereitschaft einer Kompanie – Infanterie 60, Panzer 35. Schaden trifft sie stärker als die Lebenspunkte. Bei 0 ist die Kompanie <i>zerschlagen</i> (blass): Sie kämpft nicht mehr, erobert nichts und zieht sich selbstständig zurück, auch von der Front; aus einer belagerten Stadt weicht sie zur nächsten aus. Außerhalb des Gefechts erholt sie sich (etwa 15&nbsp;% je Stunde, beim Marsch langsamer, ohne Nachschub gar nicht) und ist ab 50&nbsp;% wieder einsatzbereit. Die Divisionskarte zeigt Stärke (grün), Organisation (blau) und Nachschub (orange).</li>
         <li><b>Städte</b> produzieren Einheiten, bis zu 10 je eigener Stadt.</li>
         <li><b>Erobern:</b> Stell dich in eine Stadt, die nicht verteidigt wird. Der gestrichelte Ring zeigt den Fortschritt.</li>
-        <li><b>Gebiet:</b> Die Insel ist von Anfang an lückenlos zwischen dir und dem Gegner aufgeteilt – es gibt keine freie Fläche, die Grenze verläuft entlang von Gebirgen und Seen. Neutrale (graue) Städte liegen in einem der Gebiete und müssen trotzdem erobert werden. Wo deine Einheiten stehen, verschiebt sich die Grenze – außer bei Kompanien, die eine Grenzfront nur halten.</li>
+        <li><b>Gebiet:</b> Zu Beginn gehört jeder Seite nur das Land um ihre Startstadt, alles andere ist neutral. Eroberte Städte bringen das Land ringsum. Wo deine Einheiten stehen, wird das Land deins – außer bei Kompanien, die eine Grenzfront nur halten: Sie nehmen weder neutrales noch feindliches Land ein. Grenzfronten zeigen zu den Gegnern; solange du keinen berührst, liegen sie am Rand deines Gebiets in ihrer Richtung.</li>
         <li>Gegner siehst du nur in Sichtweite deiner Einheiten und Städte.</li>
-        <li><b>Die KI</b> bildet ebenso Divisionen, fasst sie zu einer Armee zusammen und teilt die Grenze unter ihnen auf. Ist sie an einer Stelle überlegen, stoßen die ein bis zwei Divisionen, die einer deiner Städte am nächsten sind, dorthin vor; die übrigen halten. Mit ihrer Reserve ohne Division verteidigt und erobert sie Städte. Fronten und Angriffspläne sind geheim: Du siehst die Linien und Pfeile der KI nicht, und die KI sieht deine nicht – nur die Truppen selbst, sobald sie in Sichtweite sind.</li>
+        <li><b>Die KI</b> erobert zuerst neutrale Städte, bildet dann Divisionen, fasst sie zu einer Armee zusammen und teilt die Grenze unter ihnen auf. Ist sie an einer Stelle überlegen, stoßen die ein bis zwei Divisionen, die einer feindlichen Stadt am nächsten sind, dorthin vor; die übrigen halten. Jede KI kämpft gegen jede andere Seite. Mit ihrer Reserve ohne Division verteidigt und erobert sie Städte. Fronten und Angriffspläne sind geheim: Du siehst die Linien und Pfeile der KI nicht, und die KI sieht deine nicht – nur die Truppen selbst, sobald sie in Sichtweite sind.</li>
         <li><b>Schwierigkeit:</b> Je schwerer, desto schneller denkt und produziert die KI. Auf „Schwer“ sieht sie außerdem die ganze Karte, auf „Leicht“ produziert sie langsamer als du.</li>
       </ul>
       <button id="helpClose" class="primary">Verstanden</button>
@@ -168,6 +175,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=74"></script>
+  <script type="module" src="js/main.js?v=76"></script>
 </body>
 </html>

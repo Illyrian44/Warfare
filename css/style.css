@@ -50,6 +50,9 @@ html, body {
 .dot.blue { background: var(--blue); }
 .dot.red { background: var(--red); }
 .dot.grey { background: var(--grey); }
+.side { white-space: nowrap; }
+.side small { font-size: 0.75em; margin-left: 1px; }
+.side.out { opacity: 0.45; text-decoration: line-through; }
 .dot.big { width: 0.55em; height: 0.55em; margin: 0 0.3em; vertical-align: 0.1em; }
 .blue-t { color: #7fa8ff; }
 

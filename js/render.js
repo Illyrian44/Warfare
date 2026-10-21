@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=74';
-import { classify } from './map.js?v=74';
-import { frontBadge, pointAt } from './fronts.js?v=74';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=74';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=76';
+import { classify } from './map.js?v=76';
+import { frontBadge, pointAt } from './fronts.js?v=76';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=76';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -35,7 +35,7 @@ export class Renderer {
     this.terrCanvas = makeCanvas(w * TERR_PX, h * TERR_PX);
     this.fogCanvas = makeCanvas(w, h);
     this.terrImg = this.terrCanvas.getContext('2d').createImageData(w * TERR_PX, h * TERR_PX);
-    this.ownMask = [null, new Float32Array(w * h), new Float32Array(w * h)];
+    this.ownMask = [null, ...game.players.map(() => new Float32Array(w * h))];
     this.fogImg = this.fogCanvas.getContext('2d').createImageData(w, h);
     this.terrVersion = -1;
     this.fogVersion = -1;
@@ -198,7 +198,7 @@ export class Renderer {
       this.terrVersion = g.territoryVersion;
       // Besitz je Spieler bilinear interpolieren, damit die Grenzen rund werden
       const tr = g.territory;
-      for (let p = 1; p <= 2; p++) {
+      for (const p of g.players) {
         const m = this.ownMask[p];
         for (let i = 0; i < w * h; i++) m[i] = tr[i] === p ? 1 : 0;
       }
@@ -215,7 +215,7 @@ export class Renderer {
           const x0 = Math.floor(cx), x1 = Math.min(w - 1, x0 + 1), fx = cx - x0;
           const a = y0 * w + x0, b = y0 * w + x1, c = y1 * w + x0, e = y1 * w + x1;
           if (!tr[a] && !tr[b] && !tr[c] && !tr[e]) continue;
-          for (let p = 1; p <= 2; p++) {
+          for (const p of g.players) {
             const m = this.ownMask[p];
             const v = (m[a] * (1 - fx) + m[b] * fx) * (1 - fy) + (m[c] * (1 - fx) + m[e] * fx) * fy;
             if (v < 0.5) continue;
@@ -305,7 +305,7 @@ export class Renderer {
     // angeklickt wird, was man sieht
     this.hits = [];
     const drawn = new Set();
-    for (let p = 1; p <= 2; p++) {
+    for (const p of game.players) {
       // Nur innerhalb derselben Division zusammenfassen; marschierende Kompanien bleiben einzeln
       const byDiv = new Map();
       for (const u of game.units) {
@@ -602,7 +602,13 @@ function hash(x, y) {
 const NATO_FRIEND = '#80e0ff';
 const NATO_HOSTILE = '#ff8080';
 const LOOSE_FRIEND = '#c9d2dc';  // Kompanien ohne Division: grau
-const LOOSE_HOSTILE = '#dcc6c6';
+
+// Feindliche Kompanien ohne Division: heller Ton der Farbe ihrer Seite
+function looseHostile(owner) {
+  const [r, g, b] = PLAYER_RGB[owner] || [220, 198, 198];
+  const mix = (v) => Math.round(v + (255 - v) * 0.62);
+  return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
+}
 
 // Füllfarbe nach Division der Kompanie(n): Farbe der häufigsten Division, ohne Division grau
 function fillFor(members, friend) {
@@ -613,7 +619,7 @@ function fillFor(members, friend) {
   }
   let best = null, bc = 0;
   for (const [f, c] of count) if (c > bc) { bc = c; best = f; }
-  return best ? divisionColor(best) : friend ? LOOSE_FRIEND : LOOSE_HOSTILE;
+  return best ? divisionColor(best) : friend ? LOOSE_FRIEND : looseHostile(members[0].owner);
 }
 
 // Rahmen nach APP-6: Rechteck für eigene, Raute für feindliche Einheiten

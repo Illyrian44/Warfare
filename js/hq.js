@@ -1,6 +1,6 @@
-import { unitStrength } from './game.js?v=74';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=74';
-import { pointAt } from './fronts.js?v=74';
+import { unitStrength } from './game.js?v=76';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=76';
+import { pointAt } from './fronts.js?v=76';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -33,7 +33,7 @@ export class HQManager {
 
   get hqs() {
     const out = [];
-    for (let p = 1; p <= 2; p++) {
+    for (const p of this.game.players) {
       for (const f of this.game.orbat[p].all(DIVISION)) if (f.hq && f.hq.alive) out.push(f.hq);
     }
     return out;
@@ -49,7 +49,7 @@ export class HQManager {
   // HQ hinter den Schwerpunkt der Division setzen, Richtung nächste eigene Stadt
   place() {
     const g = this.game;
-    for (let p = 1; p <= 2; p++) {
+    for (const p of g.players) {
       const cities = g.cities.filter((c) => c.owner === p);
       for (const f of g.orbat[p].all(DIVISION)) {
         const units = unitsOf(f);
@@ -86,8 +86,8 @@ export class HQManager {
 
   command() {
     const g = this.game;
-    for (let p = 1; p <= 2; p++) {
-      const enemies = g.units.filter((e) => e.owner !== p && g.isVisible(p, e.x, e.y));
+    for (const p of g.players) {
+      const enemies = g.units.filter((e) => g.hostile(e.owner, p) && g.isVisible(p, e.x, e.y));
       for (const f of g.orbat[p].all(DIVISION)) {
         const hq = f.hq;
         if (!hq || !hq.alive) continue;

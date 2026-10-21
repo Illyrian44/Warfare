@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=74';
-import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=74';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=76';
+import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=76';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -12,6 +12,9 @@ const DANGER_RADIUS = 45;   // so viel Abstand halten Verschiebungen zu Feinden
 const SNAP_DIST = 60;       // so nah an der Grenze rastet eine gezeichnete Linie ein
 const NEIGHBOR_DIST = 70;   // Fronten, deren Enden so nah beieinander liegen, sind Nachbarn
 const MIN_SECTION = 30;     // kürzere Reste eines Grenzabschnitts zählen nicht
+const TAU = Math.PI * 2;
+const KEY_R = 200;          // Lagewert = Winkel um die Startstadt mal KEY_R (siehe key())
+const SEAM = KEY_R * Math.PI; // größerer Sprung zwischen Nachbarpunkten: über die Nahtstelle
 
 // Fronten wie in Hearts of Iron: Jede Front gehört zu genau einer Division. Deren
 // Kompanien verteilen sich gleichmäßig auf der Linie und halten sie selbstständig.
@@ -23,14 +26,14 @@ export class FrontManager {
     this.game = game;
     this.owner = owner;
     this.fronts = [];
-    this.timer = owner === 1 ? 0 : REFRESH / 2; // Spieler versetzt rechnen
+    this.timer = REFRESH * ((owner - 1) % 4) / 4; // Seiten versetzt rechnen
     this.pathBudget = PATH_BUDGET;
     this.nextId = 1;
     this.events = [];
-    this.codename = owner === 1 ? 0 : 7;
+    this.codename = (owner - 1) * 5;
     // Löst sich eine Division auf, verschwindet ihre Front sofort
     game.orbat[owner].onDissolve.push((div) => { if (this.fronts.includes(div.front)) this.remove(div.front); });
-    this.key({ x: 0, y: 0 }); // Achse aus der Startaufstellung festlegen (siehe key())
+    this.key({ x: 0, y: 0 }); // Pol und Naht aus der Startaufstellung festlegen (siehe key())
     // Wegfindung hinter der eigenen Linie auch für Spiel und HQs (Festgefahrene, Rückzug)
     (game.routers || (game.routers = {}))[owner] = this;
   }
@@ -79,25 +82,29 @@ export class FrontManager {
     return this.borderCache.chains;
   }
 
-  // Achse quer zur Stoßrichtung (von den eigenen zu den feindlichen Städten). Grenzabschnitte
-  // werden über ihre Lage auf dieser Achse abgegrenzt: der Wert eines Ankerpunkts bleibt fest,
-  // auch wenn die Grenze zerfällt oder ihre Teilstücke die Reihenfolge wechseln. Benachbarte
-  // Abschnitte teilen sich einen Ankerpunkt und damit genau einen Wert: keine Lücke, keine
-  // Überlappung. Die Achse entsteht einmal aus der Startaufstellung der Städte.
+  // Lagewert eines Punkts: sein Winkel um die eigene Startstadt (mal KEY_R). Grenzabschnitte
+  // werden über diesen Wert abgegrenzt: der Wert eines Ankerpunkts bleibt fest, auch wenn die
+  // Grenze zerfällt oder ihre Teilstücke die Reihenfolge wechseln. Benachbarte Abschnitte
+  // teilen sich einen Ankerpunkt und damit genau einen Wert: keine Lücke, keine Überlappung.
+  // Der Winkel statt einer festen Achse trägt auch Grenzen, die das eigene Land zu mehreren
+  // Gegnern ringsum umschließen. Die Nahtstelle (Wert 0) liegt auf der vom Feind abgewandten
+  // Seite; Pol und Naht entstehen einmal aus der Startaufstellung.
   key(p) {
-    if (!this.axis) {
+    if (!this.pole) {
       const g = this.game;
-      const mid = (list) => (list.length
-        ? { x: list.reduce((a, c) => a + c.x, 0) / list.length, y: list.reduce((a, c) => a + c.y, 0) / list.length }
-        : null);
-      const a = mid(g.cities.filter((c) => c.owner === this.owner));
-      const b = mid(g.cities.filter((c) => c.owner === 3 - this.owner));
-      const dx = a && b ? b.x - a.x : 1, dy = a && b ? b.y - a.y : 0;
-      const l = Math.hypot(dx, dy) || 1;
-      this.axis = { x: -dy / l, y: dx / l };
-      if (this.axis.y < 0 || (this.axis.y === 0 && this.axis.x < 0)) { this.axis.x *= -1; this.axis.y *= -1; }
+      const home = g.starts ? g.cities[g.starts[this.owner]] : g.cities.find((c) => c.owner === this.owner);
+      const c0 = home || { x: g.map.worldW / 2, y: g.map.worldH / 2 };
+      const foes = g.cities.filter((c) => c.owner && c.owner !== this.owner);
+      let cut = 0;
+      if (foes.length) {
+        const mx = foes.reduce((a, c) => a + c.x, 0) / foes.length, my = foes.reduce((a, c) => a + c.y, 0) / foes.length;
+        cut = Math.atan2(c0.y - my, c0.x - mx);
+      }
+      this.pole = { x: c0.x, y: c0.y, cut };
     }
-    return p.x * this.axis.x + p.y * this.axis.y;
+    let a = Math.atan2(p.y - this.pole.y, p.x - this.pole.x) - this.pole.cut;
+    a = ((a % TAU) + TAU) % TAU;
+    return a * KEY_R;
   }
 
   // Teilstücke der Grenze mit ihren Achsenwerten (zum Messen von Längen)
@@ -111,6 +118,7 @@ export class FrontManager {
       for (const c of bc.chains) {
         for (let i = 1; i < c.length; i++) {
           const ka = this.key(c[i - 1]), kb = this.key(c[i]);
+          if (Math.abs(kb - ka) > SEAM) continue; // Stück über die Nahtstelle
           bc.segs.push({ a: c[i - 1], b: c[i], lo: Math.min(ka, kb), hi: Math.max(ka, kb), ka, kb,
             len: Math.hypot(c[i].x - c[i - 1].x, c[i].y - c[i - 1].y) });
           bc.kmin = Math.min(bc.kmin, ka, kb);
@@ -149,7 +157,8 @@ export class FrontManager {
       const t = s.kb === s.ka ? 0 : (k - s.ka) / (s.kb - s.ka);
       return { x: s.a.x + (s.b.x - s.a.x) * t, y: s.a.y + (s.b.y - s.a.y) * t };
     }
-    return { x: this.axis.x * k, y: this.axis.y * k };
+    const a = k / KEY_R + this.pole.cut;
+    return { x: this.pole.x + Math.cos(a) * KEY_R, y: this.pole.y + Math.sin(a) * KEY_R };
   }
 
   // Ankerpunkte entlang der Achse ordnen (vorderer zuerst)
@@ -491,7 +500,7 @@ export class FrontManager {
     danger.fill(0);
     const cr = DANGER_RADIUS / CELL;
     for (const o of g.units) {
-      if (o.owner === this.owner) continue;
+      if (!g.hostile(o.owner, this.owner)) continue;
       const cx = o.x / CELL, cy = o.y / CELL;
       const x0 = Math.max(0, Math.floor(cx - cr)), x1 = Math.min(w - 1, Math.ceil(cx + cr));
       const y0 = Math.max(0, Math.floor(cy - cr)), y1 = Math.min(h - 1, Math.ceil(cy + cr));
@@ -502,11 +511,12 @@ export class FrontManager {
       }
     }
     const tr = g.territory, me = this.owner;
+    // fremdes Land (feindlich oder verbündet) sehr teuer, neutrales etwas teurer als eigenes
     const opts = {
-      cost: (i) => (danger[i] ? 4 : 0) + (tr[i] !== me ? 30 : 0),
+      cost: (i) => (danger[i] ? 4 : 0) + (tr[i] === me ? 0 : tr[i] ? 30 : 2),
       safe: (x, y) => {
         const i = g.map.cellIndex(x, y);
-        return !danger[i] && tr[i] === me;
+        return !danger[i] && (tr[i] === me || !tr[i]);
       },
     };
     this.routing = { slot, opts };
@@ -665,7 +675,7 @@ export class FrontManager {
   pathLeadsBack(u) {
     let e = null, bd = Infinity;
     for (const o of this.game.units) {
-      if (o.owner === this.owner) continue;
+      if (!this.game.hostile(o.owner, this.owner)) continue;
       const d = Math.hypot(o.x - u.x, o.y - u.y);
       if (d < bd) { bd = d; e = o; }
     }
@@ -676,7 +686,7 @@ export class FrontManager {
 
   enemyNear(u, r) {
     for (const o of this.game.units) {
-      if (o.owner !== this.owner && Math.abs(o.x - u.x) < r && Math.abs(o.y - u.y) < r && Math.hypot(o.x - u.x, o.y - u.y) < r) return true;
+      if (this.game.hostile(o.owner, this.owner) && Math.abs(o.x - u.x) < r && Math.abs(o.y - u.y) < r && Math.hypot(o.x - u.x, o.y - u.y) < r) return true;
     }
     return false;
   }
@@ -754,7 +764,7 @@ export class FrontManager {
     // Gleichstand (z. B. neutrales Land auf beiden Seiten): zur nächsten Feindstadt zeigen
     let best = null, bd = Infinity;
     for (const c of g.cities) {
-      if (c.owner !== 3 - this.owner) continue;
+      if (!g.hostile(c.owner, this.owner)) continue;
       const d = Math.hypot(c.x - p.x, c.y - p.y);
       if (d < bd) { bd = d; best = c; }
     }
@@ -768,7 +778,8 @@ export class FrontManager {
     const map = g.map;
     const { w, h } = map;
     const tr = g.territory;
-    const me = this.owner, foe = 3 - me;
+    const me = this.owner;
+    const foe = (o) => g.hostile(me, o); // feindliche Seite
     const passable = (i) => TERRAIN_INFO[map.cells[i]].passable;
     const collect = (test) => {
       const out = [];
@@ -781,14 +792,14 @@ export class FrontManager {
       }
       return out;
     };
-    let cells = collect((n) => tr[n] === foe);
+    let cells = collect((n) => foe(tr[n]));
     if (cells.length < 3) {
       // Noch kein Kontakt: Rand zum fremden Land, das mit dem Gegner verbunden ist und in seine Richtung zeigt
       const outside = new Uint8Array(w * h);
       const stack = [];
-      for (let i = 0; i < w * h; i++) if (tr[i] === foe) { outside[i] = 1; stack.push(i); }
+      for (let i = 0; i < w * h; i++) if (foe(tr[i])) { outside[i] = 1; stack.push(i); }
       for (const c of g.cities) {
-        if (c.owner !== foe) continue;
+        if (!foe(c.owner)) continue;
         const i = map.cellIndex(c.x, c.y);
         if (!outside[i]) { outside[i] = 1; stack.push(i); }
       }
@@ -801,7 +812,7 @@ export class FrontManager {
           stack.push(n);
         }
       }
-      const foeCities = g.cities.filter((c) => c.owner === foe);
+      const foeCities = g.cities.filter((c) => foe(c.owner));
       const frontier = collect((n) => outside[n] === 1);
       cells = frontier.filter((i) => {
         if (!foeCities.length) return true;
@@ -965,6 +976,11 @@ function sliceByKey(chains, key, k0, k1) {
     for (let i = 1; i < c.length; i++) {
       const q = c[i - 1], p = c[i];
       const kq = key(q), kp = key(p);
+      if (Math.abs(kp - kq) > SEAM) { // über die Nahtstelle: Linie hier trennen
+        if (cur && cur.length >= 2) out.push(cur);
+        cur = null;
+        continue;
+      }
       let ts, te;
       if (kp === kq) {
         [ts, te] = kq < k0 || kq > k1 ? [1, 0] : [0, 1];

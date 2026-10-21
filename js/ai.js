@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM } from './config.js?v=74';
-import { unitStrength } from './game.js?v=74';
-import { mulberry32 } from './rng.js?v=74';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=74';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=74';
+import { DIFFICULTY, SUPPLY, KM } from './config.js?v=76';
+import { unitStrength } from './game.js?v=76';
+import { mulberry32 } from './rng.js?v=76';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=76';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=76';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -18,7 +18,6 @@ export class AI {
   constructor(game, player, difficulty = 'medium') {
     this.game = game;
     this.me = player;
-    this.foe = 3 - player;
     this.cfg = DIFFICULTY[difficulty];
     this.timer = 1;
     this.rng = mulberry32((game.map.seed * 31 + player) >>> 0);
@@ -45,7 +44,7 @@ export class AI {
 
   visibleEnemies() {
     const g = this.game;
-    return g.units.filter((u) => u.owner === this.foe && (this.cfg.seeAll || g.isVisible(this.me, u.x, u.y)));
+    return g.units.filter((u) => g.hostile(u.owner, this.me) && (this.cfg.seeAll || g.isVisible(this.me, u.x, u.y)));
   }
 
   strengthNear(list, x, y, r) {
@@ -140,10 +139,11 @@ export class AI {
     }
 
     // Angriffsziel wählen
-    const candidates = g.cities.filter((c) => c.owner !== me);
+    // Ziele: neutrale und feindliche Städte (keine verbündeten)
+    const candidates = g.cities.filter((c) => c.owner !== me && (!c.owner || g.hostile(c.owner, me)));
     if (!candidates.length) {
       for (const u of free) {
-        const e = nearest(g.units.filter((x) => x.owner === this.foe), u);
+        const e = nearest(g.units.filter((x) => g.hostile(x.owner, me)), u);
         if (e) this.order(u, e.x, e.y, 'hunt', e.id);
       }
       return;
@@ -153,8 +153,8 @@ export class AI {
     for (const c of candidates) {
       const d = Math.min(...centers.map((o) => Math.hypot(o.x - c.x, o.y - c.y)));
       let est = this.strengthNear(enemies, c.x, c.y, TARGET_RADIUS);
-      if (c.owner === this.foe && !this.cfg.seeAll && !g.isVisible(me, c.x, c.y)) est += 2;
-      if (c.owner === this.foe) est += 0.5;
+      if (c.owner && !this.cfg.seeAll && !g.isVisible(me, c.x, c.y)) est += 2;
+      if (c.owner) est += 0.5;
       const sticky = this.currentTarget === c.id ? -2 : 0;
       const avoid = (this.penalty.get(c.id) || 0) > g.time ? 8 : 0;
       const score = d / 120 + est * 1.5 + sticky + avoid;
@@ -323,7 +323,7 @@ export class AI {
       const base = i >= 0 ? g.supply.nets[this.me].hours[i] : Infinity;
       return base + Math.hypot(c.x - p.x, c.y - p.y) / KM / SUPPLY.truckKmh[2] <= SUPPLY.noneHours * 0.75;
     };
-    const targets = g.cities.filter((c) => c.owner !== this.me);
+    const targets = g.cities.filter((c) => c.owner !== this.me && (!c.owner || g.hostile(c.owner, this.me)));
     if (!ready.length || !targets.length) return;
     const center = (f) => centerOf(f.division);
     let target = null, bd = Infinity;
@@ -331,7 +331,7 @@ export class AI {
       for (const f of ready) {
         const p = center(f);
         if (!p || !reach(c, p)) continue;
-        const d = Math.hypot(c.x - p.x, c.y - p.y) + (c.owner === this.foe ? 0 : 80);
+        const d = Math.hypot(c.x - p.x, c.y - p.y) + (c.owner ? 0 : 80);
         if (d < bd) { bd = d; target = c; }
       }
     }

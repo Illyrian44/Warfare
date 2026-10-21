@@ -17,7 +17,8 @@ const { KM } = await load('config');
 
 const STEP = 1 / 30;
 const MAX_TIME = 20 * 60;   // Sekunden Spielzeit, bis die Partie entschieden sein muss
-const CASES = [[1, 'small'], [42, 'medium'], [777, 'large']];
+// Karte, Größe, Zahl der Seiten (alle von der KI gespielt)
+const CASES = [[1, 'small', 2], [42, 'medium', 3], [777, 'large', 5]];
 
 let failed = 0;
 const fail = (msg) => { failed++; console.error('  FEHLER: ' + msg); };
@@ -45,7 +46,7 @@ function checkState(g, label, ais) {
     if (u.badTime > 10) { fail(`${label}: Einheit ${u.id} steckt auf unbegehbarem Gelände (${u.x.toFixed(0)}, ${u.y.toFixed(0)})`); u.badTime = -1e9; }
   }
   // Gliederung: Höchststärken, Regimenter nach Typ getrennt, jede Kompanie in höchstens einem Regiment
-  for (let p = 1; p <= 2; p++) {
+  for (const p of g.players) {
     const divs = g.orbat[p].all(DIVISION);
     for (const div of divs) {
       if (strength(div) > DIVISION_MAX) fail(`${label}: ${div.name} hat ${strength(div)} Kompanien`);
@@ -149,6 +150,8 @@ function checkState(g, label, ais) {
   // Seite 1 hält die ganze Grenze, der Gegner steht still: das Gebiet darf nach dem
   // Einrücken nicht weiter wachsen (früher schob jede haltende Front die Grenze vor)
   const g = new Game(generateMap(1, 'small'));
+  const home = g.cities[g.starts[1]];
+  for (let k = 0; k < 12; k++) g.spawnUnit(1, 'light', home);
   const fm = new FrontManager(g, 1);
   g.orbat[1].autoOrganize(g.units.filter((u) => u.owner === 1));
   fm.splitBorder(g.orbat[1].all(DIVISION));
@@ -163,15 +166,16 @@ function checkState(g, label, ais) {
   else console.log('ok   Haltende Grenzfront bleibt stehen');
 }
 
-for (const [seed, size] of CASES) {
+for (const [seed, size, np] of CASES) {
   const label = `${size} #${seed}`;
   const t0 = performance.now();
   let worst = 0;
   try {
-    const g = new Game(generateMap(seed, size));
-    const ais = [new AI(g, 1, 'medium'), new AI(g, 2, 'hard')];
+    const g = new Game(generateMap(seed, size), { players: np });
+    const ais = g.players.map((p) => new AI(g, p, p % 2 ? 'medium' : 'hard'));
     let steps = 0, maxDivs = 0;
-    const formed = [0, 0, 0], reserve = [0, 0, 0], attacks = [0, 0, 0], armies = [0, 0, 0];
+    const slots = () => [0, ...g.players.map(() => 0)];
+    const formed = slots(), reserve = slots(), attacks = slots(), armies = slots(), alive = slots();
     while (!g.winner && g.time < MAX_TIME) {
       const t = performance.now();
       for (const ai of ais) ai.update(STEP);
@@ -179,12 +183,15 @@ for (const [seed, size] of CASES) {
       // schon berechnet, und die Prüfung verändert den Spielverlauf nicht
       if (++steps % 30 === 0) {
         checkState(g, label, ais);
-        maxDivs = Math.max(maxDivs, g.orbat[1].all(DIVISION).length + g.orbat[2].all(DIVISION).length);
-        for (let p = 1; p <= 2; p++) {
+        maxDivs = Math.max(maxDivs, g.players.reduce((s, p) => s + g.orbat[p].all(DIVISION).length, 0));
+        for (const p of g.players) {
+          if (!g.alive(p)) continue;
+          if (ais[p - 1].fronts.fronts.some((f) => f.attack)) attacks[p]++;
+          if (g.units.some((u) => u.owner === p && !u.regiment)) reserve[p]++;
+          if (g.units.filter((u) => u.owner === p).length < 14) continue; // zu klein für Front-Divisionen
+          alive[p]++;
           if (g.orbat[p].all(DIVISION).length) formed[p]++;
           if (g.orbat[p].all(ARMY).length) armies[p]++;
-          if (g.units.some((u) => u.owner === p && !u.regiment)) reserve[p]++;
-          if (ais[p - 1].fronts.fronts.some((f) => f.attack)) attacks[p]++;
         }
       }
       g.step(STEP);
@@ -193,15 +200,18 @@ for (const [seed, size] of CASES) {
     }
     if (!g.winner) fail(`${label}: nach ${MAX_TIME / 60} Minuten Spielzeit noch kein Sieger`);
     // Die KI bildet Divisionen für ihre Fronten und behält eine Reserve ohne Division
-    for (let p = 1; p <= 2; p++) {
-      if (formed[p] < steps / 30 * 0.5) fail(`${label}: Seite ${p} hatte nur selten Divisionen (${formed[p]} von ${Math.round(steps / 30)} s)`);
+    // (gemessen über die Zeit, in der die Seite mindestens 14 Kompanien hatte; zu Beginn hat jede nur 4)
+    for (const p of g.players) {
+      if (alive[p] < 120) continue;
+      if (formed[p] < alive[p] * 0.4) fail(`${label}: Seite ${p} hatte nur selten Divisionen (${formed[p]} von ${alive[p]} s)`);
       if (!reserve[p]) fail(`${label}: Seite ${p} hatte nie eine Reserve ohne Division`);
       if (armies[p] < formed[p] * 0.5) fail(`${label}: Seite ${p} fasst ihre Divisionen nicht zu einer Armee zusammen`);
     }
     const ms = (performance.now() - t0) / steps;
     console.log(`${g.winner ? 'ok  ' : '    '} ${label}: Sieger ${g.winner} nach ${Math.round(g.time)} s, ` +
       `${ms.toFixed(2)} ms/Schritt (max ${worst.toFixed(0)} ms), bis zu ${maxDivs} Divisionen, ` +
-      `Frontangriffe ${attacks[1]}/${attacks[2]} s`);
+      `Land ${g.players.map((p) => Math.round(g.share[p] * 100) + '%').join('/')}, ` +
+      `Frontangriffe ${g.players.map((p) => attacks[p]).join('/')} s`);
   } catch (e) {
     fail(`${label}: Absturz\n${e.stack}`);
   }

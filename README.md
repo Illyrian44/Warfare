@@ -13,7 +13,7 @@ Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https:
 
 ## Regeln in Kürze
 
-- **Ziel:** alle gegnerischen Städte erobern und die Armee vernichten. Jede Runde beginnt pausiert, damit man in Ruhe gliedern und Fronten setzen kann.
+- **Ziel:** 70 % des Landes halten oder als Letzter übrig bleiben, gegen 1–4 KI-Gegner (jeder gegen jeden). Ausgeschieden ist, wer weder Städte noch Truppen hat. Jede Runde beginnt pausiert, damit man in Ruhe gliedern und Fronten setzen kann.
 - **Einheiten:** Infanterie/leicht (10 km/h, günstig) und Panzer/schwer (18 km/h, robust, stark auf Ebenen), dargestellt als NATO-Symbole nach APP-6: Rechteck = eigene, Raute = feindliche Einheit (im Farbton ihrer Division, grau ohne Division), X = Infanterie, Oval = Panzer. Städte produzieren sie; ein Klick auf die eigene Stadt wechselt den Typ.
 - **Maßstab:** 1 Kartenfeld = 1 km, die mittlere Insel misst 160 × 96 km. Bei Tempo 1× vergehen in einer Sekunde 6 Minuten Spielzeit; alle Geschwindigkeiten stehen als km/h in `js/config.js` (Straßen ×1,6).
 - **Gelände:** Ebene, Wald (−25 % Angriff), Hügel (+50 % Angriff, mehr Sicht), Wasser (−50 % Angriff, langsam), Gebirge und tiefes Wasser sind unpassierbar.
@@ -29,7 +29,7 @@ Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https:
 - **Befehlsfeld:** Erscheint unten rechts nur mit einer Auswahl und zeigt nur passende Befehle (Halt, Division/Armee bilden oder auflösen, Auffüllen; Front, Grenze und Angriff nur mit ausgewählten Divisionen). „Auto-Gliederung“ steht in der unteren Leiste, solange es Kompanien ohne Division gibt. Das Feld lässt sich an der Titelzeile verschieben und am Griff unten rechts skalieren (60–160 %); Doppelklick auf die Titelzeile setzt es zurück, Lage und Größe bleiben gespeichert.
 - **KI:** Fasst ihre Divisionen zu einer Armee zusammen; eigene Fronttruppen decken nahe Städte mit, an der Truppenobergrenze stößt die stärkste Front begrenzt vor. Bildet Front-Divisionen (6–10 Kompanien) nach ihrer Lage an der Grenze, teilt die Grenze unter ihnen auf und behält eine Reserve ohne Division für Städte. Bei Überlegenheit stoßen die 1–2 Divisionen nächst einer Stadt vor; kippt das Kräfteverhältnis, kehren sie in ihre Abschnitte zurück. Auf „Schwer“ sieht sie die ganze Karte.
 - **Straßen:** Ein Straßennetz verbindet die Städte (Relative Neighborhood Graph, Trassen meiden Hügel/Wald und Gebirge, Brücken über Wasser). Auf Straßen sind Einheiten 60 % schneller.
-- **Gebiet:** Die Insel wird beim Start lückenlos aufgeteilt (jedes Feld gehört der Seite, deren Stadt es auf dem Landweg am schnellsten erreicht), es gibt also von Anfang an eine durchgehende Grenze ohne Niemandsland.
+- **Start und Gebiet:** Jede Seite beginnt mit einer Stadt, dem Land ringsum und 4 Kompanien; die Startstädte liegen möglichst weit auseinander, alles andere ist neutral. Eroberte Städte bringen das Land ringsum, marschierende Einheiten nehmen Land ein, haltende Grenzfronten nicht. Grenzabschnitte werden über ihren Winkel um die eigene Startstadt abgegrenzt, so tragen sie auch Grenzen zu mehreren Gegnern ringsum.
 - **Nebel des Krieges:** Gegner sind nur in Sichtweite sichtbar.
 
 ## Steuerung

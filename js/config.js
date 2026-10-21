@@ -90,8 +90,15 @@ export const CITY_VISION = 165;
 export const UNIT_BORDER = 40;
 export const CITY_BORDER = 80;
 
-export const PLAYER_COLORS = ['#9a9a9a', '#2f6fe0', '#e0412f'];
-export const PLAYER_RGB = [[150, 150, 150], [47, 111, 224], [224, 65, 47]];
+// Seiten: 0 neutral, 1 Spieler (blau), 2–5 KI-Gegner
+export const PLAYER_COLORS = ['#9a9a9a', '#2f6fe0', '#e0412f', '#2fa84f', '#e0a020', '#9b4fd8'];
+export const PLAYER_RGB = [[150, 150, 150], [47, 111, 224], [224, 65, 47], [47, 168, 79], [224, 160, 32], [155, 79, 216]];
+export const PLAYER_NAMES = ['Neutral', 'Blau', 'Rot', 'Grün', 'Gelb', 'Violett'];
+// Farbbereich (Farbton von–bis) für die Divisionen jeder Seite
+export const PLAYER_HUES = [null, [185, 255], [340, 395], [95, 150], [38, 58], [268, 318]];
+export const MAX_AI = 4;
+export const WIN_SHARE = 0.7;          // so viel Land gewinnt die Runde
+export const START_UNITS = ['light', 'light', 'light', 'heavy']; // Startkompanien je Seite
 
 export const MAP_SIZES = {
   small: { w: 120, h: 72, pairs: 4, minDist: 17 },

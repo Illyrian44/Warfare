@@ -1,5 +1,5 @@
-import { CELL, KM, TERRAIN_INFO, HOURS_PER_SECOND, SUPPLY } from './config.js?v=74';
-import { MinHeap } from './map.js?v=74';
+import { CELL, KM, TERRAIN_INFO, HOURS_PER_SECOND, SUPPLY } from './config.js?v=76';
+import { MinHeap } from './map.js?v=76';
 
 // Nachschub wie in HOI4, vereinfacht: Depot (Stadt) -> Route über eigenes Gebiet -> Kompanie.
 //
@@ -21,18 +21,20 @@ export class SupplyNetwork {
     // Je Seite: Fahrzeit in Stunden, liefernde Stadt und Vorgänger-Zelle (für Routen).
     // Float64: mit Float32 würden gerundete Zeiten als Verbesserung gelten und Felder
     // immer wieder neu besucht
-    this.nets = [null, 1, 2].map((p) => p && {
+    this.nets = [null, ...game.players].map((p) => p && {
       hours: new Float64Array(n).fill(Infinity), depot: new Int16Array(n).fill(-1),
       parent: new Int32Array(n).fill(-1), danger: new Uint8Array(n), pool: new Int32Array(n),
     });
-    this.netTimer = [0, 0, SUPPLY.interval / 2]; // Seiten versetzt rechnen
+    // Seiten versetzt rechnen
+    this.netTimer = [0, ...game.players.map((p) => SUPPLY.interval * (p - 1) / game.players.length)];
     this.tickTimer = 0;
     this.convoys = []; // vorbereitet für LKW-Kolonnen
-    for (let p = 1; p <= 2; p++) this.compute(p);
+    for (const p of game.players) this.compute(p);
   }
 
   step(dt) {
-    for (let p = 1; p <= 2; p++) {
+    for (const p of this.game.players) {
+      if (!this.game.alive(p)) continue;
       this.netTimer[p] -= dt;
       if (this.netTimer[p] <= 0) { this.netTimer[p] = SUPPLY.interval; this.compute(p); }
     }
@@ -56,7 +58,7 @@ export class SupplyNetwork {
     danger.fill(0);
     const r = SUPPLY.enemyKm * KM / CELL;
     for (const e of g.units) {
-      if (e.owner === p) continue;
+      if (!g.hostile(e.owner, p)) continue;
       const cx = e.x / CELL, cy = e.y / CELL;
       for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(h - 1, Math.ceil(cy + r)); y++) {
         for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(w - 1, Math.ceil(cx + r)); x++) {

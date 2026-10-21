@@ -1,30 +1,38 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
-  CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY,
+  CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, WIN_SHARE, START_UNITS,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=74';
-import { mulberry32 } from './rng.js?v=74';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=74';
-import { HQManager } from './hq.js?v=74';
-import { SupplyNetwork } from './supply.js?v=74';
+} from './config.js?v=76';
+import { mulberry32 } from './rng.js?v=76';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=76';
+import { HQManager } from './hq.js?v=76';
+import { SupplyNetwork } from './supply.js?v=76';
 
 export class Game {
-  constructor(map) {
+  // opts.players: Zahl der Seiten (2 bis 5; Seite 1 ist der Spieler)
+  // opts.starts: Startstädte je Seite (Index in map.cities, fehlende werden verteilt)
+  constructor(map, opts = {}) {
     this.map = map;
     this.rng = mulberry32((map.seed ^ 0x5bd1e995) >>> 0);
+    const np = Math.max(2, Math.min(5, opts.players || 2));
+    this.players = Array.from({ length: np }, (_, k) => k + 1);
+    const slots = () => Array.from({ length: np + 1 }, () => null);
     this.units = [];
+    // Alle Städte beginnen neutral, jede Seite startet mit einer Stadt
     this.cities = map.cities.map((c, i) => ({
-      id: i, x: c.x, y: c.y, owner: c.owner, prodType: 'light',
+      id: i, x: c.x, y: c.y, owner: 0, prodType: 'light',
       timer: this.rng() * 4, capOwner: 0, capProgress: 0,
     }));
     const n = map.w * map.h;
     this.territory = new Uint8Array(n);
-    this.vision = [null, new Uint8Array(n), new Uint8Array(n)];
-    this.prodMult = [1, 1, 1];
+    this.vision = slots().map((_, p) => (p ? new Uint8Array(n) : null));
+    this.prodMult = slots().map(() => 1);
     this.time = 0;
     this.nextId = 1;
     this.events = [];
     this.winner = 0;
+    this.out = new Set();     // ausgeschiedene Seiten
+    this.allies = new Set();  // Bündnisse als „a:b“ (kleinere Nummer zuerst)
     this.terrTimer = 0;
     this.visTimer = 0;
     this.divisions = [];
@@ -32,101 +40,67 @@ export class Game {
     this.divTimer = 0;
     this.territoryVersion = 0;
     this.visionVersion = 0;
-    this.stats = [null, { lost: 0, built: 0, captured: 0 }, { lost: 0, built: 0, captured: 0 }];
+    this.stats = slots().map((_, p) => (p ? { lost: 0, built: 0, captured: 0 } : null));
+    this.landCells = 0;
+    for (let i = 0; i < n; i++) if (map.cells[i] !== T.DEEP) this.landCells++;
+    this.share = slots().map(() => 0);
 
-    // Startaufstellung: je eigene Stadt 8 Kompanien, noch ohne Division
-    this.orbat = [null, new OrderOfBattle(1), new OrderOfBattle(2)];
-    for (let p = 1; p <= 2; p++) {
-      const own = this.cities.filter((c) => c.owner === p).sort((a, b) => a.y - b.y);
-      this.orbat[p].createStart(this, own);
+    // Start: je Seite eine Stadt mit etwas Land und wenigen Kompanien ohne Division
+    this.orbat = slots().map((_, p) => (p ? new OrderOfBattle(p) : null));
+    this.starts = this.chooseStarts(opts.starts || []);
+    for (const p of this.players) {
+      const c = this.cities[this.starts[p]];
+      c.owner = p;
+      this.paint(p, c.x, c.y, CITY_BORDER);
+      this.orbat[p].createStart(this, c, START_UNITS);
     }
-    this.partitionTerritory();
+    this.updateShares();
     this.supply = new SupplyNetwork(this);
     this.hq = new HQManager(this);
     this.hq.place();
     this.updateVision();
   }
 
-  // Das ganze Land lückenlos aufteilen: jedes Feld gehört der Seite, deren Stadt es
-  // auf dem Landweg am schnellsten erreicht. Gebirge und Wasser bremsen, so folgen
-  // die Grenzen natürlichen Hindernissen.
-  partitionTerritory() {
-    const map = this.map;
-    const { w, h } = map;
-    const n = w * h;
-    const dist = new Float64Array(n).fill(Infinity);
-    const owner = new Uint8Array(n);
-    const cost = (t) => (t === T.MOUNTAIN ? 4 : t === T.WATER ? 2 : t === T.HILL || t === T.FOREST ? 1.3 : 1);
-    const heap = [];
-    const push = (i, d) => {
-      heap.push([d, i]);
-      let k = heap.length - 1;
-      while (k > 0) {
-        const p = (k - 1) >> 1;
-        if (heap[p][0] <= heap[k][0]) break;
-        [heap[p], heap[k]] = [heap[k], heap[p]];
-        k = p;
-      }
-    };
-    const pop = () => {
-      const top = heap[0];
-      const last = heap.pop();
-      if (heap.length) {
-        heap[0] = last;
-        let k = 0;
-        for (;;) {
-          const l = 2 * k + 1, r = l + 1;
-          let m = k;
-          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
-          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
-          if (m === k) break;
-          [heap[m], heap[k]] = [heap[k], heap[m]];
-          k = m;
+  // Startstädte: vorgegebene übernehmen, die übrigen Seiten so verteilen, dass jede neue
+  // Stadt möglichst weit von den schon gewählten entfernt liegt
+  chooseStarts(given) {
+    const starts = [null];
+    const taken = [];
+    const free = (i) => i >= 0 && i < this.cities.length && !taken.includes(i);
+    for (const p of this.players) {
+      let i = given[p];
+      if (!free(i)) {
+        if (!taken.length) {
+          // Erste Seite ohne Vorgabe: die Stadt am weitesten links oben (feste Wahl)
+          i = this.cities.reduce((b, c) => (c.x + c.y < this.cities[b].x + this.cities[b].y ? c.id : b), 0);
+        } else {
+          let bd = -1;
+          for (const c of this.cities) {
+            if (taken.includes(c.id)) continue;
+            const d = Math.min(...taken.map((t) => Math.hypot(this.cities[t].x - c.x, this.cities[t].y - c.y)));
+            if (d > bd) { bd = d; i = c.id; }
+          }
         }
       }
-      return top;
-    };
-    for (const c of this.cities) {
-      if (!c.owner) continue;
-      const i = map.cellIndex(c.x, c.y);
-      dist[i] = 0;
-      owner[i] = c.owner;
-      push(i, 0);
+      starts[p] = i;
+      taken.push(i);
     }
-    const dirs = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.4142], [1, -1, 1.4142], [-1, 1, 1.4142], [-1, -1, 1.4142]];
-    while (heap.length) {
-      const [d, i] = pop();
-      if (d > dist[i]) continue;
-      const x = i % w, y = (i / w) | 0;
-      for (const [dx, dy, len] of dirs) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-        const ni = ny * w + nx;
-        const t = map.cells[ni];
-        if (t === T.DEEP) continue;
-        const nd = d + len * cost(t);
-        if (nd < dist[ni]) {
-          dist[ni] = nd;
-          owner[ni] = owner[i];
-          push(ni, nd);
-        }
-      }
-    }
-    // Abgetrennte Inseln: an die Seite mit der nächstgelegenen Stadt
-    const owned = this.cities.filter((c) => c.owner);
-    for (let i = 0; i < n; i++) {
-      if (map.cells[i] === T.DEEP) continue;
-      if (!owner[i] && owned.length) {
-        const cx = (i % w + 0.5) * CELL, cy = (((i / w) | 0) + 0.5) * CELL;
-        let best = owned[0], bd = Infinity;
-        for (const c of owned) {
-          const dd = Math.hypot(c.x - cx, c.y - cy);
-          if (dd < bd) { bd = dd; best = c; }
-        }
-        owner[i] = best.owner;
-      }
-      this.territory[i] = owner[i];
-    }
+    return starts;
+  }
+
+  // Feindschaft: verschiedene Seiten ohne Bündnis (Neutrale zählen nicht)
+  hostile(a, b) {
+    return !!a && !!b && a !== b && !this.allies.has(a < b ? `${a}:${b}` : `${b}:${a}`);
+  }
+
+  alive(p) { return !this.out.has(p); }
+
+  // Anteil am Land je Seite (für Sieg und Anzeige)
+  updateShares() {
+    const cnt = this.share.map(() => 0);
+    const tr = this.territory;
+    for (let i = 0; i < tr.length; i++) if (tr[i]) cnt[tr[i]]++;
+    for (const p of this.players) this.share[p] = cnt[p] / (this.landCells || 1);
   }
 
   // slot: feste Aufstellung im Ring um die Stadt (für die Startarmee)
@@ -151,7 +125,7 @@ export class Game {
   }
 
   // rivals: feindliche Einheiten in der Nähe; ein Feld bekommt nur, wer näher dran ist.
-  // take = false: nur eigenes (oder freies) Land halten, kein Feindgebiet einnehmen
+  // take = false: nur eigenes Land halten, weder neutrales noch feindliches einnehmen
   paint(owner, x, y, radius, rivals = null, take = true) {
     const { w, h } = this.map;
     const cr = radius / CELL;
@@ -165,7 +139,9 @@ export class Game {
         if (dx * dx + dy * dy > r2) continue;
         const i = yy * w + xx;
         if (this.map.cells[i] === T.DEEP) continue;
-        if (!take && this.territory[i] && this.territory[i] !== owner) continue;
+        const cur = this.territory[i];
+        // Verbündetes Land wird nie eingenommen, neutrales und feindliches nur mit take
+        if (cur !== owner && (!take || (cur && !this.hostile(owner, cur)))) continue;
         if (rivals && rivals.length) {
           const px = (xx + 0.5) * CELL, py = (yy + 0.5) * CELL;
           const own = (px - x) ** 2 + (py - y) ** 2;
@@ -195,7 +171,7 @@ export class Game {
   }
 
   updateVision() {
-    for (let p = 1; p <= 2; p++) this.vision[p].fill(0);
+    for (const p of this.players) this.vision[p].fill(0);
     for (const u of this.units) {
       const t = this.map.cellTerrainAt(u.x, u.y);
       this.markVision(this.vision[u.owner], u.x, u.y, UNIT_VISION * TERRAIN_INFO[t].vision);
@@ -233,7 +209,8 @@ export class Game {
         if (d2 > reach * reach) continue;
         const d = Math.sqrt(d2) || 0.01;
         const nx = dx / d, ny = dy / d;
-        if (a.owner === b.owner) {
+        if (!this.hostile(a.owner, b.owner)) {
+          if (a.owner !== b.owner) continue; // Verbündete gehen aneinander vorbei
           const min = a.r + b.r + 2;
           // Kompanien im Platztausch schleusen sich durch die eigenen Reihen
           const passing = (a.swapUntil > this.time && a.path.length) || (b.swapUntil > this.time && b.path.length);
@@ -328,20 +305,38 @@ export class Game {
       // Grenze liegt zwischen gegnerischen Truppen, nicht hinter ihnen
       const reach = UNIT_BORDER * 2;
       for (const u of this.units) {
-        const rivals = this.units.filter((o) => o.owner !== u.owner &&
+        const rivals = this.units.filter((o) => this.hostile(o.owner, u.owner) &&
           Math.abs(o.x - u.x) < reach && Math.abs(o.y - u.y) < reach);
         this.paint(u.owner, u.x, u.y, UNIT_BORDER, rivals, takesLand(u));
       }
       this.territoryVersion++;
+      this.updateShares();
     }
     this.visTimer -= dt;
     if (this.visTimer <= 0) { this.visTimer = 0.2; this.updateVision(); }
 
-    for (let p = 1; p <= 2; p++) {
-      if (this.citiesOf(p).length === 0 && this.unitsOf(p).length === 0) {
-        this.winner = 3 - p;
-        this.events.push({ type: 'gameover', winner: this.winner });
-      }
+    this.checkEnd();
+  }
+
+  // Ausgeschieden ist, wer weder Städte noch Kompanien hat. Gewonnen hat, wer WIN_SHARE des
+  // Landes hält oder als Einziger übrig ist
+  checkEnd() {
+    for (const p of this.players) {
+      if (this.out.has(p) || this.cities.some((c) => c.owner === p) || this.units.some((u) => u.owner === p)) continue;
+      this.out.add(p);
+      // Ihr übriges Land wird neutral
+      const tr = this.territory;
+      for (let i = 0; i < tr.length; i++) if (tr[i] === p) tr[i] = 0;
+      this.territoryVersion++;
+      this.updateShares();
+      this.events.push({ type: 'eliminated', player: p });
+    }
+    const left = this.players.filter((p) => !this.out.has(p));
+    let winner = left.length === 1 ? left[0] : 0;
+    for (const p of left) if (this.share[p] >= WIN_SHARE) winner = p;
+    if (winner) {
+      this.winner = winner;
+      this.events.push({ type: 'gameover', winner });
     }
   }
 
@@ -374,7 +369,7 @@ export class Game {
     u.nextRetreat = this.time + 2;
     let dx = 0, dy = 0;
     for (const e of this.units) {
-      if (e.owner === u.owner || Math.abs(e.x - u.x) > 150 || Math.abs(e.y - u.y) > 150) continue;
+      if (!this.hostile(e.owner, u.owner) || Math.abs(e.x - u.x) > 150 || Math.abs(e.y - u.y) > 150) continue;
       const d = Math.hypot(e.x - u.x, e.y - u.y) || 1;
       dx += (u.x - e.x) / d; dy += (u.y - e.y) / d;
     }
@@ -476,7 +471,7 @@ export class Game {
   // Gefallene aus der Gliederung austragen und Divisionen für die Rotation sammeln
   updateDivisions() {
     const divs = [];
-    for (let p = 1; p <= 2; p++) {
+    for (const p of this.players) {
       this.orbat[p].prune();
       for (const f of this.orbat[p].all(DIVISION)) {
         divs.push({ owner: p, members: unitsOf(f), formation: f });
@@ -529,18 +524,21 @@ export class Game {
   }
 
   updateCities(dt) {
-    const unitCount = [0, 0, 0];
+    const slots = () => this.share.map(() => 0);
+    const unitCount = slots();
     for (const u of this.units) unitCount[u.owner]++;
-    const cityCount = [0, 0, 0];
+    const cityCount = slots();
     for (const c of this.cities) cityCount[c.owner]++;
 
     for (const c of this.cities) {
-      const present = [0, 0, 0];
+      const present = slots();
       for (const u of this.units) {
         if (Math.abs(u.x - c.x) > CITY_CAPTURE_RADIUS || Math.abs(u.y - c.y) > CITY_CAPTURE_RADIUS) continue;
         if (!u.broken && Math.hypot(u.x - c.x, u.y - c.y) <= CITY_CAPTURE_RADIUS) present[u.owner]++;
       }
-      const invaders = [1, 2].filter((p) => p !== c.owner && present[p] > 0);
+      // Erobern kann nur eine einzige Seite, die mit dem Besitzer verfeindet ist (oder jede bei
+      // neutralen Städten); sind mehrere da, ist die Stadt umkämpft
+      const invaders = this.players.filter((p) => p !== c.owner && present[p] > 0 && (!c.owner || this.hostile(p, c.owner)));
       const defended = c.owner && present[c.owner] > 0;
       if (invaders.length === 1 && !defended) {
         const a = invaders[0];

@@ -3,6 +3,8 @@
 // zusammen. Die Regimenter innerhalb einer Division ordnet das Spiel selbst. Divisionen
 // lassen sich zu Armeen gruppieren (beliebig viele, wie im Krieg flexibel).
 
+import { PLAYER_HUES } from './config.js?v=76';
+
 export const LEVELS = [
   { name: 'Kompanie', short: 'Kp.', echelon: 'I' },
   { name: 'Regiment', short: 'Rgt.', echelon: 'III' },
@@ -33,13 +35,14 @@ export function armyColor(a) {
 }
 
 export function divisionColor(f) {
-  const pal = DIVISION_COLORS[f.owner];
+  const pal = DIVISION_COLORS[f.owner] || [];
   const i = f.colorIndex || 0;
   if (i < pal.length) return pal[i];
   // Ab der 9. Division weitere Töne im Farbbereich der Seite; der Goldene Schnitt
   // verteilt sie so, dass aufeinanderfolgende Nummern gut unterscheidbar bleiben
   const t = ((i - pal.length) * 0.618034) % 1;
-  const hue = f.owner === 1 ? 185 + t * 70 : (340 + t * 55) % 360;
+  const [h0, h1] = PLAYER_HUES[f.owner] || [0, 360];
+  const hue = (h0 + t * (h1 - h0)) % 360;
   return `hsl(${Math.round(hue)}, 85%, ${66 + (i % 3) * 6}%)`;
 }
 
@@ -89,11 +92,9 @@ export class OrderOfBattle {
     return [];
   }
 
-  // Startaufstellung: je eigene Stadt 8 Kompanien (davon 2 Panzer), noch ohne Division
-  createStart(game, cities) {
-    for (const city of cities) {
-      for (let k = 0; k < 8; k++) game.spawnUnit(this.owner, k >= 6 ? 'heavy' : 'light', city, k);
-    }
+  // Startaufstellung: die Kompanien (Typen) im Ring um die Startstadt, noch ohne Division
+  createStart(game, city, types) {
+    types.forEach((type, k) => game.spawnUnit(this.owner, type, city, k));
   }
 
   // Neue Division aus Kompanien bilden (höchstens DIVISION_MAX)

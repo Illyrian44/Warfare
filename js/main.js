@@ -1,19 +1,19 @@
-import { generateMap } from './map.js?v=74';
-import { Game } from './game.js?v=74';
-import { AI } from './ai.js?v=74';
-import { Renderer, isFrontShown } from './render.js?v=74';
-import { Input } from './input.js?v=74';
-import { formationSlots } from './formation.js?v=74';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=74';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=74';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=74';
+import { generateMap } from './map.js?v=76';
+import { Game } from './game.js?v=76';
+import { AI } from './ai.js?v=76';
+import { Renderer, isFrontShown } from './render.js?v=76';
+import { Input } from './input.js?v=76';
+import { formationSlots } from './formation.js?v=76';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=76';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=76';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES } from './config.js?v=76';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
 
 const app = {
   game: null,
-  ai: null,
+  ais: [],
   renderer: null,
   human: 1,
   cam: { x: 0, y: 0, zoom: 1, min: 0.2, max: 6 },
@@ -23,7 +23,7 @@ const app = {
   settings: loadSettings(),
   lastHud: 0,
 
-  start(seed, size, difficulty) {
+  start(seed, size, difficulty, opponents = 1) {
     let map;
     try {
       map = generateMap(seed, size);
@@ -35,8 +35,8 @@ const app = {
       return;
     }
     $('menuError').hidden = true;
-    this.game = new Game(map);
-    this.ai = new AI(this.game, 2, difficulty);
+    this.game = new Game(map, { players: 1 + opponents });
+    this.ais = this.game.players.filter((p) => p !== this.human).map((p) => new AI(this.game, p, difficulty));
     this.fronts = new FrontManager(this.game, this.human);
     this.ui.frontMode = null;
     this.ui.front = null;
@@ -50,8 +50,8 @@ const app = {
     $('supplyBtn').classList.remove('active');
     this.paused = true; // jede Runde beginnt pausiert: erst in Ruhe gliedern und Fronten setzen
     this.setSpeed(1);
-    this.current = { seed, size, difficulty };
-    this.settings = { size, difficulty };
+    this.current = { seed, size, difficulty, opponents };
+    this.settings = { size, difficulty, opponents };
     saveSettings(this.settings);
     this.divBarSig = null;
     this.fitCamera();
@@ -552,6 +552,9 @@ const app = {
       else if (ev.type === 'capture') {
         if (ev.owner === this.human) this.toast(ev.old ? 'Feindliche Stadt erobert!' : 'Neutrale Stadt eingenommen!', 'good');
         else if (ev.old === this.human) this.toast('Eine Stadt ist gefallen!', 'bad');
+      } else if (ev.type === 'eliminated') {
+        if (ev.player === this.human) { g.winner = -1; this.showEnd(0); } // ohne Städte und Truppen
+        else this.toast(`${PLAYER_NAMES[ev.player]} ist ausgeschieden`, 'good');
       } else if (ev.type === 'gameover') this.showEnd(ev.winner);
     }
     g.events.length = 0;
@@ -573,8 +576,11 @@ const app = {
     $('endTitle').className = won ? 'good' : 'bad';
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     const st = g.stats[this.human];
+    const why = won
+      ? (g.players.some((p) => p !== this.human && g.alive(p)) ? `Du hältst ${Math.round(g.share[this.human] * 100)} % des Landes.` : 'Alle Gegner sind ausgeschieden.')
+      : winner > 0 ? `${PLAYER_NAMES[winner]} hält ${Math.round(g.share[winner] * 100)} % des Landes.` : 'Du hast keine Städte und Truppen mehr.';
     $('endStats').innerHTML =
-      `Spielzeit: ${m}:${String(s).padStart(2, '0')}<br>` +
+      `${why}<br>Spielzeit: ${m}:${String(s).padStart(2, '0')}<br>` +
       `Einheiten gebaut: ${st.built} · verloren: ${st.lost}<br>` +
       `Städte erobert: ${st.captured}`;
     $('end').hidden = false;
@@ -657,12 +663,16 @@ const app = {
   updateHud() {
     const g = this.game;
     this.updateDivBar();
-    const myC = g.citiesOf(this.human).length, aiC = g.citiesOf(2).length;
-    const neutral = g.cities.length - myC - aiC;
+    const myC = g.citiesOf(this.human).length;
+    const neutral = g.cities.filter((c) => !c.owner).length;
     const myU = g.unitsOf(this.human).length;
-    $('hudCities').innerHTML =
-      `<span class="dot blue"></span>${myC} <span class="muted">Städte</span>` +
-      ` <span class="dot red"></span>${aiC}` + (neutral ? ` <span class="dot grey"></span>${neutral}` : '');
+    // Je Seite: Städte und Landanteil; ausgeschiedene durchgestrichen
+    const side = (p) => `<span class="side${g.alive(p) ? '' : ' out'}" title="${PLAYER_NAMES[p]}: ${Math.round(g.share[p] * 100)} % des Landes">` +
+      `<span class="dot" style="background:${PLAYER_COLORS[p]}"></span>${g.citiesOf(p).length}` +
+      `<small class="muted">·${Math.round(g.share[p] * 100)}%</small></span>`;
+    $('hudCities').innerHTML = side(this.human) + ' <span class="muted">Städte</span> ' +
+      g.players.filter((p) => p !== this.human).map(side).join(' ') +
+      (neutral ? ` <span class="dot grey"></span>${neutral}` : '');
     $('hudUnits').innerHTML = `${myU}<span class="muted">/${myC * UNITS_PER_CITY} Einheiten</span>`;
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     $('hudTime').textContent = `${m}:${String(s).padStart(2, '0')}`;
@@ -684,7 +694,7 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-new Input(canvas, app);
+app.input = new Input(canvas, app);
 
 let last = performance.now();
 let acc = 0;
@@ -696,7 +706,7 @@ function frame(now) {
       acc += dt * app.speed;
       let steps = 0;
       while (acc >= STEP && steps < 12) {
-        app.ai.update(STEP);
+        for (const ai of app.ais) ai.update(STEP);
         app.fronts.update(STEP);
         app.game.step(STEP);
         acc -= STEP;
@@ -729,11 +739,12 @@ const choice = (groupId) => $(groupId).querySelector('button.active').dataset.va
 
 setupChoice('diffChoice', app.settings.difficulty || 'medium');
 setupChoice('sizeChoice', app.settings.size || 'medium');
+setupChoice('oppChoice', String(app.settings.opponents || 1));
 $('seedInput').value = randomSeed();
 $('seedRandom').onclick = () => { $('seedInput').value = randomSeed(); };
 $('startBtn').onclick = () => {
   const seed = Math.max(1, parseInt($('seedInput').value, 10) || randomSeed());
-  app.start(seed, choice('sizeChoice'), choice('diffChoice'));
+  app.start(seed, choice('sizeChoice'), choice('diffChoice'), +choice('oppChoice'));
 };
 $('pauseBtn').onclick = () => app.togglePause();
 $('speedBtn').onclick = () => app.setSpeed(app.speed >= 3 ? 1 : app.speed + 1);
@@ -814,8 +825,8 @@ $('newArmyBtn').onclick = () => app.newArmy();
 $('unArmyBtn').onclick = () => app.removeFromArmy();
 $('autoBtn').onclick = () => app.autoOrganize();
 $('centerBtn').onclick = () => app.fitCamera();
-$('againBtn').onclick = () => app.start(app.current.seed, app.current.size, app.current.difficulty);
-$('newBtn').onclick = () => app.start(randomSeed(), app.current.size, app.current.difficulty);
+$('againBtn').onclick = () => app.start(app.current.seed, app.current.size, app.current.difficulty, app.current.opponents);
+$('newBtn').onclick = () => app.start(randomSeed(), app.current.size, app.current.difficulty, app.current.opponents);
 $('endMenuBtn').onclick = () => { $('end').hidden = true; $('menu').hidden = false; $('resumeBtn').hidden = true; };
 
 // Befehlsfeld verschieben (Titelzeile ziehen) und größer oder kleiner machen (Griff unten

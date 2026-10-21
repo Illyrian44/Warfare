@@ -1,5 +1,5 @@
-import { CITY_RADIUS } from './config.js?v=74';
-import { divisionOf, unitsOf } from './orbat.js?v=74';
+import { CITY_RADIUS } from './config.js?v=76';
+import { divisionOf, unitsOf } from './orbat.js?v=76';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -27,6 +27,9 @@ export class Input {
     canvas.addEventListener('pointercancel', (e) => this.cancel(e));
     canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Kein nachgereichter Klick nach dem Antippen: er träfe sonst, was gerade erst über der
+    // Stelle erscheint (z. B. das ✕ des Befehlsfelds) und höbe die neue Auswahl wieder auf
+    canvas.addEventListener('touchend', (e) => e.preventDefault(), { passive: false });
     window.addEventListener('keydown', (e) => this.key(e));
   }
 
