@@ -2,13 +2,13 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS, DIPLOMACY, GROWTH,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=99';
-import { mulberry32 } from './rng.js?v=99';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=99';
-import { HQManager } from './hq.js?v=99';
-import { SupplyNetwork } from './supply.js?v=99';
-import { Trade } from './trade.js?v=99';
-import { Production } from './production.js?v=99';
+} from './config.js?v=100';
+import { mulberry32 } from './rng.js?v=100';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=100';
+import { HQManager } from './hq.js?v=100';
+import { SupplyNetwork } from './supply.js?v=100';
+import { Trade } from './trade.js?v=100';
+import { Production } from './production.js?v=100';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
