@@ -1,11 +1,12 @@
-import { unitStrength } from './game.js?v=92';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=92';
-import { pointAt } from './fronts.js?v=92';
+import { unitStrength } from './game.js?v=95';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=95';
+import { pointAt } from './fronts.js?v=95';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
 const SUPPORT_RADIUS = 80;   // eigene Kompanien in diesem Umkreis zählen als Unterstützung
-const DONOR_RANGE = 320;     // so weit holt das HQ Verstärkung heran
+const DONOR_RANGE = 200;     // so weit holt das HQ Verstärkung heran
+const HELP_RANGE = 200;      // so weit darf eine Kompanie zum Aushelfen oder Abriegeln marschieren
 const COMMAND_RANGE = 380;   // Durchbrüche in diesem Umkreis um das HQ werden abgeriegelt
 const ORDER_TIME = 14;       // Sekunden, die ein HQ-Befehl Vorrang hat
 const LOAN_TIME = 30;        // so lange hilft eine Kompanie im Nachbarabschnitt aus
@@ -138,17 +139,19 @@ export class HQManager {
       if (asker && asker.alive && best) this.radio(asker, best.div.hq, `${div.name} bittet um Unterstützung`);
       if (!best || best.free.length < 2) continue; // Nachbar hat selbst keine Reserven
       const send = Math.min(Math.ceil(gaps.length / 2), Math.floor(best.free.length / 2), 3);
+      let sent = 0;
       for (let k = 0; k < send; k++) {
         const pt = gaps[Math.floor((k + 0.5) * gaps.length / send)];
-        let u = null, bd = Infinity;
+        // nur Kompanien in der Nähe der Lücke, und nur auf einem Weg hinter der eigenen Linie
+        let u = null, bd = HELP_RANGE;
         for (const c of best.free) { const d = Math.hypot(c.x - pt.x, c.y - pt.y); if (d < bd) { bd = d; u = c; } }
-        if (!u) break;
+        if (!u) continue;
         best.free.splice(best.free.indexOf(u), 1);
-        this.send(u, pt.x, pt.y, 'aushelfen', true, LOAN_TIME);
+        if (this.send(u, pt.x, pt.y, 'aushelfen', true, LOAN_TIME)) sent++;
       }
-      if (send > 0) {
+      if (sent > 0) {
         div.helpUntil = g.time + LOAN_TIME;
-        this.radio(best.div.hq, asker && asker.alive ? asker : best.div.hq, `${best.div.name} übernimmt Abschnitt (${send} Kp.)`);
+        this.radio(best.div.hq, asker && asker.alive ? asker : best.div.hq, `${best.div.name} übernimmt Abschnitt (${sent} Kp.)`);
       }
     }
   }
@@ -191,7 +194,7 @@ export class HQManager {
       const cx = comps.reduce((a, u) => a + u.x, 0) / comps.length;
       const cy = comps.reduce((a, u) => a + u.y, 0) / comps.length;
       const d = Math.hypot(cx - target.x, cy - target.y);
-      if (d < bestD) { bestD = d; best = comps; helper = !own.includes(reg); }
+      if (d < bestD && d < HELP_RANGE) { bestD = d; best = comps; helper = !own.includes(reg); }
     }
     if (!best) return false;
     // Sperrstellung zwischen Durchbrecher und Stadt beziehen, quer zur Stoßrichtung
@@ -199,12 +202,13 @@ export class HQManager {
     for (const c of cities) { const dc = Math.hypot(c.x - target.x, c.y - target.y); if (dc < cd) { cd = dc; city = c; } }
     const ux = (city.x - target.x) / (cd || 1), uy = (city.y - target.y) / (cd || 1);
     const bx = target.x + ux * Math.min(45, cd * 0.5), by = target.y + uy * Math.min(45, cd * 0.5);
+    let sent = 0;
     best.forEach((u, k) => {
       const off = (k - (best.length - 1) / 2) * 16;
-      this.send(u, bx - uy * off, by + ux * off, 'abriegeln', helper);
+      if (this.send(u, bx - uy * off, by + ux * off, 'abriegeln', helper)) sent++;
     });
     f.sealUntil = g.time + SEAL_COOLDOWN;
-    return true;
+    return sent > 0;
   }
 
   // Kräfte angleichen: Kompanie mit größtem Überdruck bekommt Verstärkung aus ruhigen Abschnitten
@@ -233,23 +237,34 @@ export class HQManager {
       const dl = Math.hypot(hot.u.x - ex, hot.u.y - ey) || 1;
       const side = (moves % 2 ? 1 : -1) * 14;
       const nx = (hot.u.x - ex) / dl, ny = (hot.u.y - ey) / dl;
-      this.send(donor.u, hot.u.x + nx * 12 - ny * side, hot.u.y + ny * 12 + nx * side, 'verstärken');
+      if (!this.send(donor.u, hot.u.x + nx * 12 - ny * side, hot.u.y + ny * 12 + nx * side, 'verstärken')) {
+        donor.pressure = Infinity; // kein sicherer Weg: diese Kompanie nicht nochmal fragen
+        continue;
+      }
       hot.gap -= unitStrength(donor.u);
       donor.pressure = Infinity; // nicht doppelt verwenden
       moves++;
     }
   }
 
-  // helper: Regiment eines Nachbarn; behält seinen Frontplatz und kehrt nach dem Befehl zurück
+  // helper: Regiment eines Nachbarn; behält seinen Frontplatz und kehrt nach dem Befehl zurück.
+  // Nur auf einem Weg hinter der eigenen Linie: führt keiner durch eigenes (verbündetes oder
+  // neutrales) Land, unterbleibt der Befehl (liefert false)
   send(u, x, y, task, helper = false, duration = ORDER_TIME) {
     const g = this.game;
-    u.path = g.map.findPath(u.x, u.y, x, y, g.routingFor(u)) || [];
+    const fm = g.routers && g.routers[u.owner];
+    const safe = fm ? fm.safeRouting() : null;
+    const path = g.map.findPath(u.x, u.y, x, y, safe ? { cost: safe.cost, safe: safe.safe, strict: true } : null);
+    if (!path) return false;
+    for (const q of path) if (g.hostile(u.owner, g.territory[g.map.cellIndex(q.x, q.y)])) return false;
+    u.path = path;
     u.stuck = 0;
     u.hqOrder = g.time + duration;
     u.hqTask = task;
     if (u.ai) u.ai = null;
     // Die Front übernimmt die neue Stellung als Platz der Kompanie
     if (u.front && !helper) u.frontGoal = { x, y };
+    return true;
   }
 }
 

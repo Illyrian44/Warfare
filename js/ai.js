@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX } from './config.js?v=92';
-import { unitStrength } from './game.js?v=92';
-import { mulberry32 } from './rng.js?v=92';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=92';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=92';
+import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX } from './config.js?v=95';
+import { unitStrength } from './game.js?v=95';
+import { mulberry32 } from './rng.js?v=95';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=95';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=95';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -50,7 +50,7 @@ export class AI {
     let total = myUnits.length + prod.ordersOf(this.me).length;
     const cities = myCities.slice().sort((a, b) => g.citySize(b) - g.citySize(a));
     for (const c of cities) {
-      while (total < g.capacity(this.me) && prod.orders.filter((o) => o.city === c.id).length < prod.citySlots(c)) {
+      while (total < this.armyCap() && prod.orders.filter((o) => o.city === c.id).length < prod.citySlots(c)) {
         const type = this.rng() < this.cfg.heavyRatio && prod.canTrain(c, 'heavy') ? 'heavy' : 'light';
         if (!prod.order(this.me, c.id, type)) return;
         total++;
@@ -143,6 +143,14 @@ export class AI {
       const cand = alive.filter((q) => q !== me && this.wantsAlly(q, alive)).sort((a, b) => this.power(b) - this.power(a));
       if (cand.length) g.offerAlliance(me, cand[0]);
     }
+  }
+
+  // Richtwert für die Truppenstärke: Städte × 10, mit Geld im Überfluss bis zum Doppelten
+  // (sonst häuft eine reiche KI nur Geld an und zwei gleich starke Seiten erstarren)
+  armyCap() {
+    const g = this.game;
+    const rich = Math.max(0, g.eco[this.me].money - 800) / 3000;
+    return Math.round(g.capacity(this.me) * Math.min(2, 1 + rich));
   }
 
   visibleEnemies() {
@@ -266,7 +274,7 @@ export class AI {
     const freeList = [...free];
     const sum = (list) => list.reduce((a, u) => a + unitStrength(u), 0);
     const need = bestEst * this.cfg.attackFactor + (best.owner === 0 ? 0.5 : 2);
-    const maxed = myUnits.length >= g.capacity(me) - 1;
+    const maxed = myUnits.length >= this.armyCap() - 1;
     const committed = freeList.filter((u) => u.ai && u.ai.role === 'attack' && u.ai.tag === best.id);
     const committedStrength = sum(committed);
 
@@ -448,10 +456,13 @@ export class AI {
       units.some((u) => Math.hypot(u.x - e.x, u.y - e.y) < 180)));
     // An der Obergrenze der Truppenzahl hilft Warten nicht mehr: dann genügt knappe
     // Überlegenheit (haltende Fronten nehmen kein Land ein, nur Angriffe bewegen die Grenze)
-    const maxed = g.units.filter((u) => u.owner === this.me).length >= g.capacity(this.me) - 1;
-    const push = maxed ? Math.min(this.cfg.frontPush, 1.1) : this.cfg.frontPush;
+    // Ebenso, wenn diese Seite deutlich stärker ist als jede feindliche (Endphase entscheiden)
+    const maxed = g.units.filter((u) => u.owner === this.me).length >= this.armyCap() - 1;
+    const foes = g.players.filter((q) => g.alive(q) && g.hostile(this.me, q));
+    const superior = foes.length > 0 && this.power(this.me) > 1.3 * Math.max(...foes.map((q) => this.power(q)));
+    const push = maxed || superior ? Math.min(this.cfg.frontPush, 1.1) : this.cfg.frontPush;
     if (sum(units) <= sum([...defenders]) * push + 2) {
-      if (maxed) this.limitedPush(ready, enemies);
+      if (maxed || superior) this.limitedPush(ready, enemies);
       return;
     }
     // Ziellinie quer hinter der Stadt, auf die Angreifer aufgeteilt

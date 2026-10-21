@@ -1,4 +1,4 @@
-import { CELL, T, TERRAIN_INFO, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=92';
+import { CELL, T, TERRAIN_INFO, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=95';
 
 // Echte Karten (maps/*.json, gebaut mit scripts/build-maps.mjs aus Natural Earth und
 // offenen Höhendaten). Höhe in der Spielskala 0..1, siehe classify.
@@ -162,7 +162,8 @@ export class GameMap {
   // A* auf dem Zellgitter, Kosten = Weglänge / Geländetempo. Liefert Weltpunkte.
   // opts.cost(i): Zusatzkosten je Zelle (z. B. Feindgebiet), opts.safe(x, y): Abkürzungen nur über sichere Punkte.
   // Mit Zusatzkosten ist die Schätzung zum Ziel schwach; wird die Suche zu groß (Ziel jenseits
-  // von teurem Gelände), sucht sie stattdessen ohne Zusatzkosten (sonst ruckelt das Spiel)
+  // von teurem Gelände), sucht sie stattdessen ohne Zusatzkosten (sonst ruckelt das Spiel);
+  // mit opts.strict gibt es dann keinen Weg (null)
   findPath(sx, sy, tx, ty, opts = null) {
     const { w, h } = this;
     const start = this.cellIndex(sx, sy);
@@ -203,7 +204,7 @@ export class GameMap {
       if (closed[cur] === stamp) continue;
       if (cur === goal) { found = true; break; }
       closed[cur] = stamp;
-      if (opts && opts.cost && ++expanded > COST_EXPAND_MAX) return this.findPath(sx, sy, tx, ty, null);
+      if (opts && opts.cost && ++expanded > COST_EXPAND_MAX) return opts.strict ? null : this.findPath(sx, sy, tx, ty, null);
       const cx = cur % w, cy = Math.floor(cur / w);
       const curSpeed = this.cellSpeed(cur) || 0.5;
       for (const [dx, dy, len] of dirs) {

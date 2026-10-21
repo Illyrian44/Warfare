@@ -23,7 +23,7 @@ const { KM } = await load('config');
 
 const STEP = 1 / 30;
 // Sekunden Spielzeit, bis die Partie entschieden sein muss (mit mehr Seiten dauert es länger)
-const maxTime = (np) => (np >= 5 ? 30 : 20) * 60;
+const maxTime = (np) => (np >= 5 ? 40 : 20) * 60;
 // Zufall der Partie, Karte, Zahl der Seiten (alle von der KI gespielt)
 const CASES = [[1, 'balkan', 2], [42, 'mitteleuropa', 3], [777, 'balkan', 5]];
 

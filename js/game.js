@@ -2,13 +2,13 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS, DIPLOMACY, GROWTH,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=92';
-import { mulberry32 } from './rng.js?v=92';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=92';
-import { HQManager } from './hq.js?v=92';
-import { SupplyNetwork } from './supply.js?v=92';
-import { Trade } from './trade.js?v=92';
-import { Production } from './production.js?v=92';
+} from './config.js?v=95';
+import { mulberry32 } from './rng.js?v=95';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=95';
+import { HQManager } from './hq.js?v=95';
+import { SupplyNetwork } from './supply.js?v=95';
+import { Trade } from './trade.js?v=95';
+import { Production } from './production.js?v=95';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -799,6 +799,7 @@ export class Game {
           c.owner = a; c.capOwner = 0; c.capProgress = 0;
           this.stats[a].captured++;
           this.paint(a, c.x, c.y, CITY_BORDER);
+          this.production.cityLost(c); // Aufträge der Stadt verfallen sofort
           this.events.push({ type: 'capture', city: c, owner: a, old });
         }
       } else if (c.capProgress > 0) {

@@ -1,5 +1,5 @@
-import { UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX } from './config.js?v=92';
-import { DIVISION, DIVISION_MAX, strength, unitsOf, centerOf } from './orbat.js?v=92';
+import { UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX } from './config.js?v=95';
+import { DIVISION, DIVISION_MAX, strength, unitsOf, centerOf } from './orbat.js?v=95';
 
 // Ausbildung über das Baumenü: Aufträge je Stadt. Eine Stadt bildet je nach Größe 1 bis 3
 // Kompanien gleichzeitig aus (citySlots), die übrigen Aufträge warten in ihrer Reihenfolge.
@@ -124,6 +124,16 @@ export class Production {
     const e = this.game.eco[c.construction.owner];
     e.money += c.construction.cost;
     e.spent -= c.construction.cost;
+    c.construction = null;
+  }
+
+  // Stadt erobert: ihre Ausbildungsaufträge und ein laufender Bau verfallen
+  cityLost(c) {
+    const lost = this.orders.filter((o) => o.city === c.id);
+    if (lost.length) {
+      this.orders = this.orders.filter((o) => o.city !== c.id);
+      for (const o of lost) if (o.group) this.finishGroup(o.group);
+    }
     c.construction = null;
   }
 

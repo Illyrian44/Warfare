@@ -7,7 +7,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=92">
+  <link rel="stylesheet" href="css/style.css?v=95">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -134,7 +134,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 92</small>
+      <small id="version" class="muted">Version 95</small>
     </div>
   </div>
 
@@ -179,7 +179,7 @@
         <li><b>Straßen</b> verbinden die Städte. Auf Straßen sind Einheiten 60&nbsp;% schneller, Brücken führen über Seen und Flüsse. Die Wegfindung nutzt Straßen automatisch – ideal für Nachschub und schnelle Verlegungen.</li>
         <li><b>Gliederung:</b> Armee (XXXX) → Division (XX) → Regiment (III) → Kompanie (I). Eine Division hat höchstens 12 Kompanien; die Regimenter (2–3 Kompanien, Infanterie und Panzer getrennt) ordnet das Spiel selbst. Leere Divisionen lösen sich auf, ihre Nummer und Farbe werden wieder frei. Einzeln ausgebildete Kompanien entstehen ohne Division; Divisionsvorlagen und Verstärkungen kommen gleich in ihre Division. Auf der Karte werden Kompanien derselben Division zusammengefasst, sobald sich ihre Symbole überdecken würden; Symbol und Name zeigen den kleinsten gemeinsamen Verband mit Stärke wie „5/8“, Kompanien ohne Division erscheinen als „n Kp.“. Kompanien auf dem Marsch werden nie zusammengefasst. Antippen wählt die gezeigte Gruppe, weiteres Antippen die Division und dann die Kompanie. Fällt eine Kompanie im Gefecht unter 25&nbsp;%, tauscht sie den Platz mit einer frischen Kompanie ihrer Division in der Nähe.</li>
         <li><b>Divisionen oder Reserve?</b> Divisionen halten Fronten, rotieren Verwundete und werden von ihrem HQ geführt. Kompanien ohne Division sind frei verfügbar – als Reserve, zum Erobern von Städten oder für eigene Wege, aber ohne HQ-Unterstützung.</li>
-        <li><b>Divisions-HQs</b> (Symbol mit Stab, „HQ“ und XX) stehen hinter der Linie und zählen nicht als Einheiten. In der Verteidigung schicken sie ruhige Kompanien dorthin, wo der Feind überlegen ist, und riegeln Durchbrüche mit einem freien Regiment ab. <b>HQs funken miteinander</b> (gestrichelte Linie zwischen den HQs): Ist der Frontabschnitt einer Division weitgehend leer, bittet ihr HQ die Nachbarfronten um Hilfe, und der Nachbar mit Reserven übernimmt den Abschnitt vorübergehend mit bis zu 3 Kompanien. Angriffe, Rotation und deine eigenen Befehle haben Vorrang.</li>
+        <li><b>Divisions-HQs</b> (Symbol mit Stab, „HQ“ und XX) stehen hinter der Linie und zählen nicht als Einheiten. In der Verteidigung schicken sie ruhige Kompanien dorthin, wo der Feind überlegen ist, und riegeln Durchbrüche mit einem freien Regiment ab. <b>HQs funken miteinander</b> (gestrichelte Linie zwischen den HQs): Ist der Frontabschnitt einer Division weitgehend leer, bittet ihr HQ die Nachbarfronten um Hilfe, und der Nachbar mit Reserven übernimmt den Abschnitt vorübergehend mit bis zu 3 Kompanien. Angriffe, Rotation und deine eigenen Befehle haben Vorrang. Geholfen wird nur aus der Nähe (bis etwa 20 Felder) und nur auf Wegen hinter der eigenen Linie – nie quer durch Feindesland.</li>
         <li><b>Divisionsfarben:</b> Jede Division hat einen eigenen Ton in der Farbe ihrer Seite (deine Blautöne, beim Gegner Rot-, Grün-, Gelb- oder Violetttöne) – auf der Karte, beim HQ, als Band hinter ihrer Front und in der Divisionsleiste. Die Leiste zeigt je Division Symbol, Stärke und Regimenter; 〰 heißt, die Division hält eine Front. Antippen wählt die Division aus und zeigt sie auf der Karte.</li>
         <li><b>Einheiten:</b> Infanterie (leicht) marschiert mit 10&nbsp;km/h und ist günstig. Panzer (schwer) fahren 18&nbsp;km/h, halten mehr aus und schlagen härter zu – am besten auf offener Ebene. Auf Straßen sind beide 60&nbsp;% schneller, Wald, Hügel und Wasser bremsen.</li>
         <li><b>Karten:</b> Balkan und Mitteleuropa nach echter Geografie – Küsten, Gebirge, Flüsse, Seen, Fernstraßen und die großen Städte mit ihren Namen. Flüsse sind langsam zu durchqueren und schwer anzugreifen, Straßen führen über Brücken und durch Pässe. Grau ist Ausland: sichtbar, aber nicht spielbar. Ein Feld misst etwa 6&nbsp;km; das Tempo ist für flüssiges Spiel stilisiert (Einheiten kommen schneller voran als in Wirklichkeit). Kartendaten: Natural Earth (gemeinfrei), Höhen: Terrain Tiles von Mapzen/Tilezen (AWS Open Data).</li>
@@ -207,6 +207,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=92"></script>
+  <script type="module" src="js/main.js?v=95"></script>
 </body>
 </html>
