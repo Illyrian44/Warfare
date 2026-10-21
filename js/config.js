@@ -100,12 +100,6 @@ export const MAX_AI = 4;
 export const WIN_SHARE = 0.7;          // so viel Land gewinnt die Runde
 export const START_UNITS = ['light', 'light', 'light', 'heavy']; // Startkompanien je Seite
 
-export const MAP_SIZES = {
-  small: { w: 120, h: 72, pairs: 4, minDist: 17 },
-  medium: { w: 160, h: 96, pairs: 6, minDist: 18 },
-  large: { w: 208, h: 120, pairs: 8, minDist: 20 },
-};
-
 export const DIFFICULTY = {
   easy: { name: 'Leicht', interval: 2.4, seeAll: false, prodMult: 0.8, heavyRatio: 0.15, retreatAt: 0.2, attackFactor: 1.0, frontShare: 0.35, frontPush: 2.6, rotate: false },
   medium: { name: 'Mittel', interval: 1.2, seeAll: false, prodMult: 1.0, heavyRatio: 0.3, retreatAt: 0.33, attackFactor: 1.3, frontShare: 0.45, frontPush: 2.0, rotate: true },

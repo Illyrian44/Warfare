@@ -1,15 +1,16 @@
-import { generateMap } from './map.js?v=78';
-import { Game } from './game.js?v=78';
-import { AI } from './ai.js?v=78';
-import { Renderer, isFrontShown } from './render.js?v=78';
-import { Input } from './input.js?v=78';
-import { formationSlots } from './formation.js?v=78';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=78';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=78';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS } from './config.js?v=78';
+import { loadMap, MAPS } from './map.js?v=81';
+import { Game } from './game.js?v=81';
+import { AI } from './ai.js?v=81';
+import { Renderer, isFrontShown } from './render.js?v=81';
+import { Input } from './input.js?v=81';
+import { formationSlots } from './formation.js?v=81';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=81';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=81';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS } from './config.js?v=81';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
+const VERSION = '81'; // für Kartendaten, siehe scripts/bump-version.sh
 
 const app = {
   game: null,
@@ -23,13 +24,14 @@ const app = {
   settings: loadSettings(),
   lastHud: 0,
 
-  // Ohne startCity: erst die Karte zeigen und die Startstadt wählen lassen (pickStart)
-  start(seed, size, difficulty, opponents = 1, startCity = null) {
+  // Ohne startCity: erst die Karte zeigen und die Startstadt wählen lassen (pickStart).
+  // seed: Zufall dieser Partie (KI, Produktion), „Nochmal“ spielt sie gleich wieder
+  async start(seed, mapId, difficulty, opponents = 1, startCity = null) {
     let map;
     try {
-      map = generateMap(seed, size);
+      map = await loadMap(mapId, seed, VERSION);
     } catch {
-      $('menuError').textContent = `Karte #${seed} ließ sich nicht erzeugen – bitte eine andere Karten-Nummer wählen.`;
+      $('menuError').textContent = 'Die Karte ließ sich nicht laden – bitte nochmal versuchen.';
       $('menuError').hidden = false;
       $('end').hidden = true;
       $('menu').hidden = false;
@@ -53,8 +55,8 @@ const app = {
     $('supplyBtn').classList.remove('active');
     this.paused = true; // jede Runde beginnt pausiert: erst in Ruhe gliedern und Fronten setzen
     this.setSpeed(1);
-    this.current = { seed, size, difficulty, opponents };
-    this.settings = { size, difficulty, opponents };
+    this.current = { seed, map: mapId, difficulty, opponents };
+    this.settings = { map: mapId, difficulty, opponents };
     saveSettings(this.settings);
     this.divBarSig = null;
     this.fitCamera();
@@ -65,7 +67,7 @@ const app = {
     $('pausedBanner').hidden = preview;
     $('pickBanner').hidden = !preview;
     $('resumeBtn').hidden = true;
-    $('seedLabel').textContent = `Karte #${seed} · ${DIFFICULTY[difficulty].name}`;
+    $('seedLabel').textContent = `${map.name} · 1 Feld ≈ ${map.kmPerCell} km · ${DIFFICULTY[difficulty].name}`;
     this.ui.pickHover = null;
     this.updateSelectionInfo();
     if (preview) return;
@@ -86,12 +88,12 @@ const app = {
 
   // Startstadt gewählt: das eigentliche Spiel beginnt dort, die KIs verteilen sich
   // möglichst weit entfernt
-  pickStart(w) {
+  async pickStart(w) {
     const c = w ? this.cityAt(w) : this.game.cities[Math.floor(Math.random() * this.game.cities.length)];
     if (!c) { this.toast('Tippe auf eine Stadt (gelber Kreis), um dort zu beginnen'); return; }
-    const { seed, size, difficulty, opponents } = this.current;
+    const { seed, map, difficulty, opponents } = this.current;
     const cam = { ...this.cam };
-    this.start(seed, size, difficulty, opponents, c.id);
+    await this.start(seed, map, difficulty, opponents, c.id);
     if (window.innerWidth >= 700) Object.assign(this.cam, cam); // Ansicht beibehalten
   },
 
@@ -766,14 +768,10 @@ function setupChoice(groupId, value) {
 const choice = (groupId) => $(groupId).querySelector('button.active').dataset.value;
 
 setupChoice('diffChoice', app.settings.difficulty || 'medium');
-setupChoice('sizeChoice', app.settings.size || 'medium');
+$('mapChoice').innerHTML = MAPS.map((m) => `<button data-value="${m.id}">${m.name}</button>`).join('');
+setupChoice('mapChoice', MAPS.some((m) => m.id === app.settings.map) ? app.settings.map : MAPS[0].id);
 setupChoice('oppChoice', String(app.settings.opponents || 1));
-$('seedInput').value = randomSeed();
-$('seedRandom').onclick = () => { $('seedInput').value = randomSeed(); };
-$('startBtn').onclick = () => {
-  const seed = Math.max(1, parseInt($('seedInput').value, 10) || randomSeed());
-  app.start(seed, choice('sizeChoice'), choice('diffChoice'), +choice('oppChoice'));
-};
+$('startBtn').onclick = () => app.start(randomSeed(), choice('mapChoice'), choice('diffChoice'), +choice('oppChoice'));
 $('pauseBtn').onclick = () => app.togglePause();
 $('speedBtn').onclick = () => app.setSpeed(app.speed >= 3 ? 1 : app.speed + 1);
 // Die Hilfe hebt nur eine Pause auf, die sie selbst ausgelöst hat
@@ -791,7 +789,6 @@ $('helpClose').onclick = () => {
 $('menuHelpBtn').onclick = () => { $('help').hidden = false; helpPaused = false; };
 $('menuBtn').onclick = () => {
   if (!app.paused) app.togglePause();
-  $('seedInput').value = randomSeed();
   $('menu').hidden = false;
   $('resumeBtn').hidden = false;
 };
@@ -854,8 +851,8 @@ $('newArmyBtn').onclick = () => app.newArmy();
 $('unArmyBtn').onclick = () => app.removeFromArmy();
 $('autoBtn').onclick = () => app.autoOrganize();
 $('centerBtn').onclick = () => app.fitCamera();
-$('againBtn').onclick = () => app.start(app.current.seed, app.current.size, app.current.difficulty, app.current.opponents);
-$('newBtn').onclick = () => app.start(randomSeed(), app.current.size, app.current.difficulty, app.current.opponents);
+$('againBtn').onclick = () => app.start(app.current.seed, app.current.map, app.current.difficulty, app.current.opponents);
+$('newBtn').onclick = () => app.start(randomSeed(), app.current.map, app.current.difficulty, app.current.opponents);
 $('endMenuBtn').onclick = () => { $('end').hidden = true; $('menu').hidden = false; $('resumeBtn').hidden = true; };
 
 // Befehlsfeld verschieben (Titelzeile ziehen) und größer oder kleiner machen (Griff unten

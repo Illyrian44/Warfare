@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=78';
-import { classify } from './map.js?v=78';
-import { frontBadge, pointAt } from './fronts.js?v=78';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=78';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=81';
+import { classify } from './map.js?v=81';
+import { frontBadge, pointAt } from './fronts.js?v=81';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=81';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -141,6 +141,11 @@ export class Renderer {
           k = Math.max(0.7, Math.min(1.3, k));
           r *= k; g *= k; b *= k;
         }
+        // Ausland: blass und grau, nicht spielbar
+        if (map.off[map.cellIndex(wx, wy)] && t !== T.DEEP) {
+          const grey = (r + g + b) / 3;
+          r = grey * 0.35 + 205 * 0.65; g = grey * 0.35 + 205 * 0.65; b = grey * 0.35 + 200 * 0.65;
+        }
         const o = (py * W + px) * 4;
         d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255;
       }
@@ -155,9 +160,15 @@ export class Renderer {
     return c;
   }
 
-  // Straßen als Vektorpfade vorbereiten, damit sie in jeder Zoomstufe scharf bleiben
+  // Straßen und Flüsse als Vektorpfade vorbereiten, damit sie in jeder Zoomstufe scharf bleiben
   buildRoads() {
     const map = this.game.map;
+    this.riverPath = new Path2D();
+    for (const line of map.riverLines) {
+      if (line.length < 2) continue;
+      this.riverPath.moveTo(line[0].x, line[0].y);
+      for (const p of line) this.riverPath.lineTo(p.x, p.y);
+    }
     this.roadPath = new Path2D();
     this.bridgePath = new Path2D();
     for (const line of map.roadLines) {
@@ -166,7 +177,7 @@ export class Renderer {
       for (const p of line) this.roadPath.lineTo(p.x, p.y);
       for (let i = 1; i < line.length; i++) {
         const a = line[i - 1], b = line[i];
-        const t = map.terrainAt((a.x + b.x) / 2, (a.y + b.y) / 2);
+        const t = map.cellTerrainAt((a.x + b.x) / 2, (a.y + b.y) / 2);
         if (t !== T.WATER && t !== T.DEEP) continue;
         this.bridgePath.moveTo(a.x, a.y);
         this.bridgePath.lineTo(b.x, b.y);
@@ -178,6 +189,10 @@ export class Renderer {
     const { ctx } = this;
     if (!this.roadPath) this.buildRoads();
     ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgb(78,150,205)';
+    ctx.lineWidth = Math.max(4, 2 * px);
+    ctx.stroke(this.riverPath);
     ctx.lineCap = 'butt';
     ctx.strokeStyle = '#4a3b2c';
     ctx.lineWidth = Math.max(8, 3.5 * px);
@@ -235,7 +250,7 @@ export class Renderer {
       const cells = g.map.cells;
       for (let i = 0; i < w * h; i++) {
         const o = i * 4;
-        d[o] = 10; d[o + 1] = 14; d[o + 2] = 24; d[o + 3] = vis[i] || cells[i] === T.DEEP ? 0 : 95;
+        d[o] = 10; d[o + 1] = 14; d[o + 2] = 24; d[o + 3] = vis[i] || cells[i] === T.DEEP || g.map.off[i] ? 0 : 95;
       }
       this.fogCanvas.getContext('2d').putImageData(this.fogImg, 0, 0);
     }
@@ -590,6 +605,17 @@ export class Renderer {
         ctx.moveTo(c.x + 3.2, c.y - 3.2); ctx.lineTo(c.x - 3.2, c.y + 3.2);
       }
       ctx.stroke();
+    }
+    // Name der Stadt (stark herausgezoomt ausgeblendet)
+    if (c.name && px < 2.6) {
+      ctx.font = `600 ${11 * px}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.lineWidth = 3 * px;
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeText(c.name, c.x, c.y + R + 4 * px);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(c.name, c.x, c.y + R + 4 * px);
     }
   }
 }

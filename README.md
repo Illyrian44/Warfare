@@ -15,7 +15,8 @@ Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https:
 
 - **Ziel:** 70 % des Landes halten oder als Letzter übrig bleiben, gegen 1–4 KI-Gegner (jeder gegen jeden). Ausgeschieden ist, wer weder Städte noch Truppen hat. Jede Runde beginnt pausiert, damit man in Ruhe gliedern und Fronten setzen kann.
 - **Einheiten:** Infanterie/leicht (10 km/h, günstig) und Panzer/schwer (18 km/h, robust, stark auf Ebenen), dargestellt als NATO-Symbole nach APP-6: Rechteck = eigene, Raute = feindliche Einheit (im Farbton ihrer Division, grau ohne Division), X = Infanterie, Oval = Panzer. Städte produzieren sie; ein Klick auf die eigene Stadt wechselt den Typ.
-- **Maßstab:** 1 Kartenfeld = 1 km, die mittlere Insel misst 160 × 96 km. Bei Tempo 1× vergehen in einer Sekunde 6 Minuten Spielzeit; alle Geschwindigkeiten stehen als km/h in `js/config.js` (Straßen ×1,6).
+- **Karten nach echter Geografie:** Balkan (223 × 135 Felder) und Mitteleuropa (178 × 162 Felder), je etwa 6 km pro Feld. Küsten, Gebirge (Höhen), Flüsse, Seen, Fernstraßen und die größten Städte (deutsche Namen, wo üblich) stammen aus offenen Daten; Land außerhalb der Region und unerreichbare Inseln sind „Ausland“ (sichtbar, nicht spielbar, zählt nicht zum Landanteil). Straßen über Gebirge werden zu Pässen, Flussfelder sind flaches Wasser mit Brücken an den Straßen. Gebaut werden die Kartendateien `maps/*.json` einmalig mit `node scripts/build-maps.mjs <Datenordner>`. Quellen: [Natural Earth](https://www.naturalearthdata.com/) (gemeinfrei) und die Terrain Tiles von Mapzen/Tilezen (AWS Open Data).
+- **Maßstab:** Das Spieltempo ist bewusst stilisiert: Die Mechanik rechnet weiter so, als wäre ein Feld 1 km und eine Sekunde 6 Minuten (alle Geschwindigkeiten als km/h in `js/config.js`, Straßen ×1,6). So fühlt sich das Spiel auf den großen echten Karten so flüssig an wie vorher; auf der Karte kommen Einheiten dadurch schneller voran als in Wirklichkeit.
 - **Gelände:** Ebene, Wald (−25 % Angriff), Hügel (+50 % Angriff, mehr Sicht), Wasser (−50 % Angriff, langsam), Gebirge und tiefes Wasser sind unpassierbar.
 - **Kampf** läuft automatisch. Eingekesselte Einheiten nehmen 50 % mehr Schaden.
 - **Nachschub** (`js/supply.js`): Jede eigene Stadt ist ein Depot. Ein Dijkstra über das eigene Gebiet berechnet die LKW-Fahrzeit zu jedem Feld (Straße 50 km/h, Gelände 4–20 km/h, Feindgebiet sperrt, 2 km um Feinde vierfache Zeit). Jede Kompanie hat einen Vorrat (1/6 je Stunde, im Gefecht doppelt) und fordert Nachschub an; voll bis 3 h Fahrt, nichts ab 8 h. Verbundene Depots teilen sich ihre Lieferleistung, Mangel wird gleichmäßig verteilt (Panzer zählen 1,5-fach); Kessel sind abgeschnitten. Wirkung: Heilen nur mit Vorrat, sonst Abnutzung, Kampfkraft bis 50 %, Panzer ohne Treibstoff langsam. Kartenebene „Nachschub“ (N). LKW-Kolonnen sind vorbereitet (`dispatch()`/`deliver()`/`route()`, `SUPPLY.convoys`), aber noch nicht eingebaut.
@@ -60,7 +61,9 @@ index.html          Oberfläche (Menü, HUD, Divisionsleiste, Hilfe)
 css/style.css       Gestaltung
 js/config.js        Spielwerte (Gelände, Einheiten, Schwierigkeit)
 js/rng.js           Zufallszahlen und Rauschen für die Karte
-js/map.js           Kartengenerator (punktsymmetrische Insel), Straßen und A*-Wegfindung
+js/map.js           Karten laden (maps/*.json), Gelände, Straßen und A*-Wegfindung
+maps/*.json         Kartendaten (Höhe, Wald, Flüsse, Straßen, Ausland, Städte)
+scripts/build-maps.mjs  baut die Kartendaten aus Natural Earth und Höhendaten
 js/orbat.js         Gliederung: Armeen, Divisionen, Regimenter, Kompanien
 js/game.js          Simulation: Bewegung, Kampf, Organisation, Städte, Gebiet, Sicht, Rotation
 js/hq.js            Divisions-HQs: Kräfteausgleich, Abriegeln, Funk zwischen Nachbarfronten
@@ -79,6 +82,6 @@ scripts/bump-version.sh  Versionsnummer gegen veraltete Browser-Caches
 
 GitHub Pages veröffentlicht die Seite direkt aus dem Branch `main` (Settings → Pages → „Deploy from a branch“). Jeder Push aktualisiert das Spiel nach etwa einer Minute.
 
-Vor dem Veröffentlichen `npm test` ausführen (Node 18 oder neuer): Die KI spielt auf allen drei Kartengrößen gegen sich selbst, geprüft werden Abstürze, das Spielende, die Gliederung (Höchststärken, Regimenter), die Fronten (eine je Division, keine überlappenden Grenzabschnitte), Nachschub und Organisation (Wertebereiche, Zerschlagene ziehen sich zurück). Der Test prüft zwischen KI und Spielschritt und verändert den Spielverlauf nicht: dieselbe Karte ergibt im Test und im Spiel denselben Ablauf.
+Vor dem Veröffentlichen `npm test` ausführen (Node 18 oder neuer): Die KI spielt auf beiden Karten mit 2, 3 und 5 Seiten gegen sich selbst, geprüft werden Abstürze, das Spielende, die Gliederung (Höchststärken, Regimenter), die Fronten (eine je Division, keine überlappenden Grenzabschnitte), Nachschub und Organisation (Wertebereiche, Zerschlagene ziehen sich zurück). Der Test prüft zwischen KI und Spielschritt und verändert den Spielverlauf nicht: dieselbe Karte ergibt im Test und im Spiel denselben Ablauf.
 
 Nach Änderungen am Code `./scripts/bump-version.sh` ausführen. Das erhöht die Versionsnummer an allen Skript-Verweisen, damit Browser (vor allem auf dem Handy) nicht die alten Dateien aus dem Cache laden.

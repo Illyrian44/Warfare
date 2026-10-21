@@ -5,7 +5,12 @@ import { readFileSync } from 'node:fs';
 
 const v = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim();
 const load = (name) => import(new URL(`../js/${name}.js?v=${v}`, import.meta.url));
-const { generateMap } = await load('map');
+const { mapFromData } = await load('map');
+const mapData = new Map();
+const realMap = (id, seed) => {
+  if (!mapData.has(id)) mapData.set(id, JSON.parse(readFileSync(new URL(`../maps/${id}.json`, import.meta.url), 'utf8')));
+  return mapFromData(mapData.get(id), seed);
+};
 const { Game } = await load('game');
 const { AI } = await load('ai');
 const { TERRAIN_INFO } = await load('config');
@@ -17,8 +22,8 @@ const { KM } = await load('config');
 
 const STEP = 1 / 30;
 const MAX_TIME = 20 * 60;   // Sekunden Spielzeit, bis die Partie entschieden sein muss
-// Karte, Größe, Zahl der Seiten (alle von der KI gespielt)
-const CASES = [[1, 'small', 2], [42, 'medium', 3], [777, 'large', 5]];
+// Zufall der Partie, Karte, Zahl der Seiten (alle von der KI gespielt)
+const CASES = [[1, 'balkan', 2], [42, 'mitteleuropa', 3], [777, 'balkan', 5]];
 
 let failed = 0;
 const fail = (msg) => { failed++; console.error('  FEHLER: ' + msg); };
@@ -149,7 +154,7 @@ function checkState(g, label, ais) {
 {
   // Seite 1 hält die ganze Grenze, der Gegner steht still: das Gebiet darf nach dem
   // Einrücken nicht weiter wachsen (früher schob jede haltende Front die Grenze vor)
-  const g = new Game(generateMap(1, 'small'));
+  const g = new Game(realMap('mitteleuropa', 1));
   const home = g.cities[g.starts[1]];
   for (let k = 0; k < 12; k++) g.spawnUnit(1, 'light', home);
   const fm = new FrontManager(g, 1);
@@ -171,7 +176,7 @@ for (const [seed, size, np] of CASES) {
   const t0 = performance.now();
   let worst = 0;
   try {
-    const g = new Game(generateMap(seed, size), { players: np });
+    const g = new Game(realMap(size, seed), { players: np });
     const ais = g.players.map((p) => new AI(g, p, p % 2 ? 'medium' : 'hard'));
     let steps = 0, maxDivs = 0;
     const slots = () => [0, ...g.players.map(() => 0)];

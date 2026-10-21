@@ -2,11 +2,14 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, WIN_SHARE, START_UNITS,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=78';
-import { mulberry32 } from './rng.js?v=78';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=78';
-import { HQManager } from './hq.js?v=78';
-import { SupplyNetwork } from './supply.js?v=78';
+} from './config.js?v=81';
+import { mulberry32 } from './rng.js?v=81';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=81';
+import { HQManager } from './hq.js?v=81';
+import { SupplyNetwork } from './supply.js?v=81';
+
+// Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
+const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
 
 export class Game {
   // opts.players: Zahl der Seiten (2 bis 5; Seite 1 ist der Spieler)
@@ -21,7 +24,7 @@ export class Game {
     this.units = [];
     // Alle Städte beginnen neutral, jede Seite startet mit einer Stadt
     this.cities = map.cities.map((c, i) => ({
-      id: i, x: c.x, y: c.y, owner: 0, prodType: 'light',
+      id: i, x: c.x, y: c.y, owner: 0, name: c.name || '', prodType: 'light',
       timer: this.rng() * 4, capOwner: 0, capProgress: 0,
     }));
     const n = map.w * map.h;
@@ -33,7 +36,9 @@ export class Game {
     this.events = [];
     this.winner = 0;
     this.out = new Set();     // ausgeschiedene Seiten
-    this.allies = new Set();  // Bündnisse als „a:b“ (kleinere Nummer zuerst)
+    this.allies = new Set();  // Bündnisse als „a:b“ (kleinere Nummer zuerst), siehe setAllied
+    this.enmity = new Uint8Array(64); // [a * 8 + b] = 1, wenn a und b verfeindet sind
+    this.updateEnmity();
     this.terrTimer = 0;
     this.visTimer = 0;
     this.divisions = [];
@@ -43,7 +48,7 @@ export class Game {
     this.visionVersion = 0;
     this.stats = slots().map((_, p) => (p ? { lost: 0, built: 0, captured: 0 } : null));
     this.landCells = 0;
-    for (let i = 0; i < n; i++) if (map.cells[i] !== T.DEEP) this.landCells++;
+    for (let i = 0; i < n; i++) if (map.isLand(i)) this.landCells++;
     this.share = slots().map(() => 0);
 
     // Start: je Seite eine Stadt mit etwas Land und wenigen Kompanien ohne Division
@@ -90,9 +95,25 @@ export class Game {
     return starts;
   }
 
-  // Feindschaft: verschiedene Seiten ohne Bündnis (Neutrale zählen nicht)
+  // Feindschaft: verschiedene Seiten ohne Bündnis (Neutrale zählen nicht). Als Tabelle, weil
+  // sie im Kampf für jedes Paar von Kompanien gebraucht wird
   hostile(a, b) {
-    return !!a && !!b && a !== b && !this.allies.has(a < b ? `${a}:${b}` : `${b}:${a}`);
+    return this.enmity[a * 8 + b] === 1;
+  }
+
+  setAllied(a, b, on) {
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+    if (on) this.allies.add(key); else this.allies.delete(key);
+    this.updateEnmity();
+  }
+
+  updateEnmity() {
+    this.enmity.fill(0);
+    for (const a of this.players) {
+      for (const b of this.players) {
+        if (a !== b && !this.allies.has(a < b ? `${a}:${b}` : `${b}:${a}`)) this.enmity[a * 8 + b] = 1;
+      }
+    }
   }
 
   alive(p) { return !this.out.has(p); }
@@ -140,7 +161,7 @@ export class Game {
         const dx = xx + 0.5 - cx, dy = yy + 0.5 - cy;
         if (dx * dx + dy * dy > r2) continue;
         const i = yy * w + xx;
-        if (this.map.cells[i] === T.DEEP) continue;
+        if (!this.map.isLand(i)) continue;
         const cur = this.territory[i];
         // Verbündetes Land wird nie eingenommen, neutrales und feindliches nur mit take
         if (cur !== owner && (!take || (cur && !this.hostile(owner, cur)))) continue;
@@ -200,11 +221,13 @@ export class Game {
       u.target = null; u.td = Infinity; u.incoming = 0; u.angles.length = 0; u.px = 0; u.py = 0;
     }
 
-    // Paarweise: Abstoßung von Verbündeten, Zielwahl und Kontakt mit Feinden
+    // Paarweise: Abstoßung von Verbündeten, Zielwahl und Kontakt mit Feinden. Ein Raster
+    // (Feldgröße = größte Reichweite) beschränkt den Vergleich auf benachbarte Kompanien
+    const grid = this.bucketUnits(PAIR_REACH);
     for (let i = 0; i < U.length; i++) {
       const a = U[i];
-      for (let j = i + 1; j < U.length; j++) {
-        const b = U[j];
+      for (const b of grid.near(a, 1)) {
+        if (b._k <= i) continue; // jedes Paar nur einmal
         const dx = b.x - a.x, dy = b.y - a.y;
         const d2 = dx * dx + dy * dy;
         const reach = ATTACK_RANGE + a.r + b.r;
@@ -306,8 +329,10 @@ export class Game {
       for (const c of this.cities) if (c.owner) this.paint(c.owner, c.x, c.y, CITY_BORDER);
       // Grenze liegt zwischen gegnerischen Truppen, nicht hinter ihnen
       const reach = UNIT_BORDER * 2;
+      const grid = this.bucketUnits(PAIR_REACH);
+      const ring = Math.ceil(reach / PAIR_REACH);
       for (const u of this.units) {
-        const rivals = this.units.filter((o) => this.hostile(o.owner, u.owner) &&
+        const rivals = grid.near(u, ring).filter((o) => this.hostile(o.owner, u.owner) &&
           Math.abs(o.x - u.x) < reach && Math.abs(o.y - u.y) < reach);
         this.paint(u.owner, u.x, u.y, UNIT_BORDER, rivals, takesLand(u));
       }
@@ -340,6 +365,33 @@ export class Game {
       this.winner = winner;
       this.events.push({ type: 'gameover', winner });
     }
+  }
+
+  // Kompanien in Rasterfelder der Größe size einsortieren (Index _k = Stelle in units).
+  // near(u, r): alle Kompanien in den Feldern bis r Felder um u (u selbst eingeschlossen)
+  bucketUnits(size) {
+    const gw = Math.ceil(this.map.worldW / size) + 1, gh = Math.ceil(this.map.worldH / size) + 1;
+    if (!this.buckets || this.buckets.size !== size) this.buckets = { size, cells: Array.from({ length: gw * gh }, () => []) };
+    const cells = this.buckets.cells;
+    for (const c of cells) c.length = 0;
+    const at = (v, n) => Math.max(0, Math.min(n - 1, Math.floor(v / size)));
+    this.units.forEach((u, k) => {
+      u._k = k;
+      cells[at(u.y, gh) * gw + at(u.x, gw)].push(u);
+    });
+    const out = [];
+    return {
+      near(u, r) {
+        out.length = 0;
+        const cx = at(u.x, gw), cy = at(u.y, gh);
+        for (let y = Math.max(0, cy - r); y <= Math.min(gh - 1, cy + r); y++) {
+          for (let x = Math.max(0, cx - r); x <= Math.min(gw - 1, cx + r); x++) {
+            for (const o of cells[y * gw + x]) out.push(o);
+          }
+        }
+        return out;
+      },
+    };
   }
 
   // Organisation: Verlust durch Schaden; außerhalb des Gefechts Erholung je nach
