@@ -52,6 +52,10 @@ function checkState(g, label, ais) {
     if (!TERRAIN_INFO[t].passable) u.badTime = (u.badTime || 0) + 1; else u.badTime = 0;
     if (u.badTime > 10) { fail(`${label}: Einheit ${u.id} steckt auf unbegehbarem Gelände (${u.x.toFixed(0)}, ${u.y.toFixed(0)})`); u.badTime = -1e9; }
   }
+  // Bündnisse: Verbündete kämpfen nicht gegeneinander
+  for (const u of g.units) {
+    if (u.target && !g.hostile(u.owner, u.target.owner)) fail(`${label}: Kompanie ${u.id} (Seite ${u.owner}) kämpft gegen Verbündete (Seite ${u.target.owner})`);
+  }
   // Handel: Kolonnen nur zwischen Partnern, nie auf Feindgebiet
   for (const k of g.trade.convoys) {
     if (!g.trade.partnerOk(k.owner, g.cities[k.from].owner === k.owner ? k.owner : k.owner)) fail(`${label}: Kolonne ohne gültigen Besitzer`);
@@ -172,6 +176,7 @@ function checkState(g, label, ais) {
   // Seite 1 hält die ganze Grenze, der Gegner steht still: das Gebiet darf nach dem
   // Einrücken nicht weiter wachsen (früher schob jede haltende Front die Grenze vor)
   const g = new Game(realMap('mitteleuropa', 1));
+  g.growTimer = Infinity; // nur die Front prüfen, nicht das Wachstum ins neutrale Land
   const home = g.cities[g.starts[1]];
   for (let k = 0; k < 12; k++) g.spawnUnit(1, 'light', home);
   const fm = new FrontManager(g, 1);

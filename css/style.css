@@ -175,7 +175,26 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   background: var(--panel); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px;
   padding: 8px 10px 16px; font-size: 14px;
 }
-#buildPanel.dragging { opacity: 0.92; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5); }
+#buildPanel.dragging, #diploPanel.dragging { opacity: 0.92; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5); }
+/* Diplomatie */
+#diploPanel {
+  position: fixed; right: 12px; top: calc(64px + env(safe-area-inset-top));
+  width: min(94vw, 320px); max-height: calc(100vh - 230px); overflow-y: auto;
+  background: var(--panel); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px;
+  padding: 8px 10px 16px; font-size: 14px;
+}
+.diploRow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.diploRow .who { flex: 1; min-width: 0; }
+.diploRow .who small { display: block; color: var(--muted); }
+.diploRow button { min-height: 32px; padding: 0 10px; font-size: 13px; }
+.diploRow.out { opacity: 0.45; }
+#offerBox {
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(118px + env(safe-area-inset-top));
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 94vw;
+  background: var(--panel); border: 2px solid var(--good, #4cd17a); border-radius: 12px; padding: 8px 10px;
+  font-weight: 600; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 5;
+}
+#offerBox button { min-height: 34px; }
 #buildPanel h4 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 #buildPanel select { width: 100%; min-height: 34px; background: rgba(0, 0, 0, 0.3); color: inherit; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 0 6px; }
 .buildRow { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -291,7 +310,8 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   .bar.bottom { align-items: flex-end; }
   .bar.bottom button { font-size: 14px; }
   #cmdPanel { bottom: calc(166px + env(safe-area-inset-bottom)); max-height: 46vh; overflow-y: auto; }
-  #buildPanel { top: calc(118px + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); max-height: 46vh; }
+  #buildPanel, #diploPanel { top: calc(118px + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); max-height: 46vh; }
+  #offerBox { top: calc(150px + env(safe-area-inset-top)); }
   #pausedBanner { top: 22%; font-size: 24px; }
   #frontBanner { bottom: calc(220px + env(safe-area-inset-bottom)); }
 }

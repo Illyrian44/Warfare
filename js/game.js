@@ -1,14 +1,14 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
-  CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS,
+  CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS, DIPLOMACY, GROWTH,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=89';
-import { mulberry32 } from './rng.js?v=89';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=89';
-import { HQManager } from './hq.js?v=89';
-import { SupplyNetwork } from './supply.js?v=89';
-import { Trade } from './trade.js?v=89';
-import { Production } from './production.js?v=89';
+} from './config.js?v=91';
+import { mulberry32 } from './rng.js?v=91';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=91';
+import { HQManager } from './hq.js?v=91';
+import { SupplyNetwork } from './supply.js?v=91';
+import { Trade } from './trade.js?v=91';
+import { Production } from './production.js?v=91';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -50,6 +50,12 @@ export class Game {
     this.events = [];
     this.winner = 0;
     this.out = new Set();     // ausgeschiedene Seiten
+    this.offers = [];         // Bündnisangebote, die auf Antwort warten
+    this.nextOffer = 1;
+    this.betrayedAt = [];     // Zeitpunkt des letzten Bündnisbruchs je Seite
+    this.allySince = new Map(); // Bündnis „a:b“ -> Beginn
+    this.allyCooldown = new Map(); // ausgelaufenes Bündnis „a:b“ -> frühestens wieder ab
+    this.growTimer = GROWTH.every;
     this.allies = new Set();  // Bündnisse als „a:b“ (kleinere Nummer zuerst), siehe setAllied
     this.enmity = new Uint8Array(64); // [a * 8 + b] = 1, wenn a und b verfeindet sind
     this.updateEnmity();
@@ -141,6 +147,58 @@ export class Game {
 
   alive(p) { return !this.out.has(p); }
 
+  // --- Bündnisse -------------------------------------------------------------------
+  // Verbündete kämpfen nicht gegeneinander, nehmen sich kein Land und handeln mit Bonus.
+  // Angebote warten auf Antwort (offers); wer ein Bündnis bricht, gilt eine Weile als
+  // Verräter (betrayedAt), dann lehnt die KI ab. Gewinnen kann nur eine Seite allein.
+  allied(a, b) {
+    return !!a && !!b && a !== b && !this.hostile(a, b);
+  }
+
+  alliesOf(p) {
+    return this.players.filter((q) => this.allied(p, q));
+  }
+
+  isTraitor(p) {
+    return this.time < (this.betrayedAt[p] ?? -1e9) + DIPLOMACY.traitorTime;
+  }
+
+  pairKey(a, b) { return a < b ? `${a}:${b}` : `${b}:${a}`; }
+
+  // Nach einem ausgelaufenen Bündnis eine Weile kein neues zwischen denselben Seiten
+  canAlly(a, b) {
+    return this.time >= (this.allyCooldown.get(this.pairKey(a, b)) ?? -1);
+  }
+
+  offerAlliance(from, to) {
+    if (!this.alive(from) || !this.alive(to) || this.allied(from, to) || !this.canAlly(from, to)) return null;
+    if (this.offers.some((o) => o.from === from && o.to === to)) return null;
+    const offer = { id: this.nextOffer++, from, to, time: this.time };
+    this.offers.push(offer);
+    this.events.push({ type: 'allianceOffer', offer });
+    return offer;
+  }
+
+  answerOffer(id, accept) {
+    const o = this.offers.find((x) => x.id === id);
+    if (!o) return;
+    this.offers = this.offers.filter((x) => x !== o);
+    if (accept && this.alive(o.from) && this.alive(o.to) && !this.allied(o.from, o.to)) {
+      this.setAllied(o.from, o.to, true);
+      this.allySince.set(this.pairKey(o.from, o.to), this.time);
+      this.events.push({ type: 'allianceFormed', a: o.from, b: o.to });
+    } else this.events.push({ type: 'allianceDeclined', from: o.from, to: o.to });
+  }
+
+  breakAlliance(by, other) {
+    if (!this.allied(by, other)) return;
+    this.allySince.delete(this.pairKey(by, other));
+    this.setAllied(by, other, false);
+    this.betrayedAt[by] = this.time;
+    this.trade.prune(); // Kolonnen im Land des früheren Verbündeten sind verloren
+    this.events.push({ type: 'allianceBroken', by, other });
+  }
+
   // Wirtschaftliche Größe einer Stadt: die eigene Hauptstadt zählt immer als Großstadt
   citySize(c) {
     return c.capitalOf && c.capitalOf === c.owner ? 3 : c.size;
@@ -187,6 +245,28 @@ export class Game {
     e.manpower -= cost.manpower;
     e.spent += cost.money;
     return true;
+  }
+
+  // Eigenes Gebiet wächst langsam in angrenzendes neutrales Land (siehe GROWTH)
+  growIntoNeutral() {
+    const map = this.map, { w, h } = map, tr = this.territory;
+    const grow = [];
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        if (tr[i] || !map.isLand(i)) continue;
+        let owner = 0, n = 0, mixed = false;
+        for (const j of [i - 1, i + 1, i - w, i + w]) {
+          const o = tr[j];
+          if (!o) continue;
+          if (owner && o !== owner) { mixed = true; break; }
+          owner = o; n++;
+        }
+        if (!mixed && n && this.rng() < (n >= 2 ? GROWTH.chance : GROWTH.edge)) grow.push(i, owner);
+      }
+    }
+    for (let k = 0; k < grow.length; k += 2) tr[grow[k]] = grow[k + 1];
+    if (grow.length) { this.territoryVersion++; this.updateShares(); }
   }
 
   // Anteil am Land je Seite (für Sieg und Anzeige)
@@ -421,11 +501,26 @@ export class Game {
       this.territoryVersion++;
       this.updateShares();
     }
+    this.growTimer -= dt;
+    if (this.growTimer <= 0) { this.growTimer = GROWTH.every; this.growIntoNeutral(); }
     // Handel nach der Gebietsfärbung: Kolonnen auf frisch verlorenem Gebiet fallen sofort
     this.trade.step(dt);
     this.visTimer -= dt;
     if (this.visTimer <= 0) { this.visTimer = 0.2; this.updateVision(); }
 
+    // Bündnisse laufen aus
+    for (const [key, since] of this.allySince) {
+      if (this.time - since < DIPLOMACY.duration) continue;
+      const [a, b] = key.split(':').map(Number);
+      this.allySince.delete(key);
+      if (!this.allied(a, b)) continue;
+      this.setAllied(a, b, false);
+      this.allyCooldown.set(key, this.time + DIPLOMACY.cooldown);
+      this.trade.prune();
+      this.events.push({ type: 'allianceExpired', a, b });
+    }
+    // Unbeantwortete Bündnisangebote verfallen
+    for (const o of this.offers) if (this.time - o.time > DIPLOMACY.offerTimeout) this.answerOffer(o.id, false);
     this.checkEnd();
   }
 
@@ -435,6 +530,9 @@ export class Game {
     for (const p of this.players) {
       if (this.out.has(p) || this.cities.some((c) => c.owner === p) || this.units.some((u) => u.owner === p)) continue;
       this.out.add(p);
+      // Bündnisse und Angebote enden
+      for (const q of this.players) if (this.allied(p, q)) this.setAllied(p, q, false);
+      this.offers = this.offers.filter((o) => o.from !== p && o.to !== p);
       // Ihr übriges Land wird neutral
       const tr = this.territory;
       for (let i = 0; i < tr.length; i++) if (tr[i] === p) tr[i] = 0;

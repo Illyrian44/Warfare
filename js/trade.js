@@ -1,4 +1,4 @@
-import { CELL, T, TRADE } from './config.js?v=89';
+import { CELL, T, TRADE } from './config.js?v=91';
 
 // Handel wie bei OpenFront: Städte schicken regelmäßig Kolonnen über Land zu anderen Städten
 // derselben Seite (später auch zu Verbündeten), Häfen schicken Schiffe zu anderen Häfen im
@@ -161,6 +161,16 @@ export class Trade {
     }
     this.paths.set(key, { time: 0, path });
     return path;
+  }
+
+  // Kolonnen auf Gebiet, das nicht (mehr) eigenes oder verbündetes ist, gehen verloren
+  prune() {
+    const g = this.game;
+    this.convoys = this.convoys.filter((k) => {
+      if (k.kind !== 'land' || this.partnerOk(k.owner, g.territory[g.map.cellIndex(k.x, k.y)])) return true;
+      g.events.push({ type: 'convoyLost', owner: k.owner, x: k.x, y: k.y });
+      return false;
+    });
   }
 
   move(dt) {

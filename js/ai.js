@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM } from './config.js?v=89';
-import { unitStrength } from './game.js?v=89';
-import { mulberry32 } from './rng.js?v=89';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=89';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=89';
+import { DIFFICULTY, SUPPLY, KM, DIPLOMACY } from './config.js?v=91';
+import { unitStrength } from './game.js?v=91';
+import { mulberry32 } from './rng.js?v=91';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=91';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=91';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -28,6 +28,7 @@ export class AI {
     this.fronts = new FrontManager(game, player);
     this.nextFrontAttack = 30;
     this.nextOrganize = 0;
+    this.nextDiplo = 8 + player; // Seiten versetzt
     this.needSplit = false;
   }
 
@@ -80,6 +81,47 @@ export class AI {
     }
   }
 
+  // --- Bündnisse --------------------------------------------------------------------
+  // Macht einer Seite: Kampfkraft der Truppen plus Landanteil
+  power(p) {
+    const g = this.game;
+    let s = 0;
+    for (const u of g.units) if (u.owner === p) s += unitStrength(u);
+    return s + g.share[p] * 100;
+  }
+
+  // Bündnis mit q, wenn eine dritte Seite stärker ist als beide (gemeinsamer Gegner) und
+  // die KI selbst nicht führt; nie mit Verrätern, nie mit einer Seite kurz vor dem Sieg,
+  // nie, wenn nur noch zwei Seiten übrig sind
+  wantsAlly(q, alive) {
+    const g = this.game, me = this.me;
+    if (alive.length <= 2 || g.isTraitor(q) || g.allied(me, q) || !g.canAlly(me, q)) return false;
+    if (g.alliesOf(me).length >= DIPLOMACY.maxAllies || g.share[q] >= DIPLOMACY.breakShare * 0.8) return false;
+    const pw = new Map(alive.map((p) => [p, this.power(p)]));
+    const strongest = Math.max(...alive.filter((p) => p !== me).map((p) => pw.get(p)));
+    if (pw.get(me) >= strongest) return false; // wer führt, braucht keinen Partner
+    const leader = alive.filter((r) => r !== me && r !== q).sort((a, b) => pw.get(b) - pw.get(a))[0];
+    return !!leader && pw.get(leader) > Math.max(pw.get(me), pw.get(q)) * 1.1;
+  }
+
+  diplomacy() {
+    const g = this.game, me = this.me;
+    if (g.time < this.nextDiplo) return;
+    this.nextDiplo = g.time + 5;
+    const alive = g.players.filter((p) => g.alive(p));
+    // Angebote an diese KI beantworten
+    for (const o of g.offers.filter((x) => x.to === me)) g.answerOffer(o.id, this.wantsAlly(o.from, alive));
+    // Bündnis brechen, wenn der Partner dem Sieg zu nahe kommt oder nur noch zwei übrig sind
+    for (const q of g.alliesOf(me)) {
+      if (alive.length <= 2 || g.share[q] >= DIPLOMACY.breakShare) g.breakAlliance(me, q);
+    }
+    // Selbst ein Bündnis anbieten (an die stärkste geeignete Seite)
+    if (g.alliesOf(me).length < DIPLOMACY.maxAllies && !g.offers.some((o) => o.from === me) && this.rng() < 0.3) {
+      const cand = alive.filter((q) => q !== me && this.wantsAlly(q, alive)).sort((a, b) => this.power(b) - this.power(a));
+      if (cand.length) g.offerAlliance(me, cand[0]);
+    }
+  }
+
   visibleEnemies() {
     const g = this.game;
     return g.units.filter((u) => g.hostile(u.owner, this.me) && (this.cfg.seeAll || g.isVisible(this.me, u.x, u.y)));
@@ -109,6 +151,7 @@ export class AI {
     const enemies = this.visibleEnemies();
 
     this.build(myCities, myUnits);
+    this.diplomacy();
     if (!myUnits.length) return;
 
     this.fronts.syncAll();

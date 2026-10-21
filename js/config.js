@@ -76,6 +76,20 @@ export const BUILDINGS = {
 };
 export const BUILDING_MAX = 3;
 
+// Bündnisse
+export const DIPLOMACY = {
+  traitorTime: 180,   // so lange (s) gilt eine Seite nach einem Bündnisbruch als Verräter
+  offerTimeout: 25,   // unbeantwortete Angebote an den Spieler verfallen danach
+  maxAllies: 1,       // die KI hält höchstens so viele Bündnisse
+  breakShare: 0.45,   // hält ein Verbündeter so viel Land, bricht die KI das Bündnis
+  duration: 480,      // Bündnisse laufen nach dieser Zeit (s) aus, ohne Verrat
+  cooldown: 120,      // danach können sich die beiden so lange nicht erneut verbünden
+};
+// Eigenes Gebiet wächst langsam in angrenzendes neutrales Land (wie bei OpenFront): alle
+// every Sekunden wird ein neutrales Feld mit eigenen Nachbarn (und keinem fremden) mit
+// chance (zwei Nachbarn) bzw. edge (ein Nachbar) eigenes Land. Feindliches Land wächst nie zu.
+export const GROWTH = { every: 2, chance: 0.35, edge: 0.08 };
+
 // Handel (js/trade.js): Kolonnen über Land und Schiffe zwischen Häfen bringen bei der Ankunft
 // Geld: Grundwert plus Wert je Feld Weg; an Land nach Stadtgrößen, zur See nach Hafenstufen
 export const TRADE = {

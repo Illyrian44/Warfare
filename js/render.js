@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=89';
-import { classify } from './map.js?v=89';
-import { frontBadge, pointAt } from './fronts.js?v=89';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=89';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=91';
+import { classify } from './map.js?v=91';
+import { frontBadge, pointAt } from './fronts.js?v=91';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=91';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -258,6 +258,7 @@ export class Renderer {
 
   draw(cam, ui, fronts) {
     const { ctx, canvas, game } = this;
+    ME = this.human;
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#204e80';
@@ -340,8 +341,8 @@ export class Renderer {
         const sel = group.members.some((u) => ui.selection.has(u));
         const hov = group.members.some((u) => hover.has(u));
         const inFront = ui.front && group.members.some((u) => u.front === ui.front);
-        const hw = drawFormationSymbol(ctx, group.x, group.y, group.members, p === me, px,
-          sel ? '#fff' : hov ? HOVER : inFront ? '#f2c94c' : null, group.members.some((u) => u.supply < 0.2) && flash,
+        const hw = drawFormationSymbol(ctx, group.x, group.y, group.members, !game.hostile(me, p), px,
+          sel ? '#fff' : hov ? HOVER : inFront ? '#f2c94c' : null, p === me && group.members.some((u) => u.supply < 0.2) && flash,
           labelFor(group.members));
         for (const u of group.members) drawn.add(u);
         if (p === me) this.hits.push({ x: group.x, y: group.y, hw, hh: hw * 0.68, members: group.members, single: false });
@@ -349,7 +350,7 @@ export class Renderer {
     }
     for (const u of game.units) {
       if (drawn.has(u) || !visible(u)) continue;
-      drawNatoSymbol(ctx, u, u.owner === me, px, highlightOf(u), u.supply < 0.2 && flash);
+      drawNatoSymbol(ctx, u, !game.hostile(me, u.owner), px, highlightOf(u), u.owner === me && u.supply < 0.2 && flash);
       if (u.owner === me) {
         const hw = companyHalfWidth(u, px);
         this.hits.push({ x: u.x, y: u.y, hw, hh: hw * 0.68, members: [u], single: true });
@@ -375,7 +376,7 @@ export class Renderer {
       }
       for (const hq of game.hq.hqs) {
         if (hq.owner !== me && !ui.revealAll && !game.isVisible(me, hq.x, hq.y)) continue;
-        drawHQSymbol(ctx, hq, hq.owner === me, px);
+        drawHQSymbol(ctx, hq, !game.hostile(me, hq.owner), px);
       }
     }
 
@@ -679,6 +680,8 @@ function hash(x, y) {
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
 }
 
+// Eigene Seite des Bildes (Symbole: eckig für eigene und verbündete, Raute für feindliche)
+let ME = 1;
 const NATO_FRIEND = '#80e0ff';
 const NATO_HOSTILE = '#ff8080';
 const LOOSE_FRIEND = '#c9d2dc';  // Kompanien ohne Division: grau
@@ -699,7 +702,7 @@ function fillFor(members, friend) {
   }
   let best = null, bc = 0;
   for (const [f, c] of count) if (c > bc) { bc = c; best = f; }
-  return best ? divisionColor(best) : friend ? LOOSE_FRIEND : looseHostile(members[0].owner);
+  return best ? divisionColor(best) : members[0].owner === ME ? LOOSE_FRIEND : looseHostile(members[0].owner);
 }
 
 // Rahmen nach APP-6: Rechteck für eigene, Raute für feindliche Einheiten
@@ -762,7 +765,7 @@ export function drawNatoSymbol(ctx, u, friend, px, highlight, lowSupply) {
   // Lebensbalken und darunter Organisation (blau)
   drawBars(ctx, x - hw, bottom + 1.5 * px, hw * 2, Math.max(1, 2.2 * px), u.hp / u.maxHp, u.org / u.maxOrg, px);
   ctx.globalAlpha = 1;
-  if (friend && u.supply < SUPPLY.warnBelow) drawSupplyWarning(ctx, x + (friend ? hw : d), top, px);
+  if (u.owner === ME && u.supply < SUPPLY.warnBelow) drawSupplyWarning(ctx, x + (friend ? hw : d), top, px);
 }
 
 // Balken für Lebenspunkte (grün/gelb/rot) und Organisation (blau); nur, was nicht voll ist
@@ -960,7 +963,7 @@ function drawFormationSymbol(ctx, x, y, members, friend, px, highlight, lowSuppl
   for (const u of members) { hp += u.hp; max += u.maxHp; org += u.org; maxOrg += u.maxOrg; }
   const bottom = friend ? y + hh : y + d;
   drawBars(ctx, x - hw, bottom + 1.8 * px, hw * 2, Math.max(1, 2.4 * px), hp / max, org / maxOrg, px);
-  if (friend && members.reduce((s, u) => s + u.supply, 0) / members.length < SUPPLY.warnBelow) {
+  if (members[0].owner === ME && members.reduce((s, u) => s + u.supply, 0) / members.length < SUPPLY.warnBelow) {
     drawSupplyWarning(ctx, x + hw, friend ? y - hh : y - d, px);
   }
   return friend ? hw : d;
