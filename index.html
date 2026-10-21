@@ -7,7 +7,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=97">
+  <link rel="stylesheet" href="css/style.css?v=98">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -112,30 +112,46 @@
   <div id="toasts"></div>
 
   <div id="menu" class="overlay">
+    <header class="menuHead">
+      <div class="label">
+        <h1><span class="dot blue big"></span>Phase Line<span class="dot red big"></span></h1>
+        <p class="sub">Echtzeit-Strategie auf der Lagekarte. Führe Divisionen, halte die Front, erobere alle Städte.</p>
+      </div>
+    </header>
     <div class="panel">
-      <h1><span class="dot blue big"></span>Phase Line<span class="dot red big"></span></h1>
-      <p class="sub">Echtzeit-Strategie auf der Lagekarte. Führe Divisionen, halte die Front, erobere alle Städte.</p>
-      <label>Schwierigkeit</label>
-      <div class="choice" id="diffChoice">
-        <button data-value="easy">Leicht</button>
-        <button data-value="medium">Mittel</button>
-        <button data-value="hard">Schwer</button>
+      <div class="fileNo">Akte Nr. 1914/PL · Oberkommando</div>
+      <div class="stamp">Streng geheim</div>
+      <div class="field">
+        <label>Schwierigkeit</label>
+        <div class="choice" id="diffChoice">
+          <button data-value="easy">Leicht</button>
+          <button data-value="medium">Mittel</button>
+          <button data-value="hard">Schwer</button>
+        </div>
       </div>
-      <label>KI-Gegner</label>
-      <div class="choice" id="oppChoice">
-        <button data-value="1">1</button>
-        <button data-value="2">2</button>
-        <button data-value="3">3</button>
-        <button data-value="4">4</button>
+      <div class="field">
+        <label>KI-Gegner</label>
+        <div class="choice" id="oppChoice">
+          <button data-value="1">1</button>
+          <button data-value="2">2</button>
+          <button data-value="3">3</button>
+          <button data-value="4">4</button>
+        </div>
       </div>
-      <label>Karte</label>
-      <div class="choice" id="mapChoice"></div>
+      <div class="field">
+        <label>Karte</label>
+        <div class="choice" id="mapChoice"></div>
+      </div>
+      <div class="actions">
+        <button id="startBtn" class="primary">Spiel starten</button>
+        <button id="resumeBtn" hidden>Weiterspielen</button>
+      </div>
       <p id="menuError" class="error" hidden></p>
-      <button id="startBtn" class="primary">Spiel starten</button>
-      <button id="resumeBtn" hidden>Weiterspielen</button>
-      <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 97</small>
     </div>
+    <footer class="menuFoot">
+      <button id="menuHelpBtn" class="link">Spielanleitung</button>
+      <small id="version" class="muted">Version 98</small>
+    </footer>
   </div>
 
   <div id="help" class="overlay" hidden>
@@ -207,6 +223,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=97"></script>
+  <script type="module" src="js/main.js?v=98"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-import { KM } from './config.js?v=97';
+import { KM } from './config.js?v=98';
 
 // Aufstellung am Zielpunkt: dicht in Reihen quer zur Marschrichtung (1,5 km Abstand),
 // vordere Einheiten nach vorn, links bleibt links – so kreuzen sich die Wege kaum.
