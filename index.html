@@ -7,7 +7,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=72">
+  <link rel="stylesheet" href="css/style.css?v=74">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -40,7 +40,8 @@
     <div id="divBar" aria-label="Divisionen"></div>
     <!-- Befehlsfeld: erscheint nur mit Auswahl und bietet nur passende Befehle an -->
     <div id="cmdPanel" hidden>
-      <div class="cmdHead">
+      <div class="cmdHead" title="Ziehen zum Verschieben · Doppelklick: zurücksetzen">
+        <span class="grip" aria-hidden="true">⠿</span>
         <b id="cmdTitle"></b>
         <button id="cmdClose" title="Auswahl aufheben (Esc)">✕</button>
       </div>
@@ -63,9 +64,10 @@
         <button id="rotateBtn" title="Schwer Verwundete ziehen sich zum Heilen zurück">Rotation</button>
         <button id="disbandBtn" title="Front auflösen – die Divisionen bleiben bestehen">Front auflösen</button>
       </div>
+      <div id="cmdResize" title="Ziehen: größer oder kleiner"></div>
     </div>
     <div id="seedLabel" class="muted"></div>
-    <div id="pausedBanner" hidden>Pausiert</div>
+    <div id="pausedBanner" hidden>Pausiert<small>Leertaste oder ▶: weiter</small></div>
     <div id="frontBanner" hidden>
       <span>Front zeichnen: Linie mit dem Finger ziehen</span>
       <button id="frontCancel">Abbrechen</button>
@@ -99,7 +101,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 72</small>
+      <small id="version" class="muted">Version 74</small>
     </div>
   </div>
 
@@ -107,13 +109,13 @@
     <div class="panel help">
       <h2>So wird gespielt</h2>
       <h3>Ziel</h3>
-      <p>Erobere alle Städte des Gegners (rot) und vernichte seine Armee. Du bist <b class="blue-t">blau</b>.</p>
+      <p>Erobere alle Städte des Gegners (rot) und vernichte seine Armee. Du bist <b class="blue-t">blau</b>. Jede Runde beginnt pausiert: Gliedere in Ruhe deine Divisionen und setze Fronten, dann geht es mit der Leertaste oder ▶ los.</p>
       <h3>Steuerung</h3>
       <ul>
         <li><b>Auswählen:</b> Eigene Einheit anklicken bzw. antippen. Wiederholtes Klicken auf dieselbe Stelle geht die Stufen durch: <i>gezeigte Gruppe → ganze Division → einzelne Kompanie</i> → wieder die Gruppe. PC: Rahmen mit linker Maustaste aufziehen (Umschalt = hinzufügen; zerschlagene Kompanien werden nicht erfasst), Klick ins Leere hebt die Auswahl auf. Handy: „▢ Auswahl“ und dann Rahmen ziehen.</li>
         <li><b>Bewegen:</b> PC: Rechtsklick auf das Ziel. Handy: bei bestehender Auswahl auf das Ziel tippen. Die Einheiten stellen sich dicht am Ziel auf (1,5&nbsp;km Abstand, die vorderen vorn). Mit <i>Umschalt</i>+Rechtsklick behalten sie ihre Abstände zueinander und verschieben sich als Ganzes. Zerschlagene Kompanien nehmen keine Befehle an.</li>
         <li><b>Karte bewegen:</b> PC: rechte oder mittlere Maustaste ziehen, Mausrad zoomt. Handy: mit einem Finger ziehen, mit zwei Fingern zoomen.</li>
-        <li><b>Befehlsfeld</b> (unten rechts) erscheint nur, wenn etwas ausgewählt ist, und zeigt nur die passenden Befehle: <i>Anhalten</i>, Divisionen bilden oder auflösen, Armeen bilden – und sobald Divisionen ausgewählt sind, Front und Grenze. Ohne Auswahl lassen sich keine Fronten zuweisen.</li>
+        <li><b>Befehlsfeld</b> (unten rechts) erscheint nur, wenn etwas ausgewählt ist, und zeigt nur die passenden Befehle: <i>Anhalten</i>, Divisionen bilden oder auflösen, Armeen bilden – und sobald Divisionen ausgewählt sind, Front und Grenze. Ohne Auswahl lassen sich keine Fronten zuweisen. An der Titelzeile lässt es sich verschieben, am Griff unten rechts größer oder kleiner ziehen; Doppelklick auf die Titelzeile setzt beides zurück.</li>
         <li><b>Divisionen bilden:</b> Deine Kompanien starten ohne Division (grau). Kompanien auswählen und „＋ Neue Division“ tippen, mit „＋“ auf einer Divisionskarte zu einer bestehenden Division hinzufügen oder mit „− Aus Division“ herausnehmen. „Auto-Gliederung“ (unten, solange es Kompanien ohne Division gibt) teilt sie nach ihrer Lage ein. Ist genau eine Division ausgewählt, füllt „Auffüllen“ sie mit neuen Kompanien aus der nächsten Stadt auf (grüner Rand an der Karte).</li>
         <li><b>Armeen (XXXX):</b> Divisionen auswählen und „＋ Neue Armee“ tippen oder mit „＋“ auf einer Armeekarte hinzufügen. Eine Armee hat beliebig viele Divisionen; in der Leiste lässt sie sich auf- und zuklappen, Antippen wählt alle ihre Divisionen. Gibst du einer Armee eine Grenze, teilen sich ihre Divisionen den Abschnitt nach Stärke; kommt eine Division dazu, wird neu aufgeteilt. Eine leere Armee löst sich auf.</li>
         <li><b>Fronten (wie in Hearts of Iron):</b> Jede Front gehört zu einer Division. Divisionen (oder eine Armee) auswählen, „〰 Front“ tippen und eine Linie zeichnen – nahe der Grenze rastet sie als <i>Grenzabschnitt</i> ein und wandert mit der Grenze. „⛨ Grenze“ schickt die ausgewählten Divisionen an die Grenze: Sie kommen zu den Divisionen dazu, die schon dort stehen, und alle teilen sich die Grenze nach Stärke. Ein gezeichneter Abschnitt kürzt ältere, die er teilweise überdeckt; ganz überdeckte Divisionen teilen ihn mit. Haltende Fronten nehmen kein Land ein – die Grenze verschiebt sich nur durch Angriffe und eigene Befehle. Verschiebungen laufen hinter der eigenen Linie.</li>
@@ -166,6 +168,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=72"></script>
+  <script type="module" src="js/main.js?v=74"></script>
 </body>
 </html>

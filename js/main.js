@@ -1,12 +1,12 @@
-import { generateMap } from './map.js?v=72';
-import { Game } from './game.js?v=72';
-import { AI } from './ai.js?v=72';
-import { Renderer, isFrontShown } from './render.js?v=72';
-import { Input } from './input.js?v=72';
-import { formationSlots } from './formation.js?v=72';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=72';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=72';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=72';
+import { generateMap } from './map.js?v=74';
+import { Game } from './game.js?v=74';
+import { AI } from './ai.js?v=74';
+import { Renderer, isFrontShown } from './render.js?v=74';
+import { Input } from './input.js?v=74';
+import { formationSlots } from './formation.js?v=74';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=74';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=74';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=74';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -48,7 +48,7 @@ const app = {
     $('showFrontsBtn').classList.remove('active');
     this.ui.showSupply = false;
     $('supplyBtn').classList.remove('active');
-    this.paused = false;
+    this.paused = true; // jede Runde beginnt pausiert: erst in Ruhe gliedern und Fronten setzen
     this.setSpeed(1);
     this.current = { seed, size, difficulty };
     this.settings = { size, difficulty };
@@ -58,8 +58,8 @@ const app = {
     $('menu').hidden = true;
     $('end').hidden = true;
     $('hud').hidden = false;
-    $('pauseBtn').textContent = '❚❚';
-    $('pausedBanner').hidden = true;
+    $('pauseBtn').textContent = '▶';
+    $('pausedBanner').hidden = false;
     $('resumeBtn').hidden = true;
     $('seedLabel').textContent = `Karte #${seed} · ${DIFFICULTY[difficulty].name}`;
     this.updateSelectionInfo();
@@ -817,6 +817,99 @@ $('centerBtn').onclick = () => app.fitCamera();
 $('againBtn').onclick = () => app.start(app.current.seed, app.current.size, app.current.difficulty);
 $('newBtn').onclick = () => app.start(randomSeed(), app.current.size, app.current.difficulty);
 $('endMenuBtn').onclick = () => { $('end').hidden = true; $('menu').hidden = false; $('resumeBtn').hidden = true; };
+
+// Befehlsfeld verschieben (Titelzeile ziehen) und größer oder kleiner machen (Griff unten
+// rechts); Doppelklick bzw. Doppeltippen auf die Titelzeile setzt beides zurück. Lage und
+// Größe bleiben gespeichert, das Feld bleibt immer ganz im Bild.
+const PANEL_KEY = 'wod-cmdpanel';
+const PANEL_SCALE = [0.6, 1.6];
+const cmdPanel = $('cmdPanel');
+let panelPos = (() => { try { return JSON.parse(localStorage.getItem(PANEL_KEY)) || {}; } catch { return {}; } })();
+const savePanel = () => { try { localStorage.setItem(PANEL_KEY, JSON.stringify(panelPos)); } catch { /* egal */ } };
+
+function placePanel() {
+  const st = cmdPanel.style;
+  const s = panelPos.scale || 1;
+  if (panelPos.x === undefined) {
+    // Grundstellung aus dem CSS (mittig über der unteren Leiste), nur skaliert
+    st.left = st.top = st.bottom = '';
+    st.transformOrigin = '50% 100%';
+    st.transform = s === 1 ? '' : `translateX(-50%) scale(${s})`;
+    return;
+  }
+  st.transformOrigin = '0 0';
+  st.transform = `scale(${s})`;
+  st.bottom = 'auto';
+  st.left = panelPos.x + 'px';
+  st.top = panelPos.y + 'px';
+  if (cmdPanel.hidden) return;
+  const r = cmdPanel.getBoundingClientRect();
+  const x = Math.max(0, Math.min(panelPos.x, window.innerWidth - r.width));
+  const y = Math.max(0, Math.min(panelPos.y, window.innerHeight - r.height));
+  if (x !== panelPos.x || y !== panelPos.y) {
+    panelPos.x = x; panelPos.y = y;
+    st.left = x + 'px'; st.top = y + 'px';
+  }
+}
+
+// Ab dem ersten Verschieben oder Skalieren gilt eine feste Lage (linke obere Ecke)
+function pinPanel() {
+  if (panelPos.x !== undefined) return;
+  const r = cmdPanel.getBoundingClientRect();
+  panelPos.x = r.left; panelPos.y = r.top;
+  placePanel();
+}
+
+function panelDrag(handle, onMove) {
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button') || e.button > 0) return;
+    e.preventDefault();
+    pinPanel();
+    handle.setPointerCapture(e.pointerId);
+    const start = { px: e.clientX, py: e.clientY, x: panelPos.x, y: panelPos.y, s: panelPos.scale || 1, r: cmdPanel.getBoundingClientRect() };
+    cmdPanel.classList.add('dragging');
+    const move = (ev) => { onMove(ev, start); placePanel(); };
+    const up = () => {
+      cmdPanel.classList.remove('dragging');
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      savePanel();
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+}
+
+const cmdHead = cmdPanel.querySelector('.cmdHead');
+// Doppelklick/Doppeltippen (vor dem Ziehen geprüft, damit es kein Ziehen startet)
+let lastHeadTap = 0;
+cmdHead.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button')) return;
+  const now = performance.now();
+  if (now - lastHeadTap < 350) {
+    lastHeadTap = 0;
+    panelPos = {};
+    placePanel();
+    savePanel();
+    e.stopImmediatePropagation();
+    return;
+  }
+  lastHeadTap = now;
+});
+panelDrag(cmdHead, (ev, st) => {
+  panelPos.x = st.x + ev.clientX - st.px;
+  panelPos.y = st.y + ev.clientY - st.py;
+});
+panelDrag($('cmdResize'), (ev, st) => {
+  // Neue Breite bis zum Zeiger, Höhe wächst im gleichen Verhältnis mit
+  const k = Math.max((ev.clientX - st.r.left) / st.r.width, (ev.clientY - st.r.top) / st.r.height);
+  panelPos.scale = Math.max(PANEL_SCALE[0], Math.min(PANEL_SCALE[1], Math.round(st.s * k * 100) / 100));
+});
+new ResizeObserver(() => placePanel()).observe(cmdPanel);
+window.addEventListener('resize', placePanel);
+placePanel();
 
 function loadSettings() {
   try { return JSON.parse(localStorage.getItem('wod-settings')) || {}; } catch { return {}; }
