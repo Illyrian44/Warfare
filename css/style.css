@@ -248,6 +248,12 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 .toast.out { opacity: 0; transform: translateY(-6px); }
 
 /* Overlays */
+/* Startmenü: Pixel-Bild im Hintergrund (scharf skaliert), leicht abgedunkelt */
+#menu {
+  background: linear-gradient(rgba(8, 14, 22, 0.25), rgba(8, 14, 22, 0.55)), url('../assets/menu-bg.png') 50% 20% / cover no-repeat, #0b111a;
+  image-rendering: pixelated;
+}
+#menu .panel { image-rendering: auto; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
 .overlay {
   position: fixed;
   inset: 0;
@@ -313,6 +319,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   #buildPanel, #diploPanel { top: calc(118px + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); max-height: 46vh; }
   #offerBox { top: calc(150px + env(safe-area-inset-top)); }
   #pausedBanner { top: 22%; font-size: 24px; }
+  #menu { background-position: 0 0, 18% 50%; } /* Hochformat: der blaue Offizier */
   #frontBanner { bottom: calc(220px + env(safe-area-inset-bottom)); }
 }
 
