@@ -25,11 +25,11 @@ export const TERRAIN_INFO = [
 export const UNIT_TYPES = {
   light: {
     name: 'Leicht', hp: 100, speed: kmh(10), dps: 6, radius: 5, buildTime: 15,
-    terrainAttack: [0, 1, 1, 1, 1, 0], strength: 1,
+    terrainAttack: [0, 1, 1, 1, 1, 0], strength: 1, cost: { money: 30, manpower: 150 },
   },
   heavy: {
     name: 'Schwer', hp: 165, speed: kmh(18), dps: 10, radius: 7, buildTime: 26,
-    terrainAttack: [0, 0.7, 1.25, 0.7, 0.85, 0], strength: 1.7,
+    terrainAttack: [0, 0.7, 1.25, 0.7, 0.85, 0], strength: 1.7, cost: { money: 100, manpower: 90 },
   },
 };
 
@@ -56,6 +56,19 @@ export const CITY_RADIUS = 12;
 export const CITY_CAPTURE_RADIUS = 20;
 export const CAPTURE_TIME = 4;         // Sekunden
 export const UNITS_PER_CITY = 10;
+
+// Wirtschaft: Geld und Manpower je Seite. Städte liefern je nach Größe (aus der echten
+// Einwohnerzahl), die Hauptstadt (Startstadt) zählt immer als Großstadt, das Land bringt
+// etwas Geld dazu. Kompanien kosten beides (cost in UNIT_TYPES).
+export const ECONOMY = {
+  sizeOf: (pop) => (pop >= 1500000 ? 3 : pop >= 400000 ? 2 : 1), // 1 Kleinstadt … 3 Großstadt
+  cityMoney: 0.6,     // Geld je Sekunde und Stadtgröße
+  landMoney: 0.05,    // Geld je Sekunde und Prozent des Landes
+  cityManpower: 4,    // Manpower je Sekunde und Stadtgröße
+  manpowerCap: 45,    // Manpower-Vorrat höchstens so viele Sekunden Zuwachs (mindestens 1000)
+  startMoney: 150,
+  startManpower: 600,
+};
 
 // Versorgung: jede eigene Stadt ist ein Depot und beliefert die Kompanien, die sie über
 // eigenes Gebiet am schnellsten erreicht. LKW fahren auf Straßen schnell; Feindgebiet

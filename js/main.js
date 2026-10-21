@@ -1,16 +1,16 @@
-import { loadMap, MAPS } from './map.js?v=81';
-import { Game } from './game.js?v=81';
-import { AI } from './ai.js?v=81';
-import { Renderer, isFrontShown } from './render.js?v=81';
-import { Input } from './input.js?v=81';
-import { formationSlots } from './formation.js?v=81';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=81';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=81';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS } from './config.js?v=81';
+import { loadMap, MAPS } from './map.js?v=83';
+import { Game } from './game.js?v=83';
+import { AI } from './ai.js?v=83';
+import { Renderer, isFrontShown } from './render.js?v=83';
+import { Input } from './input.js?v=83';
+import { formationSlots } from './formation.js?v=83';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=83';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=83';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS } from './config.js?v=83';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '81'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '83'; // für Kartendaten, siehe scripts/bump-version.sh
 
 const app = {
   game: null,
@@ -704,6 +704,11 @@ const app = {
       g.players.filter((p) => p !== this.human).map(side).join(' ') +
       (neutral ? ` <span class="dot grey"></span>${neutral}` : '');
     $('hudUnits').innerHTML = `${myU}<span class="muted">/${myC * UNITS_PER_CITY} Einheiten</span>`;
+    const e = g.eco[this.human];
+    const k = (v) => (v >= 10000 ? `${(v / 1000).toFixed(0)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.floor(v)}`);
+    $('hudEco').innerHTML =
+      `<span title="Geld: Städte (nach Größe) und Land bringen Einkommen, Kompanien kosten Geld">💰 ${k(e.money)}<small class="muted"> +${e.income.toFixed(1)}/s</small></span> ` +
+      `<span title="Manpower: wächst aus der Bevölkerung deiner Städte (Vorrat höchstens ${k(e.mpCap)}), Kompanien kosten Manpower">👥 ${k(e.manpower)}<small class="muted"> +${e.mpRate.toFixed(0)}/s</small></span>`;
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     $('hudTime').textContent = `${m}:${String(s).padStart(2, '0')}`;
     this.updateCommands();

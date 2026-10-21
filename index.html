@@ -7,7 +7,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=81">
+  <link rel="stylesheet" href="css/style.css?v=83">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -17,6 +17,7 @@
       <div class="stats">
         <span id="hudCities"></span>
         <span id="hudUnits"></span>
+        <span id="hudEco"></span>
         <span id="hudTime" class="muted"></span>
       </div>
       <div class="buttons">
@@ -103,7 +104,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 81</small>
+      <small id="version" class="muted">Version 83</small>
     </div>
   </div>
 
@@ -150,7 +151,8 @@
         <li><b>Karten:</b> Balkan und Mitteleuropa nach echter Geografie – Küsten, Gebirge, Flüsse, Seen, Fernstraßen und die großen Städte mit ihren Namen. Flüsse sind langsam zu durchqueren und schwer anzugreifen, Straßen führen über Brücken und durch Pässe. Grau ist Ausland: sichtbar, aber nicht spielbar. Ein Feld misst etwa 6&nbsp;km; das Tempo ist für flüssiges Spiel stilisiert (Einheiten kommen schneller voran als in Wirklichkeit). Kartendaten: Natural Earth (gemeinfrei), Höhen: Terrain Tiles von Mapzen/Tilezen (AWS Open Data).</li>
         <li><b>Nachschub:</b> Jede eigene Stadt ist ein Depot. LKW bringen Nachschub über <i>eigenes Gebiet</i> – auf Straßen 50&nbsp;km/h, im Gelände viel langsamer; in der Nähe von Feinden dauert es viermal so lange, durch Feindgebiet geht nichts. Bis 3 Stunden Fahrt kommt alles an, ab 8 Stunden nichts mehr. Jede Kompanie hat einen Vorrat (reicht etwa 6 Stunden, im Gefecht halb so lange). Depots, die über eigenes Gebiet verbunden sind, teilen sich ihre Lieferleistung; reicht sie nicht, bekommen alle gleichmäßig weniger. Eingekesselte Truppen sind abgeschnitten. <b>Folgen:</b> Heilen nur mit gefülltem Vorrat, unter 15&nbsp;% Abnutzung, Kampfkraft bis auf die Hälfte, Panzer ohne Treibstoff werden langsam. Ein gelbes Warndreieck markiert knappen Vorrat (gelb blinkend: fast leer). „Nachschub“ (Taste N) zeigt die Lieferquote auf der Karte (grün voll, gelb knapp, rot nichts, dunkelrot abgeschnitten), die Auslastung an den Städten und den Nachschubweg der Auswahl.</li>
         <li><b>Organisation</b> (blauer Balken): die Kampfbereitschaft einer Kompanie – Infanterie 60, Panzer 35. Schaden trifft sie stärker als die Lebenspunkte. Bei 0 ist die Kompanie <i>zerschlagen</i> (blass): Sie kämpft nicht mehr, erobert nichts und zieht sich selbstständig zurück, auch von der Front; aus einer belagerten Stadt weicht sie zur nächsten aus. Außerhalb des Gefechts erholt sie sich (etwa 15&nbsp;% je Stunde, beim Marsch langsamer, ohne Nachschub gar nicht) und ist ab 50&nbsp;% wieder einsatzbereit. Die Divisionskarte zeigt Stärke (grün), Organisation (blau) und Nachschub (orange).</li>
-        <li><b>Städte</b> produzieren Einheiten, bis zu 10 je eigener Stadt.</li>
+        <li><b>Städte</b> produzieren Einheiten, bis zu 10 je eigener Stadt. Jede Kompanie kostet <b>Geld</b> und <b>Manpower</b> (oben angezeigt): Infanterie 30&nbsp;💰 und 150&nbsp;👥, Panzer 100&nbsp;💰 und 90&nbsp;👥. Ist eine Kompanie fertig ausgebildet, aber die Kasse reicht nicht, wartet die Stadt (grauer Ring).</li>
+        <li><b>Wirtschaft:</b> Städte bringen Geld und Manpower nach ihrer Größe – Klein-, Mittel- oder Großstadt nach der echten Einwohnerzahl (Großstädte sind auf der Karte etwas größer). Deine Hauptstadt (die Startstadt) zählt immer als Großstadt, solange du sie hältst. Dazu bringt jedes Prozent Land etwas Geld. Manpower sammelt sich nur bis zu einem Vorrat an, Geld unbegrenzt.</li>
         <li><b>Erobern:</b> Stell dich in eine Stadt, die nicht verteidigt wird. Der gestrichelte Ring zeigt den Fortschritt.</li>
         <li><b>Gebiet:</b> Zu Beginn gehört jeder Seite nur das Land um ihre Startstadt, alles andere ist neutral. Eroberte Städte bringen das Land ringsum. Wo deine Einheiten stehen, wird das Land deins – außer bei Kompanien, die eine Grenzfront nur halten: Sie nehmen weder neutrales noch feindliches Land ein. Grenzfronten zeigen zu den Gegnern; solange du keinen berührst, liegen sie am Rand deines Gebiets in ihrer Richtung.</li>
         <li>Gegner siehst du nur in Sichtweite deiner Einheiten und Städte.</li>
@@ -171,6 +173,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=81"></script>
+  <script type="module" src="js/main.js?v=83"></script>
 </body>
 </html>

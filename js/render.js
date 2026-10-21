@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=81';
-import { classify } from './map.js?v=81';
-import { frontBadge, pointAt } from './fronts.js?v=81';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=81';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=83';
+import { classify } from './map.js?v=83';
+import { frontBadge, pointAt } from './fronts.js?v=83';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=83';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -555,7 +555,7 @@ export class Renderer {
   drawCity(c, px, ui) {
     const { ctx, game } = this;
     const me = this.human;
-    const R = CITY_RADIUS;
+    const R = CITY_RADIUS * (0.8 + 0.12 * game.citySize(c)); // Großstädte etwas größer
     if (ui.pickHover === c) {
       // Wahl der Startstadt: Stadt unter dem Zeiger hervorheben
       ctx.beginPath();
@@ -581,7 +581,8 @@ export class Renderer {
       const build = UNIT_TYPES[c.prodType].buildTime;
       ctx.beginPath();
       ctx.arc(c.x, c.y, R + 3, -Math.PI / 2, -Math.PI / 2 + Math.min(1, c.timer / build) * Math.PI * 2);
-      ctx.strokeStyle = PLAYER_COLORS[c.owner];
+      // fertig, aber Geld oder Manpower reichen nicht: grauer Ring
+      ctx.strokeStyle = c.waiting ? 'rgba(200,200,200,0.8)' : PLAYER_COLORS[c.owner];
       ctx.lineWidth = 2.2;
       ctx.stroke();
     }

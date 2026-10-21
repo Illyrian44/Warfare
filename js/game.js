@@ -1,12 +1,12 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
-  CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, WIN_SHARE, START_UNITS,
+  CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, WIN_SHARE, START_UNITS, ECONOMY,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=81';
-import { mulberry32 } from './rng.js?v=81';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=81';
-import { HQManager } from './hq.js?v=81';
-import { SupplyNetwork } from './supply.js?v=81';
+} from './config.js?v=83';
+import { mulberry32 } from './rng.js?v=83';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=83';
+import { HQManager } from './hq.js?v=83';
+import { SupplyNetwork } from './supply.js?v=83';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -25,6 +25,7 @@ export class Game {
     // Alle Städte beginnen neutral, jede Seite startet mit einer Stadt
     this.cities = map.cities.map((c, i) => ({
       id: i, x: c.x, y: c.y, owner: 0, name: c.name || '', prodType: 'light',
+      size: ECONOMY.sizeOf(c.pop || 0), capitalOf: 0,
       timer: this.rng() * 4, capOwner: 0, capProgress: 0,
     }));
     const n = map.w * map.h;
@@ -50,6 +51,11 @@ export class Game {
     this.landCells = 0;
     for (let i = 0; i < n; i++) if (map.isLand(i)) this.landCells++;
     this.share = slots().map(() => 0);
+    // Kasse je Seite: Geld, Manpower und ihre Zuwächse je Sekunde (siehe updateEconomy)
+    this.eco = slots().map((_, p) => (p
+      ? { money: ECONOMY.startMoney, manpower: ECONOMY.startManpower, income: 0, mpRate: 0, mpCap: 1000, spent: 0 }
+      : null));
+    this.ecoTimer = 0;
 
     // Start: je Seite eine Stadt mit etwas Land und wenigen Kompanien ohne Division
     this.orbat = slots().map((_, p) => (p ? new OrderOfBattle(p) : null));
@@ -57,10 +63,12 @@ export class Game {
     for (const p of opts.preview ? [] : this.players) {
       const c = this.cities[this.starts[p]];
       c.owner = p;
+      c.capitalOf = p;
       this.paint(p, c.x, c.y, CITY_BORDER);
       this.orbat[p].createStart(this, c, START_UNITS);
     }
     this.updateShares();
+    this.updateEconomy(0);
     this.supply = new SupplyNetwork(this);
     this.hq = new HQManager(this);
     this.hq.place();
@@ -117,6 +125,45 @@ export class Game {
   }
 
   alive(p) { return !this.out.has(p); }
+
+  // Wirtschaftliche Größe einer Stadt: die eigene Hauptstadt zählt immer als Großstadt
+  citySize(c) {
+    return c.capitalOf && c.capitalOf === c.owner ? 3 : c.size;
+  }
+
+  // Einkommen einmal je Sekunde neu berechnen, Geld und Manpower in jedem Schritt gutschreiben.
+  // prodMult (Schwierigkeit der KI) wirkt auf beide Zuwächse
+  updateEconomy(dt) {
+    this.ecoTimer -= dt;
+    if (this.ecoTimer <= 0) {
+      this.ecoTimer = 1;
+      for (const p of this.players) {
+        const e = this.eco[p];
+        let size = 0;
+        for (const c of this.cities) if (c.owner === p) size += this.citySize(c);
+        const m = this.prodMult[p];
+        e.income = (size * ECONOMY.cityMoney + this.share[p] * 100 * ECONOMY.landMoney) * m;
+        e.mpRate = size * ECONOMY.cityManpower * m;
+        e.mpCap = Math.max(1000, e.mpRate * ECONOMY.manpowerCap);
+      }
+    }
+    for (const p of this.players) {
+      const e = this.eco[p];
+      if (!this.alive(p)) continue;
+      e.money += e.income * dt;
+      e.manpower = Math.min(e.mpCap, e.manpower + e.mpRate * dt);
+    }
+  }
+
+  // Kosten bezahlen, wenn die Kasse reicht
+  pay(p, cost) {
+    const e = this.eco[p];
+    if (e.money < cost.money || e.manpower < cost.manpower) return false;
+    e.money -= cost.money;
+    e.manpower -= cost.manpower;
+    e.spent += cost.money;
+    return true;
+  }
 
   // Anteil am Land je Seite (für Sieg und Anzeige)
   updateShares() {
@@ -321,6 +368,7 @@ export class Game {
     }
     this.units = alive;
 
+    this.updateEconomy(dt);
     this.updateCities(dt);
 
     this.terrTimer -= dt;
@@ -616,9 +664,12 @@ export class Game {
         if (unitCount[c.owner] < cap) {
           // Je voller die Armee, desto langsamer die Produktion
           const fill = unitCount[c.owner] / cap;
-          const rate = (fill < 0.5 ? 1 : 1 - (fill - 0.5) * 0.8) * this.prodMult[c.owner];
-          c.timer += dt * rate;
-          if (c.timer >= UNIT_TYPES[c.prodType].buildTime) {
+          const rate = fill < 0.5 ? 1 : 1 - (fill - 0.5) * 0.8; // Schwierigkeit wirkt aufs Einkommen
+          const build = UNIT_TYPES[c.prodType].buildTime;
+          c.timer = Math.min(build, c.timer + dt * rate);
+          // Fertig ausgebildet: erst einsetzen, wenn Geld und Manpower reichen
+          c.waiting = c.timer >= build && !this.pay(c.owner, UNIT_TYPES[c.prodType].cost);
+          if (c.timer >= build && !c.waiting) {
             c.timer = 0;
             const u = this.spawnUnit(c.owner, c.prodType, c);
             unitCount[c.owner]++;

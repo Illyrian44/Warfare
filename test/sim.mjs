@@ -21,7 +21,8 @@ const { cycleSelection } = await load('input');
 const { KM } = await load('config');
 
 const STEP = 1 / 30;
-const MAX_TIME = 20 * 60;   // Sekunden Spielzeit, bis die Partie entschieden sein muss
+// Sekunden Spielzeit, bis die Partie entschieden sein muss (mit mehr Seiten dauert es länger)
+const maxTime = (np) => (np >= 5 ? 30 : 20) * 60;
 // Zufall der Partie, Karte, Zahl der Seiten (alle von der KI gespielt)
 const CASES = [[1, 'balkan', 2], [42, 'mitteleuropa', 3], [777, 'balkan', 5]];
 
@@ -49,6 +50,12 @@ function checkState(g, label, ais) {
     const t = g.map.cellTerrainAt(u.x, u.y);
     if (!TERRAIN_INFO[t].passable) u.badTime = (u.badTime || 0) + 1; else u.badTime = 0;
     if (u.badTime > 10) { fail(`${label}: Einheit ${u.id} steckt auf unbegehbarem Gelände (${u.x.toFixed(0)}, ${u.y.toFixed(0)})`); u.badTime = -1e9; }
+  }
+  // Wirtschaft: Geld und Manpower nie negativ, Manpower höchstens bis zum Vorrat
+  for (const p of g.players) {
+    const e = g.eco[p];
+    if (!(e.money >= 0) || !Number.isFinite(e.money)) fail(`${label}: Seite ${p} hat Geld ${e.money}`);
+    if (!(e.manpower >= 0 && e.manpower <= e.mpCap + 1e-6)) fail(`${label}: Seite ${p} hat Manpower ${e.manpower} (Vorrat ${e.mpCap})`);
   }
   // Gliederung: Höchststärken, Regimenter nach Typ getrennt, jede Kompanie in höchstens einem Regiment
   for (const p of g.players) {
@@ -181,7 +188,7 @@ for (const [seed, size, np] of CASES) {
     let steps = 0, maxDivs = 0;
     const slots = () => [0, ...g.players.map(() => 0)];
     const formed = slots(), reserve = slots(), attacks = slots(), armies = slots(), alive = slots();
-    while (!g.winner && g.time < MAX_TIME) {
+    while (!g.winner && g.time < maxTime(np)) {
       const t = performance.now();
       for (const ai of ais) ai.update(STEP);
       // Prüfen zwischen KI und Spielschritt: dann sind alle Zwischenspeicher dieses Schritts
@@ -203,7 +210,7 @@ for (const [seed, size, np] of CASES) {
       g.events.length = 0;
       worst = Math.max(worst, performance.now() - t);
     }
-    if (!g.winner) fail(`${label}: nach ${MAX_TIME / 60} Minuten Spielzeit noch kein Sieger`);
+    if (!g.winner) fail(`${label}: nach ${maxTime(np) / 60} Minuten Spielzeit noch kein Sieger`);
     // Die KI bildet Divisionen für ihre Fronten und behält eine Reserve ohne Division
     // (gemessen über die Zeit, in der die Seite mindestens 14 Kompanien hatte; zu Beginn hat jede nur 4)
     for (const p of g.players) {
@@ -216,6 +223,7 @@ for (const [seed, size, np] of CASES) {
     console.log(`${g.winner ? 'ok  ' : '    '} ${label}: Sieger ${g.winner} nach ${Math.round(g.time)} s, ` +
       `${ms.toFixed(2)} ms/Schritt (max ${worst.toFixed(0)} ms), bis zu ${maxDivs} Divisionen, ` +
       `Land ${g.players.map((p) => Math.round(g.share[p] * 100) + '%').join('/')}, ` +
+      `Ausgaben ${g.players.map((p) => Math.round(g.eco[p].spent)).join('/')}, ` +
       `Frontangriffe ${g.players.map((p) => attacks[p]).join('/')} s`);
   } catch (e) {
     fail(`${label}: Absturz\n${e.stack}`);
