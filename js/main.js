@@ -199,24 +199,28 @@ const app = {
     // Nahe der Grenze rastet die Linie ein und wird zum Grenzabschnitt
     const anchors = this.fronts.snapToBorder(line);
     const made = anchors
-      ? (divs.length > 1 ? this.fronts.splitBorder(divs, anchors) : [this.fronts.assign(divs[0], 'segment', null, anchors)])
+      ? this.fronts.shareBorder(divs, anchors)
       : (divs.length > 1 ? this.fronts.splitLine(divs, line) : [this.fronts.assign(divs[0], 'line', line)]);
     if (made.length === 1) this.selectFront(made[0]);
     this.divBarSig = null;
     this.updateSelectionInfo();
     const what = anchors ? 'den Grenzabschnitt' : 'die neue Front';
-    this.toast(divs.length > 1 ? `${divs.length} Divisionen teilen sich ${what}` : `${divs[0].name} hält ${what}`);
+    const n = Math.max(divs.length, made.length); // Divisionen, die dort schon standen, teilen mit
+    this.toast(n > 1 ? `${n} Divisionen teilen sich ${what}` : `${divs[0].name} hält ${what}`);
   },
 
-  // Grenze: eine Division hält die ganze Grenze, mehrere teilen sie sich nach Stärke
+  // Grenze: die ausgewählten Divisionen kommen zu denen an der Grenze dazu, alle teilen sie
+  // sich nach Stärke (eine Division allein hält die ganze Grenze)
   borderFront() {
     const divs = this.frontDivisions();
     if (!divs) return;
-    const made = divs.length > 1 ? this.fronts.splitBorder(divs) : [this.fronts.assign(divs[0], 'border', null)];
+    // Wer schon an der Grenze steht, bleibt dort; die Grenze wird unter allen neu aufgeteilt
+    const made = this.fronts.shareBorder(divs);
     if (made.length === 1) this.selectFront(made[0]);
     this.divBarSig = null;
     this.updateSelectionInfo();
-    if (!made.length || !made[0].chains.length) this.toast('Keine Grenze zum Gegner gefunden');
+    if (!made.length || !made.some((f) => f.chains.length)) this.toast('Keine Grenze zum Gegner gefunden');
+    else if (made.length > divs.length) this.toast(`${made.length} Divisionen teilen sich jetzt die Grenze`);
     else this.toast(divs.length > 1 ? `${divs.length} Divisionen teilen sich die Grenze` : `${divs[0].name} hält die Grenze`);
   },
 

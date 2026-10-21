@@ -38,8 +38,19 @@ export class FrontManager {
   // Front einer Division anlegen oder ihre bestehende Front neu ausrichten
   // (eine Division hat höchstens eine Front). Grenzfronten und -abschnitte kürzen
   // ältere, mit denen sie sich überschneiden (außer beim Aufteilen, das selbst abgleicht).
-  assign(div, kind, line, anchors = null, claim = true) {
+  // keep: nur den Abschnitt verschieben – laufender Angriff, Plan und abgezogene
+  // Kompanien bleiben (für Divisionen, die beim Neuaufteilen nur mitgenommen werden)
+  assign(div, kind, line, anchors = null, claim = true, keep = false) {
     let f = this.fronts.includes(div.front) ? div.front : null;
+    if (f && keep && kind !== 'line' && f.kind !== 'line') {
+      f.kind = kind;
+      f.line = null;
+      f.anchors = kind === 'segment' ? this.orderAnchors(anchors) : null;
+      this.prepare(f);
+      if (claim) this.claim(f);
+      this.updateNeighbors();
+      return f;
+    }
     if (!f) {
       f = { id: this.nextId++, owner: this.owner, division: div, units: [], chains: [], rotate: true, neighbors: [] };
       div.front = f;
@@ -230,9 +241,26 @@ export class FrontManager {
     }
   }
 
+  // Grenze oder Grenzabschnitt für Divisionen (Knopf „Grenze“ bzw. gezeichnete Linie an der
+  // Grenze): Divisionen, deren Abschnitt ganz darin liegt, teilen ihn mit, statt ihre Front
+  // zu verlieren. So kommt eine weitere Division zu den Divisionen an der Grenze dazu.
+  shareBorder(divs, anchors = [null, null]) {
+    if (!this.border().length) return [];
+    const range = this.orderAnchors(anchors);
+    const [k0, k1] = this.rangeOf({ kind: 'segment', anchors: range });
+    const L0 = this.lenBelow(k0), L1 = this.lenBelow(k1);
+    const inside = this.fronts.filter((f) => {
+      if (f.kind === 'line' || divs.includes(f.division)) return false;
+      const [b0, b1] = this.rangeOf(f);
+      return this.lenBelow(b0) >= L0 - MIN_SECTION && this.lenBelow(b1) <= L1 + MIN_SECTION;
+    }).map((f) => f.division);
+    return this.splitBorder([...divs, ...inside], anchors, inside);
+  }
+
   // Mehrere Divisionen teilen sich die Grenze (oder einen Abschnitt davon): aneinander-
-  // liegende Abschnitte, Länge nach Stärke, Reihenfolge nach ihrer Lage an der Grenze
-  splitBorder(divs, anchors = [null, null]) {
+  // liegende Abschnitte, Länge nach Stärke, Reihenfolge nach ihrer Lage an der Grenze.
+  // keepDivs werden nur mitgenommen (siehe assign: keep)
+  splitBorder(divs, anchors = [null, null], keepDivs = []) {
     if (!this.border().length) return [];
     const range = this.orderAnchors(anchors);
     const [k0, k1] = this.rangeOf({ kind: 'segment', anchors: range });
@@ -244,7 +272,7 @@ export class FrontManager {
     order.forEach((o, k) => {
       acc += (L1 - L0) * o.s / sum;
       const next = k === order.length - 1 ? range[1] : this.anchorAt(this.keyAtLen(acc));
-      made.push(this.assign(o.d, 'segment', null, [prev, next], false));
+      made.push(this.assign(o.d, 'segment', null, [prev, next], false, keepDivs.includes(o.d)));
       prev = next;
     });
     // Erst alle neuen Abschnitte setzen, dann ältere Fronten anderer Divisionen kürzen;
@@ -406,7 +434,7 @@ export class FrontManager {
     const hi = ranges.reduce((a, b) => (b.r[1] > a.r[1] ? b : a));
     const end = (f, i) => (f.kind === 'segment' ? f.anchors[i] : null);
     const rotate = held[0].rotate;
-    const made = this.splitBorder(divs, [end(lo.f, 0), end(hi.f, 1)]);
+    const made = this.splitBorder(divs, [end(lo.f, 0), end(hi.f, 1)], held.map((f) => f.division));
     for (const f of made) f.rotate = rotate;
     return made;
   }
@@ -513,8 +541,9 @@ export class FrontManager {
     const list = [...bad];
     const { kmin, kmax } = this.borderSegs();
     const k0 = Math.min(...list.map((s) => s.r[0])), k1 = Math.max(...list.map((s) => s.r[1]));
-    const made = this.splitBorder(list.map((s) => s.f.division),
-      [k0 <= kmin ? null : this.anchorAt(k0), k1 >= kmax ? null : this.anchorAt(k1)]);
+    const divs = list.map((s) => s.f.division);
+    const made = this.splitBorder(divs,
+      [k0 <= kmin ? null : this.anchorAt(k0), k1 >= kmax ? null : this.anchorAt(k1)], divs);
     for (const f of made) f.rotate = list.find((s) => s.f.division === f.division).f.rotate;
   }
 
