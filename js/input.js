@@ -1,7 +1,19 @@
-import { CITY_RADIUS } from './config.js?v=69';
-import { divisionOf, unitsOf } from './orbat.js?v=69';
+import { CITY_RADIUS } from './config.js?v=70';
+import { divisionOf, unitsOf } from './orbat.js?v=70';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
+
+// Nächste Auswahl der Klickfolge: Stufen mit gleicher Auswahl überspringen; ist die aktuelle
+// Auswahl eine der Stufen, kommt die nächste, sonst die erste. Bei nur einer Stufe hebt ein
+// erneuter Klick die Auswahl auf (leere Liste).
+export function cycleSelection(steps, current) {
+  const same = (a, b) => a.length === b.length && a.every((u) => b.includes(u));
+  const uniq = steps.filter((st, i) => !steps.slice(0, i).some((t) => same(st, t)));
+  const k = uniq.findIndex((st) => same(st, current));
+  if (k < 0) return uniq[0];
+  if (uniq.length === 1) return [];
+  return uniq[(k + 1) % uniq.length];
+}
 
 export class Input {
   constructor(canvas, app) {
@@ -52,14 +64,10 @@ export class Input {
     const near = hit.members.reduce((a, b) => (dist(b) < dist(a) ? b : a));
     const div = divisionOf(near);
     const steps = [hit.members, div ? unitsOf(div) : null, [near]].filter(Boolean);
-    const same = (a, b) => a.length === b.length && a.every((u) => b.includes(u));
-    const uniq = steps.filter((st, i) => !steps.slice(0, i).some((t) => same(st, t)));
-    if (additive) { for (const u of uniq[0]) sel.add(u); return; }
-    const k = uniq.findIndex((st) => same(st, [...sel]));
+    if (additive) { for (const u of steps[0]) sel.add(u); return; }
+    const next = cycleSelection(steps, [...sel]);
     sel.clear();
-    if (k < 0) { for (const u of uniq[0]) sel.add(u); return; }
-    if (uniq.length === 1) return; // einzelne Kompanie erneut angeklickt: Auswahl aufheben
-    for (const u of uniq[(k + 1) % uniq.length]) sel.add(u);
+    for (const u of next) sel.add(u);
   }
 
   pickOwnCity(w) {

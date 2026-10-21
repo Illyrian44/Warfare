@@ -21,12 +21,13 @@ Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https:
 - **Nachschub** (`js/supply.js`): Jede eigene Stadt ist ein Depot. Ein Dijkstra über das eigene Gebiet berechnet die LKW-Fahrzeit zu jedem Feld (Straße 50 km/h, Gelände 4–20 km/h, Feindgebiet sperrt, 2 km um Feinde vierfache Zeit). Jede Kompanie hat einen Vorrat (1/6 je Stunde, im Gefecht doppelt) und fordert Nachschub an; voll bis 3 h Fahrt, nichts ab 8 h. Verbundene Depots teilen sich ihre Lieferleistung, Mangel wird gleichmäßig verteilt (Panzer zählen 1,5-fach); Kessel sind abgeschnitten. Wirkung: Heilen nur mit Vorrat, sonst Abnutzung, Kampfkraft bis 50 %, Panzer ohne Treibstoff langsam. Kartenebene „Nachschub“ (N). LKW-Kolonnen sind vorbereitet (`dispatch()`/`deliver()`/`route()`, `SUPPLY.convoys`), aber noch nicht eingebaut.
 - **Organisation:** Kampfbereitschaft je Kompanie (Infanterie 60, Panzer 35). Schaden trifft sie stärker als die Lebenspunkte; bei 0 ist die Kompanie zerschlagen, kämpft nicht, erobert nichts und zieht sich zurück (auch von der Front), ab 50 % ist sie wieder einsatzbereit. Erholung außerhalb des Gefechts je nach Nachschub. KI und HQs berücksichtigen Organisation und Nachschub.
 - **Städte** produzieren Einheiten, bis zu 10 je eigener Stadt.
-- **Gliederung:** Division (XX) → Regiment (III) → Kompanie (I). Alle Kompanien starten ohne Division; Spieler und KI fassen sie nach Bedarf zu Divisionen zusammen (höchstens 12 Kompanien) oder nehmen sie wieder heraus. Die Regimenter (2–3 Kompanien, Infanterie und Panzer getrennt) ordnet das Spiel selbst. Leere Divisionen lösen sich auf und geben Nummer und Farbe frei. Kompanien ohne Division sind die Reserve: frei verfügbar, aber ohne HQ, Front und Rotation. Innerhalb einer Division rotieren Kompanien: Unter 25 % im Gefecht tauscht eine Kompanie den Platz mit einer frischen in der Nähe.
-- **Fronten wie in Hearts of Iron:** Jede Front gehört zu genau einer Division, ihre Kompanien verteilen sich darauf und halten sie. Eine gezeichnete Linie nahe der Grenze rastet als Grenzabschnitt ein und wandert mit der Grenze; „Grenze“ mit mehreren Divisionen teilt die Grenze nach Stärke auf. Abschnitte werden über eine feste Achse quer zur Stoßrichtung abgegrenzt, benachbarte teilen sich einen Ankerpunkt (keine Lücken, keine Überlappung); ein neuer Abschnitt kürzt ältere. Angriffe wie in HOI4: Division mit Front auswählen → „➜ Angriff planen“ → Ziellinie ziehen (NATO-Phasenlinie mit Decknamen und Hauptangriffsachse nach APP-6; geplant gestrichelt, laufend durchgezogen) → „▶ Angriff starten“. Optional ziehen sich Verwundete zum Heilen zurück (Rotation).
+- **Gliederung:** Armee (XXXX) → Division (XX) → Regiment (III) → Kompanie (I). Armeen fassen beliebig viele Divisionen zusammen; Grenze, Front und Angriff für eine Armee werden nach Stärke auf ihre Divisionen aufgeteilt, eine neue Division in der Armee löst eine Neuaufteilung aus. Alle Kompanien starten ohne Division; Spieler und KI fassen sie nach Bedarf zu Divisionen zusammen (höchstens 12 Kompanien) oder nehmen sie wieder heraus. Die Regimenter (2–3 Kompanien, Infanterie und Panzer getrennt) ordnet das Spiel selbst. Leere Divisionen lösen sich auf und geben Nummer und Farbe frei. Kompanien ohne Division sind die Reserve: frei verfügbar, aber ohne HQ, Front und Rotation. Innerhalb einer Division rotieren Kompanien: Unter 25 % im Gefecht tauscht eine Kompanie den Platz mit einer frischen in der Nähe.
+- **Fronten wie in Hearts of Iron:** Jede Front gehört zu genau einer Division, ihre Kompanien verteilen sich darauf und halten sie. Eine gezeichnete Linie nahe der Grenze rastet als Grenzabschnitt ein und wandert mit der Grenze; „Grenze“ mit mehreren Divisionen teilt die Grenze nach Stärke auf. Abschnitte werden über eine feste Achse quer zur Stoßrichtung abgegrenzt, benachbarte teilen sich einen Ankerpunkt (keine Lücken, keine Überlappung); ein neuer Abschnitt kürzt ältere. Angriffe wie in HOI4: Division(en) oder Armee mit Front auswählen → „➜ Angriff planen“ → Ziellinie ziehen (NATO-Phasenlinie mit gemeinsamem Decknamen und Hauptangriffsachse nach APP-6; geplant gestrichelt, laufend durchgezogen) → „▶ Angriff starten“. Ein Angriff ist ein Auftrag an die bestehende Front: Die Division bleibt ihrem Grenzabschnitt zugewiesen, es entsteht keine neue Front im Feindesland; danach hält sie die vorgeschobene Grenze. Optional ziehen sich Verwundete zum Heilen zurück (Rotation).
 - **Sichtbarkeit der Fronten:** Auf der Karte erscheint nur die Front der ausgewählten Division; „Fronten“ (V) blendet alle eigenen ein. Grenzstücke ohne Front sind rot gestrichelt. Fronten und Angriffspläne des Gegners bleiben verborgen.
 - **Divisions-HQs:** Jede Division hat ein HQ hinter der Linie (keine Kampfeinheit). Es gleicht in der Verteidigung Kräfte aus, indem es ruhige Kompanien an bedrängte Stellen schickt, und riegelt Durchbrüche mit einem freien Regiment ab. Ist der Abschnitt einer Division weitgehend leer, funkt ihr HQ die Nachbarfronten an; der Nachbar mit Reserven übernimmt vorübergehend (bis 3 Kompanien, 30 s).
-- **Divisionsleiste:** Unten Werkzeuge zur Gliederung („＋ Neue Division“, „− Aus Division“, „Auffüllen“, „Auto-Gliederung“) und eine Karte je Division (NATO-Symbol, Name, Stärke, Regimenter) wie in HOI4; Antippen wählt die Division, „＋“ fügt die Auswahl hinzu.
-- **KI:** Bildet Front-Divisionen (6–10 Kompanien) nach ihrer Lage an der Grenze, teilt die Grenze unter ihnen auf und behält eine Reserve ohne Division für Städte. Bei Überlegenheit stoßen die 1–2 Divisionen nächst einer Stadt vor; kippt das Kräfteverhältnis, kehren sie in ihre Abschnitte zurück. Auf „Schwer“ sieht sie die ganze Karte.
+- **Divisionsleiste:** Eine Karte je Armee (aufklappbar) und je Division (NATO-Symbol, Name, Stärke, Regimenter) wie in HOI4; Antippen wählt die Armee bzw. Division, „＋“ fügt die Auswahl hinzu.
+- **Befehlsfeld:** Erscheint unten rechts nur mit einer Auswahl und zeigt nur passende Befehle (Halt, Division/Armee bilden oder auflösen, Auffüllen; Front, Grenze und Angriff nur mit ausgewählten Divisionen). „Auto-Gliederung“ steht in der unteren Leiste, solange es Kompanien ohne Division gibt.
+- **KI:** Fasst ihre Divisionen zu einer Armee zusammen. Bildet Front-Divisionen (6–10 Kompanien) nach ihrer Lage an der Grenze, teilt die Grenze unter ihnen auf und behält eine Reserve ohne Division für Städte. Bei Überlegenheit stoßen die 1–2 Divisionen nächst einer Stadt vor; kippt das Kräfteverhältnis, kehren sie in ihre Abschnitte zurück. Auf „Schwer“ sieht sie die ganze Karte.
 - **Straßen:** Ein Straßennetz verbindet die Städte (Relative Neighborhood Graph, Trassen meiden Hügel/Wald und Gebirge, Brücken über Wasser). Auf Straßen sind Einheiten 60 % schneller.
 - **Gebiet:** Die Insel wird beim Start lückenlos aufgeteilt (jedes Feld gehört der Seite, deren Stadt es auf dem Landweg am schnellsten erreicht), es gibt also von Anfang an eine durchgehende Grenze ohne Niemandsland.
 - **Nebel des Krieges:** Gegner sind nur in Sichtweite sichtbar.
@@ -35,21 +36,22 @@ Inspiriert vom Original und vom Python-Nachbau [gamepycoder/War-of-dots-](https:
 
 | Aktion | PC | Handy |
 | --- | --- | --- |
-| Weg zeichnen | Von eigener Einheit aus ziehen | Von eigener Einheit aus ziehen |
-| Auswählen | Einheit anklicken / Rahmen aufziehen (Umschalt = hinzufügen) | Einheit antippen / „▢ Auswahl“ + Rahmen |
-| Division auswählen | Karte in der Divisionsleiste | ebenso |
-| Gruppe bewegen | Von ausgewählter Einheit ziehen oder auf Ziel klicken | ebenso |
+| Auswählen | Einheit anklicken (erneut: Gruppe → Division → Kompanie) / Rahmen mit links aufziehen (Umschalt = hinzufügen) | Einheit antippen (erneut: ebenso) / „▢ Auswahl“ + Rahmen |
+| Division / Armee auswählen | Karte in der Divisionsleiste | ebenso |
+| Bewegen | Rechtsklick auf das Ziel (dicht aufstellen), Umschalt+Rechtsklick behält die Abstände | Mit Auswahl auf das Ziel tippen |
+| Abwählen | Klick ins Leere / Esc | „✕“ im Befehlsfeld |
 | Anhalten | S | „■ Halt“ |
 | Neue Division / aus Division | D / Umschalt+D | „＋ Neue Division“ / „− Aus Division“ |
-| Karte verschieben | Rechte Maustaste ziehen | Ein Finger ziehen |
+| Neue Armee | Divisionen wählen, „＋ Neue Armee“ | ebenso |
+| Karte verschieben | Rechte oder mittlere Maustaste ziehen | Ein Finger ziehen |
 | Zoomen | Mausrad | Zwei Finger |
-| Front zeichnen | Division wählen, „〰 Front“ (F), dann Linie ziehen | ebenso |
+| Front zeichnen | Division(en) oder Armee wählen, „〰 Front“ (F), dann Linie ziehen | ebenso |
 | Grenze halten | Division(en) wählen, „⛨ Grenze“ (G) | ebenso |
 | Alle Fronten zeigen | „Fronten“ (V) | ebenso |
 | Nachschub zeigen | „Nachschub“ (N) | ebenso |
 | Produktion wechseln | Eigene Stadt anklicken (ohne Auswahl) | Stadt antippen |
 
-Tasten: Leertaste Pause · A alle auswählen · S anhalten · D/Umschalt+D Division · F Front · G Grenze · V Fronten · N Nachschub · Esc abwählen · 1/2/3 Tempo.
+Tasten: Leertaste Pause · A alle auswählen · S anhalten · D/Umschalt+D Division · F Front · G Grenze (beide nur mit ausgewählten Divisionen) · V Fronten · N Nachschub · Esc abwählen · 1/2/3 Tempo.
 
 ## Aufbau
 
@@ -59,14 +61,15 @@ css/style.css       Gestaltung
 js/config.js        Spielwerte (Gelände, Einheiten, Schwierigkeit)
 js/rng.js           Zufallszahlen und Rauschen für die Karte
 js/map.js           Kartengenerator (punktsymmetrische Insel), Straßen und A*-Wegfindung
-js/orbat.js         Gliederung: Divisionen, Regimenter, Kompanien
+js/orbat.js         Gliederung: Armeen, Divisionen, Regimenter, Kompanien
 js/game.js          Simulation: Bewegung, Kampf, Organisation, Städte, Gebiet, Sicht, Rotation
 js/hq.js            Divisions-HQs: Kräfteausgleich, Abriegeln, Funk zwischen Nachbarfronten
 js/supply.js        Nachschub: Depots, LKW-Netz über eigenes Gebiet, Vorräte, Verteilung
 js/fronts.js        Fronten je Division, Grenzabschnitte, Angriffe
 js/ai.js            KI-Gegner: Gliederung, Fronten, Angriffe, Reserve
 js/render.js        Canvas-Darstellung
-js/input.js         Maus-, Touch- und Tastatursteuerung
+js/input.js         Maus-, Touch- und Tastatursteuerung, Klickfolge
+js/formation.js     Aufstellung am Ziel
 js/main.js          Spielschleife, Menüs und Bedienung
 test/sim.mjs        Test ohne Browser (npm test)
 scripts/bump-version.sh  Versionsnummer gegen veraltete Browser-Caches

@@ -1,11 +1,12 @@
-import { generateMap } from './map.js?v=69';
-import { Game } from './game.js?v=69';
-import { AI } from './ai.js?v=69';
-import { Renderer, isFrontShown } from './render.js?v=69';
-import { Input } from './input.js?v=69';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=69';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=69';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=69';
+import { generateMap } from './map.js?v=70';
+import { Game } from './game.js?v=70';
+import { AI } from './ai.js?v=70';
+import { Renderer, isFrontShown } from './render.js?v=70';
+import { Input } from './input.js?v=70';
+import { formationSlots } from './formation.js?v=70';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=70';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=70';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=70';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -62,7 +63,7 @@ const app = {
     $('resumeBtn').hidden = true;
     $('seedLabel').textContent = `Karte #${seed} · ${DIFFICULTY[difficulty].name}`;
     this.updateSelectionInfo();
-    this.toast('Ziehe von einer deiner Einheiten aus einen Weg. Erobere alle Städte!');
+    this.toast('Einheiten anklicken, Rechtsklick (Handy: Antippen) bewegt sie. Erobere alle Städte!');
     this.toast('Deine Kompanien haben noch keine Division: auswählen und „＋ Neue Division“ – oder unten „Auto-Gliederung“.');
   },
 
@@ -458,37 +459,13 @@ const app = {
     $('selectBtn').classList.toggle('active', on);
   },
 
-  // Bewegen zum Zielpunkt: dicht aufgestellt in Reihen quer zur Marschrichtung (1,5 km
-  // Abstand), vordere Einheiten nach vorn, links bleibt links – so kreuzen sich die Wege kaum.
-  // keep (Umschalt): die Einheiten behalten ihre Abstände zueinander.
+  // Bewegen zum Zielpunkt: dichte Aufstellung (siehe formationSlots); keep (Umschalt):
+  // die Einheiten behalten ihre Abstände zueinander
   moveSelectionTo(w, keep = false) {
     const units = this.ownSelection();
     if (!units.length) return;
     const map = this.game.map;
-    const cx = units.reduce((a, u) => a + u.x, 0) / units.length;
-    const cy = units.reduce((a, u) => a + u.y, 0) / units.length;
-    const goals = [];
-    if (keep) {
-      for (const u of units) goals.push({ u, x: w.x + u.x - cx, y: w.y + u.y - cy });
-    } else {
-      const l = Math.hypot(w.x - cx, w.y - cy) || 1;
-      const fx = (w.x - cx) / l, fy = (w.y - cy) / l; // Marschrichtung
-      const lx = -fy, ly = fx;                         // quer dazu
-      const depth = (u) => (u.x - cx) * fx + (u.y - cy) * fy;
-      const lat = (u) => (u.x - cx) * lx + (u.y - cy) * ly;
-      const gap = 1.5 * KM;
-      const perRow = Math.max(1, Math.ceil(Math.sqrt(units.length * 2)));
-      const rows = Math.ceil(units.length / perRow);
-      const byDepth = units.slice().sort((a, b) => depth(b) - depth(a));
-      for (let r = 0; r < rows; r++) {
-        const row = byDepth.slice(r * perRow, (r + 1) * perRow).sort((a, b) => lat(a) - lat(b));
-        const d = ((rows - 1) / 2 - r) * gap;
-        row.forEach((u, k) => {
-          const s = (k - (row.length - 1) / 2) * gap;
-          goals.push({ u, x: w.x + fx * d + lx * s, y: w.y + fy * d + ly * s });
-        });
-      }
-    }
+    const goals = formationSlots(units, w, keep);
     const cache = new Map();
     for (const g of goals) {
       const u = g.u;

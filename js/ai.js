@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM } from './config.js?v=69';
-import { unitStrength } from './game.js?v=69';
-import { mulberry32 } from './rng.js?v=69';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=69';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=69';
+import { DIFFICULTY, SUPPLY, KM } from './config.js?v=70';
+import { unitStrength } from './game.js?v=70';
+import { mulberry32 } from './rng.js?v=70';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=70';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=70';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -269,6 +269,12 @@ export class AI {
         ob.disband(idle.reduce((a, b) => (strength(b) < strength(a) ? b : a)));
         changed = true;
       }
+    }
+    // Alle Divisionen der KI bilden eine Armee (wie beim Spieler offen in der Größe)
+    const loose = ob.all(DIVISION).filter((d) => !d.parent);
+    if (loose.length) {
+      if (ob.armies.length) ob.addToArmy(ob.armies[0], loose);
+      else ob.createArmy(loose);
     }
     this.fronts.syncAll(); // Fronten sofort an die neue Gliederung anpassen
     const gap = this.fronts.uncovered().reduce((s, c) => s + chainLength(c), 0);

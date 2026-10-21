@@ -9,7 +9,10 @@ const { generateMap } = await load('map');
 const { Game } = await load('game');
 const { AI } = await load('ai');
 const { TERRAIN_INFO } = await load('config');
-const { REGIMENT, DIVISION, DIVISION_MAX, REGIMENT_MAX, strength, divisionOf } = await load('orbat');
+const { REGIMENT, DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, strength, divisionOf } = await load('orbat');
+const { formationSlots } = await load('formation');
+const { cycleSelection } = await load('input');
+const { KM } = await load('config');
 
 const STEP = 1 / 30;
 const MAX_TIME = 20 * 60;   // Sekunden Spielzeit, bis die Partie entschieden sein muss
@@ -46,6 +49,17 @@ function checkState(g, label, ais) {
     for (const div of divs) {
       if (strength(div) > DIVISION_MAX) fail(`${label}: ${div.name} hat ${strength(div)} Kompanien`);
       if (div.dissolved) fail(`${label}: aufgelöste ${div.name} steht noch in der Liste`);
+    }
+    // Armeen: nie leer, Verweise in beide Richtungen stimmig, nur bestehende Divisionen
+    for (const army of g.orbat[p].all(ARMY)) {
+      if (!army.children.length) fail(`${label}: leere ${army.name} besteht noch`);
+      for (const d of army.children) {
+        if (d.parent !== army) fail(`${label}: ${d.name} steht in ${army.name}, verweist aber woanders hin`);
+        if (d.dissolved || !divs.includes(d)) fail(`${label}: aufgelöste ${d.name} steht noch in ${army.name}`);
+      }
+    }
+    for (const div of divs) {
+      if (div.parent && !g.orbat[p].all(ARMY).includes(div.parent)) fail(`${label}: ${div.name} gehört zu einer aufgelösten Armee`);
     }
     const seen = new Map();
     for (const reg of g.orbat[p].all(REGIMENT)) {
@@ -94,6 +108,41 @@ function checkState(g, label, ais) {
   }
 }
 
+// --- Reine Funktionen der Steuerung -------------------------------------------------
+{
+  // Klickfolge: Gruppe -> Division -> Kompanie -> Gruppe; gleiche Stufen werden übersprungen
+  const a = { id: 1 }, b = { id: 2 }, c = { id: 3 };
+  const steps = [[a, b], [a, b, c], [a]];
+  const ids = (l) => l.map((u) => u.id).join(',');
+  const seq = [[]];
+  for (let i = 0; i < 4; i++) seq.push(cycleSelection(steps, seq[seq.length - 1]));
+  if (seq.slice(1).map(ids).join(' | ') !== '1,2 | 1,2,3 | 1 | 1,2') fail(`Klickfolge falsch: ${seq.slice(1).map(ids).join(' | ')}`);
+  if (ids(cycleSelection([[a, b], [b, a], [a]], [a, b])) !== '1') fail('Klickfolge überspringt gleiche Stufen nicht');
+  if (cycleSelection([[a]], [a]).length !== 0) fail('Klickfolge: einzige Stufe erneut angeklickt hebt die Auswahl nicht auf');
+  if (ids(cycleSelection(steps, [c])) !== '1,2') fail('Klickfolge beginnt bei fremder Auswahl nicht mit der Gruppe');
+
+  // Aufstellung am Ziel: dicht (1,5 km Abstand), um den Zielpunkt, keine doppelten Plätze
+  const units = [];
+  for (let i = 0; i < 8; i++) units.push({ id: i, x: 100 + (i % 4) * 30, y: 100 + Math.floor(i / 4) * 30 });
+  const target = { x: 400, y: 250 };
+  const slots = formationSlots(units, target);
+  if (slots.length !== units.length || new Set(slots.map((s) => s.u)).size !== units.length) fail('Aufstellung: nicht jede Einheit hat genau einen Platz');
+  let minGap = Infinity, maxDist = 0;
+  for (const s of slots) {
+    maxDist = Math.max(maxDist, Math.hypot(s.x - target.x, s.y - target.y));
+    for (const t of slots) if (s !== t) minGap = Math.min(minGap, Math.hypot(s.x - t.x, s.y - t.y));
+  }
+  if (minGap < 1.5 * KM - 1e-6) fail(`Aufstellung: Plätze nur ${minGap.toFixed(1)} auseinander`);
+  if (maxDist > 2.5 * KM) fail(`Aufstellung: Platz ${maxDist.toFixed(1)} vom Ziel entfernt`);
+  // Umschalt: Abstände bleiben erhalten
+  const kept = formationSlots(units, target, true);
+  const d0 = Math.hypot(units[0].x - units[7].x, units[0].y - units[7].y);
+  const d1 = Math.hypot(kept[0].x - kept[7].x, kept[0].y - kept[7].y);
+  if (Math.abs(d0 - d1) > 1e-6) fail('Aufstellung mit Umschalt verändert die Abstände');
+  if (failed) process.exit(1);
+  console.log('ok   Klickfolge und Aufstellung am Ziel');
+}
+
 for (const [seed, size] of CASES) {
   const label = `${size} #${seed}`;
   const t0 = performance.now();
@@ -102,7 +151,7 @@ for (const [seed, size] of CASES) {
     const g = new Game(generateMap(seed, size));
     const ais = [new AI(g, 1, 'medium'), new AI(g, 2, 'hard')];
     let steps = 0, maxDivs = 0;
-    const formed = [0, 0, 0], reserve = [0, 0, 0], attacks = [0, 0, 0];
+    const formed = [0, 0, 0], reserve = [0, 0, 0], attacks = [0, 0, 0], armies = [0, 0, 0];
     while (!g.winner && g.time < MAX_TIME) {
       const t = performance.now();
       for (const ai of ais) ai.update(STEP);
@@ -113,6 +162,7 @@ for (const [seed, size] of CASES) {
         maxDivs = Math.max(maxDivs, g.orbat[1].all(DIVISION).length + g.orbat[2].all(DIVISION).length);
         for (let p = 1; p <= 2; p++) {
           if (g.orbat[p].all(DIVISION).length) formed[p]++;
+          if (g.orbat[p].all(ARMY).length) armies[p]++;
           if (g.units.some((u) => u.owner === p && !u.regiment)) reserve[p]++;
           if (ais[p - 1].fronts.fronts.some((f) => f.attack)) attacks[p]++;
         }
@@ -126,6 +176,7 @@ for (const [seed, size] of CASES) {
     for (let p = 1; p <= 2; p++) {
       if (formed[p] < steps / 30 * 0.5) fail(`${label}: Seite ${p} hatte nur selten Divisionen (${formed[p]} von ${Math.round(steps / 30)} s)`);
       if (!reserve[p]) fail(`${label}: Seite ${p} hatte nie eine Reserve ohne Division`);
+      if (armies[p] < formed[p] * 0.5) fail(`${label}: Seite ${p} fasst ihre Divisionen nicht zu einer Armee zusammen`);
     }
     const ms = (performance.now() - t0) / steps;
     console.log(`${g.winner ? 'ok  ' : '    '} ${label}: Sieger ${g.winner} nach ${Math.round(g.time)} s, ` +
