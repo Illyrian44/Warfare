@@ -7,7 +7,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=73">
+  <link rel="stylesheet" href="css/style.css?v=74">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -67,7 +67,7 @@
       <div id="cmdResize" title="Ziehen: größer oder kleiner"></div>
     </div>
     <div id="seedLabel" class="muted"></div>
-    <div id="pausedBanner" hidden>Pausiert</div>
+    <div id="pausedBanner" hidden>Pausiert<small>Leertaste oder ▶: weiter</small></div>
     <div id="frontBanner" hidden>
       <span>Front zeichnen: Linie mit dem Finger ziehen</span>
       <button id="frontCancel">Abbrechen</button>
@@ -101,7 +101,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 73</small>
+      <small id="version" class="muted">Version 74</small>
     </div>
   </div>
 
@@ -109,7 +109,7 @@
     <div class="panel help">
       <h2>So wird gespielt</h2>
       <h3>Ziel</h3>
-      <p>Erobere alle Städte des Gegners (rot) und vernichte seine Armee. Du bist <b class="blue-t">blau</b>.</p>
+      <p>Erobere alle Städte des Gegners (rot) und vernichte seine Armee. Du bist <b class="blue-t">blau</b>. Jede Runde beginnt pausiert: Gliedere in Ruhe deine Divisionen und setze Fronten, dann geht es mit der Leertaste oder ▶ los.</p>
       <h3>Steuerung</h3>
       <ul>
         <li><b>Auswählen:</b> Eigene Einheit anklicken bzw. antippen. Wiederholtes Klicken auf dieselbe Stelle geht die Stufen durch: <i>gezeigte Gruppe → ganze Division → einzelne Kompanie</i> → wieder die Gruppe. PC: Rahmen mit linker Maustaste aufziehen (Umschalt = hinzufügen; zerschlagene Kompanien werden nicht erfasst), Klick ins Leere hebt die Auswahl auf. Handy: „▢ Auswahl“ und dann Rahmen ziehen.</li>
@@ -168,6 +168,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=73"></script>
+  <script type="module" src="js/main.js?v=74"></script>
 </body>
 </html>

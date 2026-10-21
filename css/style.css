@@ -120,7 +120,9 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   padding: 12px 28px;
   border-radius: 14px;
   pointer-events: none;
+  text-align: center;
 }
+#pausedBanner small { display: block; margin-top: 2px; font-size: 13px; font-weight: 500; letter-spacing: 0; color: var(--muted, #8a96a8); }
 
 #version { text-align: center; font-size: 11px; }
 #frontBanner {

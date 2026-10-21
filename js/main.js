@@ -1,12 +1,12 @@
-import { generateMap } from './map.js?v=73';
-import { Game } from './game.js?v=73';
-import { AI } from './ai.js?v=73';
-import { Renderer, isFrontShown } from './render.js?v=73';
-import { Input } from './input.js?v=73';
-import { formationSlots } from './formation.js?v=73';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=73';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=73';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=73';
+import { generateMap } from './map.js?v=74';
+import { Game } from './game.js?v=74';
+import { AI } from './ai.js?v=74';
+import { Renderer, isFrontShown } from './render.js?v=74';
+import { Input } from './input.js?v=74';
+import { formationSlots } from './formation.js?v=74';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=74';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=74';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=74';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -48,7 +48,7 @@ const app = {
     $('showFrontsBtn').classList.remove('active');
     this.ui.showSupply = false;
     $('supplyBtn').classList.remove('active');
-    this.paused = false;
+    this.paused = true; // jede Runde beginnt pausiert: erst in Ruhe gliedern und Fronten setzen
     this.setSpeed(1);
     this.current = { seed, size, difficulty };
     this.settings = { size, difficulty };
@@ -58,8 +58,8 @@ const app = {
     $('menu').hidden = true;
     $('end').hidden = true;
     $('hud').hidden = false;
-    $('pauseBtn').textContent = '❚❚';
-    $('pausedBanner').hidden = true;
+    $('pauseBtn').textContent = '▶';
+    $('pausedBanner').hidden = false;
     $('resumeBtn').hidden = true;
     $('seedLabel').textContent = `Karte #${seed} · ${DIFFICULTY[difficulty].name}`;
     this.updateSelectionInfo();
