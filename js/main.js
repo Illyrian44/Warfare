@@ -1,12 +1,12 @@
-import { generateMap } from './map.js?v=70';
-import { Game } from './game.js?v=70';
-import { AI } from './ai.js?v=70';
-import { Renderer, isFrontShown } from './render.js?v=70';
-import { Input } from './input.js?v=70';
-import { formationSlots } from './formation.js?v=70';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=70';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=70';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=70';
+import { generateMap } from './map.js?v=71';
+import { Game } from './game.js?v=71';
+import { AI } from './ai.js?v=71';
+import { Renderer, isFrontShown } from './render.js?v=71';
+import { Input } from './input.js?v=71';
+import { formationSlots } from './formation.js?v=71';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=71';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=71';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=71';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);

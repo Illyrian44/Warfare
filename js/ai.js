@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM } from './config.js?v=70';
-import { unitStrength } from './game.js?v=70';
-import { mulberry32 } from './rng.js?v=70';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=70';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=70';
+import { DIFFICULTY, SUPPLY, KM } from './config.js?v=71';
+import { unitStrength } from './game.js?v=71';
+import { mulberry32 } from './rng.js?v=71';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=71';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=71';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;

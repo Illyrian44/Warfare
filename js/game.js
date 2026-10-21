@@ -2,11 +2,11 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=70';
-import { mulberry32 } from './rng.js?v=70';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=70';
-import { HQManager } from './hq.js?v=70';
-import { SupplyNetwork } from './supply.js?v=70';
+} from './config.js?v=71';
+import { mulberry32 } from './rng.js?v=71';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=71';
+import { HQManager } from './hq.js?v=71';
+import { SupplyNetwork } from './supply.js?v=71';
 
 export class Game {
   constructor(map) {
