@@ -150,8 +150,9 @@ export class Game {
     return u;
   }
 
-  // rivals: feindliche Einheiten in der Nähe; ein Feld bekommt nur, wer näher dran ist
-  paint(owner, x, y, radius, rivals = null) {
+  // rivals: feindliche Einheiten in der Nähe; ein Feld bekommt nur, wer näher dran ist.
+  // take = false: nur eigenes (oder freies) Land halten, kein Feindgebiet einnehmen
+  paint(owner, x, y, radius, rivals = null, take = true) {
     const { w, h } = this.map;
     const cr = radius / CELL;
     const cx = x / CELL, cy = y / CELL;
@@ -164,6 +165,7 @@ export class Game {
         if (dx * dx + dy * dy > r2) continue;
         const i = yy * w + xx;
         if (this.map.cells[i] === T.DEEP) continue;
+        if (!take && this.territory[i] && this.territory[i] !== owner) continue;
         if (rivals && rivals.length) {
           const px = (xx + 0.5) * CELL, py = (yy + 0.5) * CELL;
           const own = (px - x) ** 2 + (py - y) ** 2;
@@ -328,7 +330,7 @@ export class Game {
       for (const u of this.units) {
         const rivals = this.units.filter((o) => o.owner !== u.owner &&
           Math.abs(o.x - u.x) < reach && Math.abs(o.y - u.y) < reach);
-        this.paint(u.owner, u.x, u.y, UNIT_BORDER, rivals);
+        this.paint(u.owner, u.x, u.y, UNIT_BORDER, rivals, takesLand(u));
       }
       this.territoryVersion++;
     }
@@ -582,4 +584,13 @@ export function unitStrength(u) {
   if (u.broken) return 0;
   const supply = SUPPLY.combatMin + (1 - SUPPLY.combatMin) * Math.min(1, u.supply * 2);
   return UNIT_TYPES[u.type].strength * (0.4 + 0.6 * u.hp / u.maxHp) * (0.5 + 0.5 * u.org / u.maxOrg) * supply;
+}
+
+// Nimmt die Kompanie Feindgebiet ein? Nicht, wer eine Grenzfront nur hält (sonst schöbe
+// jede haltende Front die Grenze und damit ihre eigenen Plätze immer weiter vor) und nicht,
+// wer zerschlagen ist. Angriffe, eigene Befehle und frei gezeichnete Linien nehmen Land ein.
+function takesLand(u) {
+  if (u.broken) return false;
+  const f = u.front;
+  return !f || f.kind === 'line' || !!f.attack;
 }

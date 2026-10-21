@@ -123,12 +123,16 @@ const app = {
   },
 
   selectAll() {
-    for (const u of this.game.units) if (u.owner === this.human) this.ui.selection.add(u);
+    for (const u of this.game.units) if (u.owner === this.human && !u.broken) this.ui.selection.add(u);
     this.updateSelectionInfo();
   },
 
   stopSelection() {
-    for (const u of this.ui.selection) { this.fronts.release(u); u.path = []; }
+    for (const u of this.ui.selection) {
+      if (u.broken) continue; // Rückzug Zerschlagener nicht anhalten
+      this.fronts.release(u);
+      u.path = [];
+    }
     this.updateCommands();
   },
 
@@ -462,8 +466,13 @@ const app = {
   // Bewegen zum Zielpunkt: dichte Aufstellung (siehe formationSlots); keep (Umschalt):
   // die Einheiten behalten ihre Abstände zueinander
   moveSelectionTo(w, keep = false) {
-    const units = this.ownSelection();
-    if (!units.length) return;
+    // Zerschlagene nehmen keine Befehle an, sie ziehen sich zurück, bis sie sich erholt haben
+    const all = this.ownSelection();
+    const units = all.filter((u) => !u.broken);
+    if (!units.length) {
+      if (all.length) this.toast('Zerschlagene Kompanien nehmen keine Befehle an – sie ziehen sich erst zurück');
+      return;
+    }
     const map = this.game.map;
     const goals = formationSlots(units, w, keep);
     const cache = new Map();

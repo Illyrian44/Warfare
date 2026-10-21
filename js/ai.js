@@ -11,6 +11,8 @@ const DIV_MIN = 6;          // neue Front-Divisionen: mindestens so viele Kompan
 const DIV_SIZE = 10;        // und höchstens so viele
 const DIV_LEAVE = 400;      // so weit entfernte Kompanien verlassen ihre Division
 const GAP_RESPLIT = 80;     // so viel ungedeckte Grenze löst eine neue Aufteilung aus
+const PUSH_DEPTH = 80;      // begrenzter Vorstoß: so weit (8 km) ins Feindgebiet
+const PUSH_RATIO = 1.3;     // und nur mit so viel Überlegenheit vor Ort
 
 export class AI {
   constructor(game, player, difficulty = 'medium') {
@@ -112,8 +114,11 @@ export class AI {
       threatOf.set(c, (threatOf.get(c) || 0) + unitStrength(e));
     }
     const threats = [...threatOf].sort((a, b) => b[1] - a[1]);
+    // Eigene Fronttruppen zwischen Stadt und Feind decken die Stadt mit
+    const frontNear = (c) => myUnits.reduce((a, u) => (u.front && !u.broken &&
+      Math.hypot(u.x - c.x, u.y - c.y) < THREAT_RADIUS ? a + unitStrength(u) : a), 0);
     for (const [c, s] of threats) {
-      let need = s * 1.2;
+      let need = s * 1.2 - frontNear(c);
       for (const u of free) {
         if (u.ai && u.ai.role === 'defend' && u.ai.tag === c.id) need -= unitStrength(u);
       }
@@ -340,7 +345,14 @@ export class AI {
     const units = attackers.flatMap((f) => f.units.filter((u) => !u.rotating));
     const defenders = new Set(enemies.filter((e) => Math.hypot(e.x - target.x, e.y - target.y) < TARGET_RADIUS ||
       units.some((u) => Math.hypot(u.x - e.x, u.y - e.y) < 180)));
-    if (sum(units) <= sum([...defenders]) * this.cfg.frontPush + 2) return;
+    // An der Obergrenze der Truppenzahl hilft Warten nicht mehr: dann genügt knappe
+    // Überlegenheit (haltende Fronten nehmen kein Land ein, nur Angriffe bewegen die Grenze)
+    const maxed = g.units.filter((u) => u.owner === this.me).length >= g.capacity(this.me) - 1;
+    const push = maxed ? Math.min(this.cfg.frontPush, 1.1) : this.cfg.frontPush;
+    if (sum(units) <= sum([...defenders]) * push + 2) {
+      if (maxed) this.limitedPush(ready, enemies);
+      return;
+    }
     // Ziellinie quer hinter der Stadt, auf die Angreifer aufgeteilt
     const cx = units.reduce((a, u) => a + u.x, 0) / units.length;
     const cy = units.reduce((a, u) => a + u.y, 0) / units.length;
@@ -358,6 +370,36 @@ export class AI {
       this.fronts.startAttack(o.f);
     });
     this.nextFrontAttack = g.time + 20;
+  }
+
+  // Begrenzter Vorstoß ohne Stadt als Ziel: die Front mit dem besten Kräfteverhältnis
+  // rückt gegen die Truppen direkt vor ihr ein Stück ins Feindgebiet vor. Löst das Patt,
+  // wenn beide Seiten ihre Städte mit der ganzen Reserve decken.
+  limitedPush(ready, enemies) {
+    const sum = (list) => list.reduce((a, u) => a + unitStrength(u), 0);
+    let best = null;
+    for (const f of ready) {
+      const units = f.units.filter((u) => !u.rotating && !u.broken);
+      const pts = f.chains.flat().filter((p) => p.nx !== undefined);
+      if (units.length < 4 || !pts.length) continue;
+      let nx = pts.reduce((a, p) => a + p.nx, 0), ny = pts.reduce((a, p) => a + p.ny, 0);
+      const nl = Math.hypot(nx, ny);
+      if (nl < 1e-6) continue;
+      nx /= nl; ny /= nl;
+      const cx = units.reduce((a, u) => a + u.x, 0) / units.length;
+      const cy = units.reduce((a, u) => a + u.y, 0) / units.length;
+      const tx = cx + nx * PUSH_DEPTH, ty = cy + ny * PUSH_DEPTH;
+      const foes = enemies.filter((e) => Math.hypot(e.x - tx, e.y - ty) < PUSH_DEPTH * 1.6);
+      const ratio = sum(units) / (sum(foes) + 1);
+      if (ratio > PUSH_RATIO && (!best || ratio > best.ratio)) best = { f, ratio, tx, ty, nx, ny, n: units.length };
+    }
+    if (!best) return;
+    const half = Math.max(90, best.n * 12);
+    const line = [];
+    for (let k = -2; k <= 2; k++) line.push({ x: best.tx - best.ny * half * k / 2, y: best.ty + best.nx * half * k / 2 });
+    this.fronts.planAttack(best.f, line);
+    this.fronts.startAttack(best.f);
+    this.nextFrontAttack = this.game.time + 30;
   }
 
   // Angriff abbrechen: die Division hält wieder ihren Grenzabschnitt (er bleibt ihr während

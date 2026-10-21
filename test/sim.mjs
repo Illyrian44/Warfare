@@ -11,6 +11,7 @@ const { AI } = await load('ai');
 const { TERRAIN_INFO } = await load('config');
 const { REGIMENT, DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, strength, divisionOf } = await load('orbat');
 const { formationSlots } = await load('formation');
+const { FrontManager } = await load('fronts');
 const { cycleSelection } = await load('input');
 const { KM } = await load('config');
 
@@ -141,6 +142,25 @@ function checkState(g, label, ais) {
   if (Math.abs(d0 - d1) > 1e-6) fail('Aufstellung mit Umschalt verändert die Abstände');
   if (failed) process.exit(1);
   console.log('ok   Klickfolge und Aufstellung am Ziel');
+}
+
+// --- Haltende Grenzfront rückt nicht von selbst vor ---------------------------------
+{
+  // Seite 1 hält die ganze Grenze, der Gegner steht still: das Gebiet darf nach dem
+  // Einrücken nicht weiter wachsen (früher schob jede haltende Front die Grenze vor)
+  const g = new Game(generateMap(1, 'small'));
+  const fm = new FrontManager(g, 1);
+  g.orbat[1].autoOrganize(g.units.filter((u) => u.owner === 1));
+  fm.splitBorder(g.orbat[1].all(DIVISION));
+  const terr = () => g.territory.reduce((a, t) => a + (t === 1), 0);
+  let t60 = 0;
+  for (let s = 1; s <= 180 * 30; s++) {
+    fm.update(STEP); g.step(STEP); g.events.length = 0;
+    if (s === 60 * 30) t60 = terr();
+  }
+  const grown = terr() - t60;
+  if (grown > 20) fail(`Haltende Grenzfront nimmt von selbst Land ein (+${grown} Felder in 2 Minuten)`);
+  else console.log('ok   Haltende Grenzfront bleibt stehen');
 }
 
 for (const [seed, size] of CASES) {

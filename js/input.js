@@ -63,7 +63,9 @@ export class Input {
     const dist = (u) => Math.hypot(u.x - w.x, u.y - w.y);
     const near = hit.members.reduce((a, b) => (dist(b) < dist(a) ? b : a));
     const div = divisionOf(near);
-    const steps = [hit.members, div ? unitsOf(div) : null, [near]].filter(Boolean);
+    // Gruppe und Division ohne Zerschlagene; einzeln anklicken lassen sie sich weiterhin
+    const fit = (l) => (l && l.some((u) => !u.broken) ? l.filter((u) => !u.broken) : l);
+    const steps = [fit(hit.members), div ? fit(unitsOf(div)) : null, [near]].filter(Boolean);
     if (additive) { for (const u of steps[0]) sel.add(u); return; }
     const next = cycleSelection(steps, [...sel]);
     sel.clear();
@@ -173,8 +175,9 @@ export class Input {
         const a = this.toWorld(Math.min(p.sx, p.x), Math.min(p.sy, p.y));
         const b = this.toWorld(Math.max(p.sx, p.x), Math.max(p.sy, p.y));
         if (!g.shift) sel.clear();
+        // Zerschlagene (blass) ziehen sich selbstständig zurück und werden nicht mit erfasst
         for (const u of this.app.game.units) {
-          if (u.owner === this.app.human && u.x >= a.x && u.x <= b.x && u.y >= a.y && u.y <= b.y) sel.add(u);
+          if (u.owner === this.app.human && !u.broken && u.x >= a.x && u.x <= b.x && u.y >= a.y && u.y <= b.y) sel.add(u);
         }
         if (this.ui.selectMode && e.pointerType !== 'mouse') this.app.setSelectMode(false);
       } else this.tap(g, e);
