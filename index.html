@@ -7,7 +7,7 @@
   <meta name="description" content="War of Dots im Browser: minimalistisches Echtzeit-Strategiespiel gegen eine KI.">
   <title>War of Dots</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=67">
+  <link rel="stylesheet" href="css/style.css?v=69">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -27,33 +27,41 @@
       </div>
     </div>
     <div class="bar bottom">
-      <span id="selInfo"></span>
+      <span></span>
       <div class="buttons">
-        <button id="haltBtn" hidden title="Ausgewählte Einheiten anhalten (S)">■ Halt</button>
-        <button id="deselectBtn" hidden title="Auswahl aufheben (Esc)">✕ Abwählen</button>
+        <button id="autoBtn" hidden title="Kompanien ohne Division nach ihrer Lage zu Divisionen zusammenfassen">Auto-Gliederung</button>
         <button id="selectBtn" title="Rahmen aufziehen, um Einheiten auszuwählen">▢ Auswahl</button>
         <button id="allBtn" title="Alle eigenen Einheiten auswählen (A)">Alle</button>
         <button id="supplyBtn" title="Kartenebene Nachschub: Lieferquote, Depots und Nachschubweg der Auswahl (N)">Nachschub</button>
-        <button id="showFrontsBtn" title="Alle eigenen Fronten zeigen (V) – sonst nur die der ausgewählten Division">Fronten</button>
-        <button id="frontBtn" title="Front für die ausgewählte Division zeichnen (F)">〰 Front</button>
-        <button id="borderBtn" title="Die ausgewählte Division hält die Grenze zum Gegner (G)">⛨ Grenze</button>
+        <button id="showFrontsBtn" title="Alle eigenen Fronten zeigen (V) – sonst nur die der Auswahl">Fronten</button>
         <button id="centerBtn" title="Ansicht zurücksetzen">⤢</button>
       </div>
     </div>
     <div id="divBar" aria-label="Divisionen"></div>
-    <div id="frontPanel" hidden>
-      <div class="frontHead">
-        <b id="frontTitle"></b>
-        <button id="frontClose" title="Schließen">✕</button>
+    <!-- Befehlsfeld: erscheint nur mit Auswahl und bietet nur passende Befehle an -->
+    <div id="cmdPanel" hidden>
+      <div class="cmdHead">
+        <b id="cmdTitle"></b>
+        <button id="cmdClose" title="Auswahl aufheben (Esc)">✕</button>
       </div>
-      <div class="frontButtons">
+      <div class="cmdRow" id="cmdUnits">
+        <button id="haltBtn" title="Ausgewählte Einheiten anhalten (S)">■ Halt</button>
+        <button id="newDivBtn" title="Neue Division aus der Auswahl (D)">＋ Neue Division</button>
+        <button id="unDivBtn" title="Auswahl aus ihrer Division nehmen (Umschalt+D)">− Aus Division</button>
+        <button id="refillBtn" title="Neue Kompanien aus der nächsten Stadt füllen die Division auf">Auffüllen</button>
+        <button id="newArmyBtn" title="Neue Armee aus den ausgewählten Divisionen">＋ Neue Armee</button>
+        <button id="unArmyBtn" title="Ausgewählte Divisionen aus ihrer Armee nehmen">− Aus Armee</button>
+      </div>
+      <div class="cmdRow" id="cmdFront">
+        <button id="frontBtn" title="Front für die Auswahl zeichnen – nahe der Grenze rastet sie als Grenzabschnitt ein (F)">〰 Front</button>
+        <button id="borderBtn" title="Die Auswahl hält die Grenze zum Gegner; mehrere Divisionen teilen sie sich (G)">⛨ Grenze</button>
         <button id="planBtn" title="Angriffslinie ziehen – ein Pfeil zeigt den geplanten Vorstoß">➜ Angriff planen</button>
         <button id="attackBtn" class="attack" title="Geplanten Angriff ausführen">▶ Angriff starten</button>
-        <button id="stopAttackBtn" title="Laufenden Angriff beenden – die Division hält wieder ihren Abschnitt">■ Angriff stoppen</button>
+        <button id="stopAttackBtn" title="Laufenden Angriff beenden – die Divisionen halten wieder ihre Abschnitte">■ Angriff stoppen</button>
         <button id="cancelPlanBtn" title="Geplanten Angriff verwerfen">Plan verwerfen</button>
         <button id="rejoinBtn" title="Kompanien mit eigenem Befehl kehren an die Front zurück">↺ zurück an die Front</button>
         <button id="rotateBtn" title="Schwer Verwundete ziehen sich zum Heilen zurück">Rotation</button>
-        <button id="disbandBtn" title="Front auflösen – die Division bleibt bestehen">Front auflösen</button>
+        <button id="disbandBtn" title="Front auflösen – die Divisionen bleiben bestehen">Front auflösen</button>
       </div>
     </div>
     <div id="seedLabel" class="muted"></div>
@@ -91,7 +99,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 67</small>
+      <small id="version" class="muted">Version 69</small>
     </div>
   </div>
 
@@ -157,6 +165,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=67"></script>
+  <script type="module" src="js/main.js?v=69"></script>
 </body>
 </html>

@@ -100,13 +100,6 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   font-size: 15px;
   font-variant-numeric: tabular-nums;
 }
-#selInfo {
-  background: var(--panel);
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 14px;
-}
-#selInfo:empty { visibility: hidden; }
 #seedLabel {
   position: fixed;
   right: 12px;
@@ -151,7 +144,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 #frontBanner button { min-height: 34px; background: rgba(0, 0, 0, 0.25); }
 
 /* Front-Menü */
-#frontPanel {
+#cmdPanel {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
@@ -162,10 +155,12 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   border-radius: 12px;
   padding: 8px 10px 10px;
 }
-.frontHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.frontHead button { min-height: 32px; padding: 0.2em 0.6em; background: none; border: none; }
-.frontButtons { display: flex; flex-wrap: wrap; gap: 6px; }
-.frontButtons button { flex: 1 1 auto; font-size: 14px; }
+.cmdHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.cmdHead button { min-height: 32px; padding: 0.2em 0.6em; background: none; border: none; }
+.cmdRow { display: flex; flex-wrap: wrap; gap: 6px; }
+.cmdRow + .cmdRow:not(:empty) { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+.cmdRow[hidden] + .cmdRow { margin-top: 0; padding-top: 0; border-top: none; }
+.cmdRow button { flex: 1 1 auto; font-size: 14px; }
 
 /* Meldungen */
 #toasts {
@@ -254,14 +249,15 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   #seedLabel { display: none; }
   .bar.bottom { align-items: flex-end; }
   .bar.bottom button { font-size: 14px; }
-  #frontPanel { bottom: calc(220px + env(safe-area-inset-bottom)); }
+  #cmdPanel { bottom: calc(166px + env(safe-area-inset-bottom)); max-height: 46vh; overflow-y: auto; }
+  #pausedBanner { top: 22%; font-size: 24px; }
   #frontBanner { bottom: calc(220px + env(safe-area-inset-bottom)); }
 }
 
 .legend { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 4px; }
 .legend svg { justify-self: center; }
 
-.frontButtons button.attack { background: #c0392b; border-color: #e0412f; font-weight: 600; }
+.cmdRow button.attack { background: #c0392b; border-color: #e0412f; font-weight: 600; }
 
 /* Divisionsleiste unten (wie die Armee-Leiste in HOI4) */
 #divBar {
@@ -339,5 +335,5 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 .divcard .regs svg { display: block; }
 
 @media (max-width: 560px) {
-  #divBar { bottom: calc(150px + env(safe-area-inset-bottom)); }
+  #divBar { bottom: calc(104px + env(safe-area-inset-bottom)); }
 }

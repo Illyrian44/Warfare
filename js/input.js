@@ -1,5 +1,5 @@
-import { CITY_RADIUS } from './config.js?v=67';
-import { divisionOf, unitsOf } from './orbat.js?v=67';
+import { CITY_RADIUS } from './config.js?v=69';
+import { divisionOf, unitsOf } from './orbat.js?v=69';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -226,8 +226,12 @@ export class Input {
       app.setFrontMode(null);
       app.selectFront(null);
       app.updateSelectionInfo();
-    } else if (k === 'f') app.toggleFrontMode();
-    else if (k === 'g') app.borderFront();
+    } else if (k === 'f') {
+      // Front und Grenze nur, wenn sie angeboten werden (Divisionen ausgewählt)
+      if (this.ui.frontMode || app.selectedDivisions().length) app.toggleFrontMode();
+    } else if (k === 'g') {
+      if (app.selectedDivisions().length) app.borderFront();
+    }
     else if (k === 'v') app.toggleShowFronts();
     else if (k === 'n') app.toggleSupply();
     else if (k === 'd') {

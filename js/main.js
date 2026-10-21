@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=67';
-import { Game } from './game.js?v=67';
-import { AI } from './ai.js?v=67';
-import { Renderer, isFrontShown } from './render.js?v=67';
-import { Input } from './input.js?v=67';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=67';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=67';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=67';
+import { generateMap } from './map.js?v=69';
+import { Game } from './game.js?v=69';
+import { AI } from './ai.js?v=69';
+import { Renderer, isFrontShown } from './render.js?v=69';
+import { Input } from './input.js?v=69';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=69';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=69';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=69';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -39,7 +39,7 @@ const app = {
     this.fronts = new FrontManager(this.game, this.human);
     this.ui.frontMode = null;
     this.ui.front = null;
-    this.updateFrontPanel();
+    this.updateCommands();
     this.renderer = new Renderer(canvas, this.game, this.human);
     this.ui.selection.clear();
     this.ui.revealAll = false;
@@ -128,12 +128,12 @@ const app = {
 
   stopSelection() {
     for (const u of this.ui.selection) { this.fronts.release(u); u.path = []; }
-    this.updateFrontPanel();
+    this.updateCommands();
   },
 
   // Manueller Befehl: Einheit verlässt ihre Front
   release(u) {
-    if (u.front) { this.fronts.release(u); this.updateFrontPanel(); }
+    if (u.front) { this.fronts.release(u); this.updateCommands(); }
   },
 
   // mode: { divs } = Front für Divisionen zeichnen, { plan: front } = Angriffsziel ziehen
@@ -184,7 +184,7 @@ const app = {
       const fronts = mode.plan.filter((f) => this.fronts.fronts.includes(f));
       if (!fronts.length) return;
       this.fronts.planAttackGroup(fronts, line);
-      this.updateFrontPanel();
+      this.updateCommands();
       this.toast(fronts.length > 1 ? `Angriff für ${fronts.length} Divisionen geplant – „▶ Angriff starten“ drücken`
         : 'Angriff geplant – „▶ Angriff starten“ drücken');
       return;
@@ -217,7 +217,7 @@ const app = {
 
   selectFront(f) {
     this.ui.front = f;
-    this.updateFrontPanel();
+    this.updateCommands();
   },
 
   // Kartenebene „Nachschub“ ein- oder ausblenden
@@ -273,26 +273,44 @@ const app = {
     return divs.length === 1 ? divs[0].name : `${divs.length} Divisionen`;
   },
 
-  updateFrontPanel() {
+  // Befehlsfeld: erscheint nur mit Auswahl und bietet nur passende Befehle an.
+  // Kompanien: Halt, Gliederung. Divisionen zusätzlich: Front, Grenze, Armee.
+  // Mit Front: Angriff, Rotation, Auflösen – für alle Fronten der Auswahl (z. B. eine Armee).
+  updateCommands() {
     if (this.ui.front && !this.fronts.fronts.includes(this.ui.front)) this.ui.front = null;
+    const sel = this.ownSelection();
+    $('cmdPanel').hidden = !sel.length;
+    if (!sel.length) return;
+    const show = (id, on) => { $(id).hidden = !on; };
+    const divs = this.selectedDivisions();
+    const single = this.selectedDivision();
     const fs = this.panelFronts();
-    $('frontPanel').hidden = !fs.length;
-    if (!fs.length) return;
-    const one = fs.length === 1 ? fs[0] : null;
-    const kind = !one ? `${fs.length} Fronten` : one.kind === 'border' ? 'Grenzfront' : one.kind === 'segment' ? 'Grenzabschnitt' : 'Front';
-    const companies = fs.reduce((s, f) => s + f.units.length, 0);
-    $('frontTitle').textContent = `${this.selectionName(fs)} · ${kind} · ${companies} Kompanien`;
+    $('cmdTitle').textContent = this.describeSelection(sel);
+    // Ganze Divisionen ausgewählt: keine neue Division daraus, „Aus Division“ löst sie auf
+    const whole = divs.length > 0 && sel.every((u) => u.regiment) &&
+      divs.every((d) => unitsOf(d).every((u) => this.ui.selection.has(u)));
+    show('newDivBtn', !whole);
+    show('unDivBtn', sel.some((u) => u.regiment));
+    $('unDivBtn').textContent = whole ? (divs.length > 1 ? 'Divisionen auflösen' : 'Division auflösen') : '− Aus Division';
+    show('refillBtn', !!single);
+    if (single) $('refillBtn').classList.toggle('active', !!single.refill);
+    show('newArmyBtn', divs.length > 0);
+    show('unArmyBtn', divs.some((d) => armyOf(d)));
+    show('cmdFront', divs.length > 0);
     const planned = fs.some((f) => f.plan), attacking = fs.some((f) => f.attack);
-    $('planBtn').hidden = planned;
+    show('planBtn', fs.length && !planned);
     $('planBtn').textContent = attacking ? '➜ Neues Ziel' : '➜ Angriff planen';
-    $('attackBtn').hidden = !planned;
-    $('stopAttackBtn').hidden = !attacking;
-    $('cancelPlanBtn').hidden = !planned;
-    $('rotateBtn').classList.toggle('active', fs.every((f) => f.rotate));
+    show('attackBtn', planned);
+    show('stopAttackBtn', attacking);
+    show('cancelPlanBtn', planned);
+    show('rotateBtn', fs.length > 0);
+    $('rotateBtn').classList.toggle('active', fs.length > 0 && fs.every((f) => f.rotate));
     const off = fs.reduce((s, f) => s + this.fronts.detached(f), 0);
-    $('rejoinBtn').hidden = !off;
+    show('rejoinBtn', off > 0);
     $('rejoinBtn').textContent = `↺ ${off} zurück an die Front`;
-    $('disbandBtn').textContent = one ? 'Front auflösen' : 'Fronten auflösen';
+    show('disbandBtn', fs.length > 0);
+    $('disbandBtn').textContent = fs.length > 1 ? 'Fronten auflösen' : 'Front auflösen';
+    $('frontBtn').textContent = fs.length ? '〰 Neue Front' : '〰 Front';
   },
 
   // Eigene, lebende Einheiten der Auswahl
@@ -498,29 +516,27 @@ const app = {
 
 
   updateSelectionInfo() {
-    const n = this.ui.selection.size;
-    let info = n ? `${n} ausgewählt` : '';
-    if (n && this.game) {
-      const divs = new Set(this.ownSelection().map(divisionOf));
-      const army = armyOf([...divs][0]);
-      if (army && divs.size === army.children.length && [...divs].every((d) => armyOf(d) === army)) info += ` · ${army.name}`;
-      else if (divs.size === 1) {
-        const div = [...divs][0];
-        info += div ? ` · ${div.name}` : ' · ohne Division';
-      }
-    }
-    $('selInfo').textContent = info;
-    $('deselectBtn').hidden = !n;
-    $('haltBtn').hidden = !n;
     if (this.fronts) {
-      // Das Frontmenü folgt der Auswahl: genau eine Division mit Front gewählt -> ihr Menü
+      // Das Frontmenü folgt der Auswahl: genau eine Division mit Front gewählt -> ihre Front
       const div = this.selectedDivision();
       if (div && this.fronts.fronts.includes(div.front)) this.ui.front = div.front;
-      else if (n) this.ui.front = null;
-      this.updateFrontPanel();
+      else if (this.ui.selection.size) this.ui.front = null;
+      this.updateCommands();
     }
     if (this.game) this.updateDivBar();
   },
+
+  // Name der Auswahl für den Titel des Befehlsfelds
+  describeSelection(sel) {
+    const divs = new Set(sel.map(divisionOf));
+    const army = armyOf([...divs][0]);
+    let name = '';
+    if (army && divs.size === army.children.length && [...divs].every((d) => armyOf(d) === army)) name = army.name;
+    else if (divs.size === 1) name = [...divs][0] ? [...divs][0].name : 'ohne Division';
+    else if (!divs.has(null) || divs.size > 2) name = `${[...divs].filter(Boolean).length} Divisionen`;
+    return `${sel.length} Kompanie${sel.length === 1 ? '' : 'n'}${name ? ' · ' + name : ''}`;
+  },
+
 
   toast(msg, kind = '') {
     const el = document.createElement('div');
@@ -608,16 +624,6 @@ const app = {
         `<span class="org" title="Organisation ${Math.round(org * 100)} %"><i style="width:${Math.round(org * 100)}%"></i></span>` +
         `<span class="sup${sup < SUPPLY.warnBelow ? ' low' : ''}" title="Nachschub ${Math.round(sup * 100)} %"><i style="width:${Math.round(sup * 100)}%"></i></span>`;
     };
-    const tools = [];
-    if (sel.length) tools.push('<button class="divtool" data-act="new" title="Neue Division aus der Auswahl (D)">＋ Neue Division</button>');
-    if (sel.some((u) => u.regiment)) tools.push('<button class="divtool" data-act="remove" title="Auswahl aus ihrer Division nehmen (Umschalt+D)">− Aus Division</button>');
-    if (pickedDivs.length) tools.push('<button class="divtool" data-act="newarmy" title="Neue Armee aus den ausgewählten Divisionen">＋ Neue Armee</button>');
-    if (pickedDivs.some((d) => armyOf(d))) tools.push('<button class="divtool" data-act="unarmy" title="Ausgewählte Divisionen aus ihrer Armee nehmen">− Aus Armee</button>');
-    if (single) {
-      tools.push(`<button class="divtool${single.refill ? ' active' : ''}" data-act="refill" data-id="${single.id}" ` +
-        `title="Neue Kompanien aus der nächsten Stadt füllen ${single.name} bis ${DIVISION_MAX} Kompanien auf">Auffüllen</button>`);
-    }
-    if (loose) tools.push(`<button class="divtool" data-act="auto" title="Kompanien ohne Division nach ihrer Lage zu Divisionen zusammenfassen">Auto-Gliederung (${loose})</button>`);
     const divCard = (d, inArmy) => {
       const heavy = d.units.filter((u) => u.type === 'heavy').length / d.units.length;
       const regs = d.f.children.map((reg) => {
@@ -642,7 +648,7 @@ const app = {
         `<span class="name">${x.a.name} <span class="toggle" data-act="armyopen" data-id="${x.a.id}" title="Divisionen ein-/ausklappen">${open ? '▾' : '▸'} ${x.divs.length}</span></span>` +
         bars(x.units) + '</button>' + (open ? x.divs.map((d) => divCard(d, true)).join('') : '');
     };
-    bar.innerHTML = tools.join('') + armies.map(armyCard).join('') + divs.filter((d) => !armyOf(d.f)).map((d) => divCard(d, false)).join('');
+    bar.innerHTML = armies.map(armyCard).join('') + divs.filter((d) => !armyOf(d.f)).map((d) => divCard(d, false)).join('');
   },
 
   selectDivision(id, focus = true) {
@@ -670,7 +676,10 @@ const app = {
     $('hudUnits').innerHTML = `${myU}<span class="muted">/${myC * UNITS_PER_CITY} Einheiten</span>`;
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     $('hudTime').textContent = `${m}:${String(s).padStart(2, '0')}`;
-    if (this.ui.front) this.updateFrontPanel();
+    this.updateCommands();
+    const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
+    $('autoBtn').hidden = !loose;
+    $('autoBtn').textContent = `Auto-Gliederung (${loose})`;
   },
 };
 
@@ -765,13 +774,7 @@ $('divBar').onclick = (e) => {
   if (tool) {
     const id = +tool.dataset.id;
     const act = tool.dataset.act;
-    if (act === 'new') app.newDivision();
-    else if (act === 'remove') app.removeFromDivision();
-    else if (act === 'add') app.addToDivision(id);
-    else if (act === 'refill') app.toggleRefill(id);
-    else if (act === 'auto') app.autoOrganize();
-    else if (act === 'newarmy') app.newArmy();
-    else if (act === 'unarmy') app.removeFromArmy();
+    if (act === 'add') app.addToDivision(id);
     else if (act === 'armyadd') app.addToArmy(id);
     else if (act === 'armyopen') app.toggleArmyOpen(id);
     return;
@@ -789,20 +792,20 @@ $('planBtn').onclick = () => app.setFrontMode({ plan: app.panelFronts() });
 $('attackBtn').onclick = () => {
   for (const f of app.panelFronts()) app.fronts.startAttack(f);
   app.toast('Angriff läuft!', 'good');
-  app.updateFrontPanel();
+  app.updateCommands();
 };
 $('stopAttackBtn').onclick = () => {
   for (const f of app.panelFronts()) app.fronts.stopAttack(f);
   app.toast('Angriff gestoppt – die Divisionen halten ihre Frontabschnitte');
-  app.updateFrontPanel();
+  app.updateCommands();
 };
-$('cancelPlanBtn').onclick = () => { for (const f of app.panelFronts()) app.fronts.cancelPlan(f); app.updateFrontPanel(); };
+$('cancelPlanBtn').onclick = () => { for (const f of app.panelFronts()) app.fronts.cancelPlan(f); app.updateCommands(); };
 $('rotateBtn').onclick = () => {
   const fs = app.panelFronts(), on = !fs.every((f) => f.rotate);
   for (const f of fs) f.rotate = on;
-  app.updateFrontPanel();
+  app.updateCommands();
 };
-$('rejoinBtn').onclick = () => { for (const f of app.panelFronts()) app.fronts.rejoin(f); app.updateFrontPanel(); };
+$('rejoinBtn').onclick = () => { for (const f of app.panelFronts()) app.fronts.rejoin(f); app.updateCommands(); };
 $('disbandBtn').onclick = () => {
   for (const f of app.panelFronts()) {
     for (const u of f.units) u.path = [];
@@ -812,9 +815,14 @@ $('disbandBtn').onclick = () => {
   app.divBarSig = null;
 };
 $('frontCancel').onclick = () => app.setFrontMode(null);
-$('frontClose').onclick = () => { app.ui.selection.clear(); app.selectFront(null); app.updateSelectionInfo(); };
+$('cmdClose').onclick = () => { app.ui.selection.clear(); app.selectFront(null); app.updateSelectionInfo(); };
 $('haltBtn').onclick = () => app.stopSelection();
-$('deselectBtn').onclick = () => { app.ui.selection.clear(); app.updateSelectionInfo(); };
+$('newDivBtn').onclick = () => app.newDivision();
+$('unDivBtn').onclick = () => app.removeFromDivision();
+$('refillBtn').onclick = () => { const d = app.selectedDivision(); if (d) app.toggleRefill(d.id); };
+$('newArmyBtn').onclick = () => app.newArmy();
+$('unArmyBtn').onclick = () => app.removeFromArmy();
+$('autoBtn').onclick = () => app.autoOrganize();
 $('centerBtn').onclick = () => app.fitCamera();
 $('againBtn').onclick = () => app.start(app.current.seed, app.current.size, app.current.difficulty);
 $('newBtn').onclick = () => app.start(randomSeed(), app.current.size, app.current.difficulty);
