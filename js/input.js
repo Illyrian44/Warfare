@@ -1,4 +1,5 @@
-import { CITY_RADIUS } from './config.js?v=63';
+import { CITY_RADIUS } from './config.js?v=64';
+import { divisionOf, unitsOf } from './orbat.js?v=64';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -24,28 +25,41 @@ export class Input {
     return { x: sx / cam.zoom + cam.x, y: sy / cam.zoom + cam.y };
   }
 
-  pickOwnUnit(w) {
-    const { game, human, cam } = this.app;
-    const tol = Math.max(10, 16 / cam.zoom);
+  // Eigene Truppen unter dem Zeiger: Trefferfläche ist das gezeichnete Symbol (siehe
+  // Renderer.hits), einzelne Kompanien vor Gruppen; am Handy mindestens fingerbreit
+  pickHit(w, touch) {
+    const r = this.app.renderer;
+    if (!r || !r.hits) return null;
+    const px = 1 / this.app.cam.zoom;
+    const min = (touch ? 11 : 5) * px;
     let best = null, bd = Infinity;
-    for (const u of game.units) {
-      if (u.owner !== human) continue;
-      const d = Math.hypot(u.x - w.x, u.y - w.y) - u.r;
-      if (d < tol && d < bd) { bd = d; best = u; }
+    for (const h of r.hits) {
+      const ax = Math.max(h.hw, min), ay = Math.max(h.hh, min);
+      const dx = Math.abs(w.x - h.x), dy = Math.abs(w.y - h.y);
+      if (dx > ax || dy > ay) continue;
+      const d = Math.hypot(dx / ax, dy / ay) - (h.single ? 1 : 0);
+      if (d < bd) { bd = d; best = h; }
     }
     return best;
   }
 
-  // Herausgezoomt: ganze Division unter dem Finger
-  pickOwnDivision(w) {
-    const r = this.app.renderer;
-    if (!r || !r.divHits || !r.divHits.length) return null;
-    let best = null, bd = Infinity;
-    for (const h of r.divHits) {
-      const d = Math.hypot(h.x - w.x, h.y - w.y);
-      if (d < h.r * 1.4 && d < bd) { bd = d; best = h; }
-    }
-    return best;
+  // Klickfolge auf eigene Truppen: Gruppe -> ganze Division -> einzelne Kompanie unter dem
+  // Zeiger -> wieder die Gruppe. Stufen mit derselben Auswahl werden übersprungen;
+  // mit Umschalt kommt die Gruppe zur Auswahl hinzu
+  clickTroops(hit, w, additive) {
+    const sel = this.ui.selection;
+    const dist = (u) => Math.hypot(u.x - w.x, u.y - w.y);
+    const near = hit.members.reduce((a, b) => (dist(b) < dist(a) ? b : a));
+    const div = divisionOf(near);
+    const steps = [hit.members, div ? unitsOf(div) : null, [near]].filter(Boolean);
+    const same = (a, b) => a.length === b.length && a.every((u) => b.includes(u));
+    const uniq = steps.filter((st, i) => !steps.slice(0, i).some((t) => same(st, t)));
+    if (additive) { for (const u of uniq[0]) sel.add(u); return; }
+    const k = uniq.findIndex((st) => same(st, [...sel]));
+    sel.clear();
+    if (k < 0) { for (const u of uniq[0]) sel.add(u); return; }
+    if (uniq.length === 1) return; // einzelne Kompanie erneut angeklickt: Auswahl aufheben
+    for (const u of uniq[(k + 1) % uniq.length]) sel.add(u);
   }
 
   pickOwnCity(w) {
@@ -73,8 +87,9 @@ export class Input {
     if (this.pointers.size > 2) return;
     const w = this.toWorld(e.offsetX, e.offsetY);
     const mouse = e.pointerType === 'mouse';
+    // PC: rechte Taste bewegt (Klick) oder verschiebt die Karte (Ziehen), mittlere verschiebt
     if (mouse && (e.button === 1 || e.button === 2)) {
-      this.gesture = { kind: 'pan', moved: false, button: e.button };
+      this.gesture = { kind: 'pan', moved: false, button: e.button, world: w, shift: e.shiftKey };
       return;
     }
     if (this.ui.frontMode) {
@@ -82,19 +97,20 @@ export class Input {
       this.ui.drawPath = [w];
       return;
     }
-    const badge = this.app.pickFrontBadge(w);
-    const div = badge ? null : this.pickOwnDivision(w);
-    const u = badge ? null : div ? div.members[0] : this.pickOwnUnit(w);
-    if (u) {
-      this.gesture = { kind: 'path', unit: u, members: div ? div.members : null, moved: false, shift: e.shiftKey };
-      this.ui.drawPath = [{ x: u.x, y: u.y }];
-      return;
-    }
+    // PC: Linksziehen zieht immer einen Rahmen; Handy: ein Finger verschiebt die Karte
+    // (Rahmen über „▢ Auswahl“). Ein Klick bzw. Antippen ohne Ziehen wählt aus oder bewegt.
     const boxMode = mouse || this.ui.selectMode;
-    this.gesture = { kind: boxMode ? 'box' : 'pan', moved: false, city: this.pickOwnCity(w), world: w, shift: e.shiftKey, badge };
+    this.gesture = { kind: boxMode ? 'box' : 'pan', moved: false, world: w, shift: e.shiftKey, touch: !mouse };
   }
 
   move(e) {
+    // PC: zeigen, was ein Klick auswählen würde
+    if (!this.gesture && e.pointerType === 'mouse' && this.app.game) {
+      const hit = this.pickHit(this.toWorld(e.offsetX, e.offsetY), false);
+      this.ui.hover = hit ? hit.members : null;
+      this.canvas.style.cursor = hit ? 'pointer' : '';
+      return;
+    }
     const p = this.pointers.get(e.pointerId);
     if (!p || !this.gesture) return;
     const lx = p.x, ly = p.y;
@@ -118,7 +134,7 @@ export class Input {
       cam.x -= (p.x - lx) / cam.zoom;
       cam.y -= (p.y - ly) / cam.zoom;
       this.app.clampCamera();
-    } else if (g.kind === 'path' || g.kind === 'front') {
+    } else if (g.kind === 'front') {
       const w = this.toWorld(p.x, p.y);
       const path = this.ui.drawPath;
       const last = path[path.length - 1];
@@ -139,28 +155,7 @@ export class Input {
     }
     this.gesture = null;
     const sel = this.ui.selection;
-    if (g.kind === 'path') {
-      const path = this.ui.drawPath || [];
-      this.ui.drawPath = null;
-      if (!g.moved || path.length < 2) {
-        // Antippen einer Einheit oder Division: Auswahl umschalten
-        const tapped = g.members || [g.unit];
-        if (tapped.every((u) => sel.has(u))) for (const u of tapped) sel.delete(u);
-        else {
-          if (e.pointerType === 'mouse' && !g.shift) sel.clear();
-          for (const u of tapped) sel.add(u);
-        }
-      } else {
-        const own = g.members || [g.unit];
-        const group = own.some((u) => sel.has(u)) && sel.size > 1 ? [...new Set([...sel, ...own])] : own;
-        for (const u of group) {
-          this.app.release(u);
-          const ox = u.x - g.unit.x, oy = u.y - g.unit.y;
-          u.path = path.slice(1).map((q) => ({ x: q.x + ox, y: q.y + oy }));
-          u.stuck = 0;
-        }
-      }
-    } else if (g.kind === 'front') {
+    if (g.kind === 'front') {
       const path = this.ui.drawPath || [];
       this.ui.drawPath = null;
       if (g.moved && path.length >= 2) this.app.finishFront(path);
@@ -177,28 +172,35 @@ export class Input {
       } else this.tap(g, e);
     } else if (g.kind === 'pan') {
       if (!g.moved) {
-        if (g.button === 2) sel.clear();
+        if (g.button === 2) this.app.moveSelectionTo(g.world, g.shift); // Rechtsklick: dorthin
         else if (g.button === undefined) this.tap(g, e);
       }
     }
     this.app.updateSelectionInfo();
   }
 
+  // Klick (PC, links) bzw. Antippen (Handy) ohne Ziehen
   tap(g, e) {
     const sel = this.ui.selection;
-    const f = g.badge || this.app.pickFront(g.world);
-    if (f && (g.badge || !sel.size || f === this.ui.front)) {
+    const hit = this.pickHit(g.world, g.touch);
+    if (hit) { this.clickTroops(hit, g.world, g.shift); return; }
+    const badge = this.app.pickFrontBadge(g.world);
+    const f = badge || this.app.pickFront(g.world);
+    if (f && (badge || !sel.size || f === this.ui.front)) {
       // Front antippen = ihre Division auswählen (öffnet das Frontmenü)
       if (f === this.ui.front) { sel.clear(); this.app.selectFront(null); }
       else this.app.selectDivision(f.division.id, false);
       return;
     }
-    if (g.city && !sel.size) {
-      g.city.prodType = g.city.prodType === 'light' ? 'heavy' : 'light';
-      this.app.toast(g.city.prodType === 'heavy' ? 'Stadt baut jetzt: Panzer (schwer)' : 'Stadt baut jetzt: Infanterie (leicht)');
+    const city = this.pickOwnCity(g.world);
+    if (city && !sel.size) {
+      city.prodType = city.prodType === 'light' ? 'heavy' : 'light';
+      this.app.toast(city.prodType === 'heavy' ? 'Stadt baut jetzt: Panzer (schwer)' : 'Stadt baut jetzt: Infanterie (leicht)');
       return;
     }
-    if (sel.size) this.app.moveSelectionTo(g.world);
+    if (!sel.size) return;
+    if (g.touch) this.app.moveSelectionTo(g.world, false); // Handy: Antippen bewegt die Auswahl
+    else if (!g.shift) sel.clear();                         // PC: Klick ins Leere hebt sie auf
   }
 
   cancel(e) {

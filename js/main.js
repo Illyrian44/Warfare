@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=63';
-import { Game } from './game.js?v=63';
-import { AI } from './ai.js?v=63';
-import { Renderer, isFrontShown } from './render.js?v=63';
-import { Input } from './input.js?v=63';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=63';
-import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=63';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY } from './config.js?v=63';
+import { generateMap } from './map.js?v=64';
+import { Game } from './game.js?v=64';
+import { AI } from './ai.js?v=64';
+import { Renderer, isFrontShown } from './render.js?v=64';
+import { Input } from './input.js?v=64';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=64';
+import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=64';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=64';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -353,34 +353,62 @@ const app = {
     $('selectBtn').classList.toggle('active', on);
   },
 
-  moveSelectionTo(w) {
-    const units = [...this.ui.selection];
+  // Bewegen zum Zielpunkt: dicht aufgestellt in Reihen quer zur Marschrichtung (1,5 km
+  // Abstand), vordere Einheiten nach vorn, links bleibt links – so kreuzen sich die Wege kaum.
+  // keep (Umschalt): die Einheiten behalten ihre Abstände zueinander.
+  moveSelectionTo(w, keep = false) {
+    const units = this.ownSelection();
     if (!units.length) return;
+    const map = this.game.map;
     const cx = units.reduce((a, u) => a + u.x, 0) / units.length;
     const cy = units.reduce((a, u) => a + u.y, 0) / units.length;
-    // Formation beibehalten, aber zusammenziehen
-    let spread = 0;
-    for (const u of units) spread = Math.max(spread, Math.hypot(u.x - cx, u.y - cy));
-    const maxSpread = 10 + Math.sqrt(units.length) * 11;
-    const k = spread > maxSpread ? maxSpread / spread : 1;
+    const goals = [];
+    if (keep) {
+      for (const u of units) goals.push({ u, x: w.x + u.x - cx, y: w.y + u.y - cy });
+    } else {
+      const l = Math.hypot(w.x - cx, w.y - cy) || 1;
+      const fx = (w.x - cx) / l, fy = (w.y - cy) / l; // Marschrichtung
+      const lx = -fy, ly = fx;                         // quer dazu
+      const depth = (u) => (u.x - cx) * fx + (u.y - cy) * fy;
+      const lat = (u) => (u.x - cx) * lx + (u.y - cy) * ly;
+      const gap = 1.5 * KM;
+      const perRow = Math.max(1, Math.ceil(Math.sqrt(units.length * 2)));
+      const rows = Math.ceil(units.length / perRow);
+      const byDepth = units.slice().sort((a, b) => depth(b) - depth(a));
+      for (let r = 0; r < rows; r++) {
+        const row = byDepth.slice(r * perRow, (r + 1) * perRow).sort((a, b) => lat(a) - lat(b));
+        const d = ((rows - 1) / 2 - r) * gap;
+        row.forEach((u, k) => {
+          const s = (k - (row.length - 1) / 2) * gap;
+          goals.push({ u, x: w.x + fx * d + lx * s, y: w.y + fy * d + ly * s });
+        });
+      }
+    }
     const cache = new Map();
-    for (const u of units) {
-      const tx = w.x + (u.x - cx) * k, ty = w.y + (u.y - cy) * k;
+    for (const g of goals) {
+      const u = g.u;
+      // Zielplatz auf unbegehbarem Gelände: nächstes begehbares Feld
+      if (!map.passableAt(g.x, g.y)) {
+        const i = map.nearestPassable(map.cellIndex(g.x, g.y), 4);
+        if (i >= 0) { g.x = (i % map.w + 0.5) * CELL; g.y = (Math.floor(i / map.w) + 0.5) * CELL; } else { g.x = w.x; g.y = w.y; }
+      }
+      // Nebeneinander startende Einheiten teilen sich die Wegsuche zum Zielpunkt
       const key = `${u.x / 30 | 0},${u.y / 30 | 0}`;
       let base = cache.get(key);
       if (base === undefined) {
-        base = this.game.map.findPath(u.x, u.y, tx, ty);
+        base = map.findPath(u.x, u.y, w.x, w.y);
         cache.set(key, base);
       }
       if (base && base.length) {
         const p = base.map((q) => ({ x: q.x, y: q.y }));
-        p[p.length - 1] = { x: tx, y: ty };
+        p[p.length - 1] = { x: g.x, y: g.y };
         this.release(u);
         u.path = p;
         u.stuck = 0;
       }
     }
   },
+
 
   updateSelectionInfo() {
     const n = this.ui.selection.size;

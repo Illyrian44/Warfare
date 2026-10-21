@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=63';
-import { classify } from './map.js?v=63';
-import { frontBadge, pointAt } from './fronts.js?v=63';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=63';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=64';
+import { classify } from './map.js?v=64';
+import { frontBadge, pointAt } from './fronts.js?v=64';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=64';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -296,10 +296,14 @@ export class Renderer {
 
     // Einheiten als NATO-Symbole (APP-6); herausgezoomt Divisionen statt Kompanien
     const flash = (game.time * 4) % 1 < 0.5;
-    const highlightOf = (u) => (ui.selection.has(u) ? '#fff' : ui.front && u.front === ui.front ? '#f2c94c' : null);
+    const hover = new Set(ui.hover || []);
+    const HOVER = 'rgba(255,255,255,0.5)';
+    const highlightOf = (u) => (ui.selection.has(u) ? '#fff' : hover.has(u) ? HOVER : ui.front && u.front === ui.front ? '#f2c94c' : null);
     // Gruppierung nur nach Überlappung auf dem Bildschirm, unabhängig vom Zoom:
-    // Kompanien, deren Symbole sich überdecken würden, werden zu einem Verband zusammengefasst
-    this.divHits = [];
+    // Kompanien, deren Symbole sich überdecken würden, werden zu einem Verband zusammengefasst.
+    // Trefferflächen (this.hits) entstehen genau dort, wo die eigenen Symbole gezeichnet sind:
+    // angeklickt wird, was man sieht
+    this.hits = [];
     const drawn = new Set();
     for (let p = 1; p <= 2; p++) {
       // Nur innerhalb derselben Division zusammenfassen; marschierende Kompanien bleiben einzeln
@@ -318,17 +322,22 @@ export class Renderer {
       for (const group of groups) {
         if (group.members.length < 2) continue;
         const sel = group.members.some((u) => ui.selection.has(u));
+        const hov = group.members.some((u) => hover.has(u));
         const inFront = ui.front && group.members.some((u) => u.front === ui.front);
         const hw = drawFormationSymbol(ctx, group.x, group.y, group.members, p === me, px,
-          sel ? '#fff' : inFront ? '#f2c94c' : null, group.members.some((u) => u.supply < 0.2) && flash,
+          sel ? '#fff' : hov ? HOVER : inFront ? '#f2c94c' : null, group.members.some((u) => u.supply < 0.2) && flash,
           labelFor(group.members));
         for (const u of group.members) drawn.add(u);
-        if (p === me) this.divHits.push({ x: group.x, y: group.y, r: hw, members: group.members });
+        if (p === me) this.hits.push({ x: group.x, y: group.y, hw, hh: hw * 0.68, members: group.members, single: false });
       }
     }
     for (const u of game.units) {
       if (drawn.has(u) || !visible(u)) continue;
       drawNatoSymbol(ctx, u, u.owner === me, px, highlightOf(u), u.supply < 0.2 && flash);
+      if (u.owner === me) {
+        const hw = companyHalfWidth(u, px);
+        this.hits.push({ x: u.x, y: u.y, hw, hh: hw * 0.68, members: [u], single: true });
+      }
     }
 
     // Divisions-HQs hinter der Linie (keine Kampfeinheiten)
