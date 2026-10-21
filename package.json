@@ -1,1 +1,1 @@
-{ "name": "war-of-dots-web", "private": true, "type": "module", "scripts": { "test": "node test/sim.mjs" } }
+{ "name": "phase-line", "private": true, "type": "module", "scripts": { "test": "node test/sim.mjs" } }
