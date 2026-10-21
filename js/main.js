@@ -1,17 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=87';
-import { Game } from './game.js?v=87';
-import { AI } from './ai.js?v=87';
-import { Renderer, isFrontShown } from './render.js?v=87';
-import { Input } from './input.js?v=87';
-import { formationSlots } from './formation.js?v=87';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=87';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=87';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX } from './config.js?v=87';
-import { templateCost } from './production.js?v=87';
+import { loadMap, MAPS } from './map.js?v=89';
+import { Game } from './game.js?v=89';
+import { AI } from './ai.js?v=89';
+import { Renderer, isFrontShown } from './render.js?v=89';
+import { Input } from './input.js?v=89';
+import { formationSlots } from './formation.js?v=89';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=89';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=89';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX } from './config.js?v=89';
+import { templateCost } from './production.js?v=89';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '87'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '89'; // für Kartendaten, siehe scripts/bump-version.sh
 
 const app = {
   game: null,
@@ -678,6 +678,12 @@ const app = {
         this.toast('📻 ' + ev.text);
       } else if (ev.type === 'spawn' && ev.unit.owner === this.human) {
         this.divBarSig = null;
+      } else if (ev.type === 'convoyLost' && ev.owner === this.human) {
+        // höchstens alle 20 s melden
+        if (g.time - (this.lastConvoyToast || -99) > 20) {
+          this.lastConvoyToast = g.time;
+          this.toast('Eine Handelskolonne wurde überfallen – Straßen hinter der Front sichern', 'bad');
+        }
       } else if (ev.type === 'built' && ev.city.owner === this.human) {
         this.toast(`${ev.city.name}: ${BUILDINGS[ev.key].name} Stufe ${ev.level} fertig`, 'good');
         this.buildSig = null;
@@ -813,7 +819,7 @@ const app = {
     const e = g.eco[this.human];
     const k = (v) => (v >= 10000 ? `${(v / 1000).toFixed(0)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.floor(v)}`);
     $('hudEco').innerHTML =
-      `<span title="Geld: Städte (nach Größe) und Land bringen Einkommen, Kompanien kosten Geld">💰 ${k(e.money)}<small class="muted"> +${e.income.toFixed(1)}/s</small></span> ` +
+      `<span title="Geld: Städte (nach Größe), Gebäude und Land bringen ${e.income.toFixed(1)}/s, der Handel zuletzt etwa ${e.tradeRate.toFixed(1)}/s. Kompanien und Gebäude kosten Geld.">💰 ${k(e.money)}<small class="muted"> +${(e.income + e.tradeRate).toFixed(1)}/s</small></span> ` +
       `<span title="Manpower: wächst aus der Bevölkerung deiner Städte (Vorrat höchstens ${k(e.mpCap)}), Kompanien kosten Manpower">👥 ${k(e.manpower)}<small class="muted"> +${e.mpRate.toFixed(0)}/s</small></span>`;
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     $('hudTime').textContent = `${m}:${String(s).padStart(2, '0')}`;

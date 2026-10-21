@@ -76,6 +76,19 @@ export const BUILDINGS = {
 };
 export const BUILDING_MAX = 3;
 
+// Handel (js/trade.js): Kolonnen über Land und Schiffe zwischen Häfen bringen bei der Ankunft
+// Geld: Grundwert plus Wert je Feld Weg; an Land nach Stadtgrößen, zur See nach Hafenstufen
+export const TRADE = {
+  landEvery: 24,      // Sekunden zwischen zwei Kolonnen einer Kleinstadt (Großstadt ein Drittel)
+  landMax: 70,        // Handelspartner höchstens so viele Felder entfernt
+  landBase: 1.5, landPerCell: 0.08,
+  seaEvery: 30,       // Sekunden zwischen zwei Schiffen eines Hafens der Stufe 1
+  seaBase: 4, seaPerCell: 0.12,
+  truckSpeed: kmh(25), shipSpeed: kmh(30),
+  raid: 18,           // so nah darf ein Feind einer Kolonne kommen, sonst ist sie verloren
+  allyBonus: 1.5,     // Handel mit Verbündeten: beide Seiten bekommen das 1,5-Fache
+};
+
 export const UPGRADES = {
   training: { name: 'Ausbildung', effect: 'Organisation +20 %', per: 0.2, cost: [150, 300] },
   artillery: { name: 'Artillerie', effect: 'Kampfkraft +15 %', per: 0.15, cost: [200, 400] },

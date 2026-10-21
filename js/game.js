@@ -2,12 +2,13 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=87';
-import { mulberry32 } from './rng.js?v=87';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=87';
-import { HQManager } from './hq.js?v=87';
-import { SupplyNetwork } from './supply.js?v=87';
-import { Production } from './production.js?v=87';
+} from './config.js?v=89';
+import { mulberry32 } from './rng.js?v=89';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=89';
+import { HQManager } from './hq.js?v=89';
+import { SupplyNetwork } from './supply.js?v=89';
+import { Trade } from './trade.js?v=89';
+import { Production } from './production.js?v=89';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -65,7 +66,7 @@ export class Game {
     this.share = slots().map(() => 0);
     // Kasse je Seite: Geld, Manpower und ihre Zuwächse je Sekunde (siehe updateEconomy)
     this.eco = slots().map((_, p) => (p
-      ? { money: ECONOMY.startMoney, manpower: ECONOMY.startManpower, income: 0, mpRate: 0, mpCap: 1000, spent: 0 }
+      ? { money: ECONOMY.startMoney, manpower: ECONOMY.startManpower, income: 0, mpRate: 0, mpCap: 1000, spent: 0, trade: 0, tradeRate: 0, tradeSeen: 0 }
       : null));
     this.ecoTimer = 0;
 
@@ -82,6 +83,7 @@ export class Game {
     this.updateShares();
     this.updateEconomy(0);
     this.production = new Production(this);
+    this.trade = new Trade(this);
     this.supply = new SupplyNetwork(this);
     this.hq = new HQManager(this);
     this.hq.place();
@@ -164,6 +166,9 @@ export class Game {
         e.income = (size * ECONOMY.cityMoney + money + this.share[p] * 100 * ECONOMY.landMoney) * m;
         e.mpRate = (size * ECONOMY.cityManpower + mp) * m;
         e.mpCap = Math.max(1000, e.mpRate * ECONOMY.manpowerCap);
+        // Handelseinnahmen je Sekunde, geglättet über etwa eine Minute
+        e.tradeRate = e.tradeRate * 0.97 + (e.trade - e.tradeSeen) * 0.03;
+        e.tradeSeen = e.trade;
       }
     }
     for (const p of this.players) {
@@ -416,6 +421,8 @@ export class Game {
       this.territoryVersion++;
       this.updateShares();
     }
+    // Handel nach der Gebietsfärbung: Kolonnen auf frisch verlorenem Gebiet fallen sofort
+    this.trade.step(dt);
     this.visTimer -= dt;
     if (this.visTimer <= 0) { this.visTimer = 0.2; this.updateVision(); }
 

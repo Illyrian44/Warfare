@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=87';
-import { classify } from './map.js?v=87';
-import { frontBadge, pointAt } from './fronts.js?v=87';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=87';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=89';
+import { classify } from './map.js?v=89';
+import { frontBadge, pointAt } from './fronts.js?v=89';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=89';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -297,6 +297,7 @@ export class Renderer {
 
     // Städte
     for (const c of game.cities) this.drawCity(c, px, ui);
+    this.drawConvoys(px, ui);
 
     // Kampflinien
     ctx.lineWidth = 1.2 * px;
@@ -550,6 +551,39 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(f.units.length), b.x, b.y + 0.5 * px);
+  }
+
+  // Handel: Kolonnen (kleiner Lastwagen) und Schiffe in der Farbe ihrer Seite; fremde nur in Sicht
+  drawConvoys(px, ui) {
+    const { ctx, game } = this;
+    const me = this.human;
+    const s = Math.max(4, 7 * px);
+    ctx.lineWidth = Math.max(0.8, 1 * px);
+    for (const k of game.trade.convoys) {
+      if (k.owner !== me && !ui.revealAll && !game.isVisible(me, k.x, k.y)) continue;
+      ctx.fillStyle = PLAYER_COLORS[k.owner];
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.beginPath();
+      if (k.kind === 'sea') {
+        // Rumpf
+        ctx.moveTo(k.x - s * 1.4, k.y - s * 0.3);
+        ctx.lineTo(k.x + s * 1.4, k.y - s * 0.3);
+        ctx.lineTo(k.x + s * 0.9, k.y + s * 0.6);
+        ctx.lineTo(k.x - s * 0.9, k.y + s * 0.6);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(k.x - s * 0.3, k.y - s * 0.9, s * 0.6, s * 0.6); // Aufbau
+      } else {
+        ctx.rect(k.x - s, k.y - s * 0.55, s * 2, s * 1.1);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#222';
+        ctx.beginPath();
+        ctx.arc(k.x - s * 0.55, k.y + s * 0.6, s * 0.3, 0, Math.PI * 2);
+        ctx.arc(k.x + s * 0.55, k.y + s * 0.6, s * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
   drawCity(c, px, ui) {

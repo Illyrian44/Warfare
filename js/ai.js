@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM } from './config.js?v=87';
-import { unitStrength } from './game.js?v=87';
-import { mulberry32 } from './rng.js?v=87';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=87';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=87';
+import { DIFFICULTY, SUPPLY, KM } from './config.js?v=89';
+import { unitStrength } from './game.js?v=89';
+import { mulberry32 } from './rng.js?v=89';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=89';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=89';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -71,7 +71,9 @@ export class AI {
     if (!big) return;
     if (!cities.some((c) => c.buildings.factory) && tryBuild(big, 'factory')) return;
     const busy = prod.ordersOf(this.me).length >= cities.reduce((s, c) => s + prod.citySlots(c), 0);
-    const order = e.manpower < 400 ? ['housing', 'barracks', 'factory'] : busy ? ['barracks', 'factory', 'housing'] : ['factory', 'housing', 'barracks'];
+    // Häfen bringen Seehandel, sobald es mindestens zwei Küstenstädte gibt
+    const port = cities.filter((c) => c.coastal).length >= 2 ? ['port'] : [];
+    const order = e.manpower < 400 ? ['housing', 'barracks', 'factory', ...port] : busy ? ['barracks', 'factory', ...port, 'housing'] : ['factory', ...port, 'housing', 'barracks'];
     for (const key of order) {
       const c = cities.find((x) => prod.nextBuilding(x, key));
       if (c && tryBuild(c, key)) return;

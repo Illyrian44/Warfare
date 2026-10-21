@@ -52,6 +52,11 @@ function checkState(g, label, ais) {
     if (!TERRAIN_INFO[t].passable) u.badTime = (u.badTime || 0) + 1; else u.badTime = 0;
     if (u.badTime > 10) { fail(`${label}: Einheit ${u.id} steckt auf unbegehbarem Gelände (${u.x.toFixed(0)}, ${u.y.toFixed(0)})`); u.badTime = -1e9; }
   }
+  // Handel: Kolonnen nur zwischen Partnern, nie auf Feindgebiet
+  for (const k of g.trade.convoys) {
+    if (!g.trade.partnerOk(k.owner, g.cities[k.from].owner === k.owner ? k.owner : k.owner)) fail(`${label}: Kolonne ohne gültigen Besitzer`);
+    if (k.kind === 'land' && g.hostile(k.owner, g.territory[g.map.cellIndex(k.x, k.y)])) fail(`${label}: Kolonne von Seite ${k.owner} fährt auf Feindgebiet`);
+  }
   // Ausbildung nur in eigenen Städten
   for (const o of g.production.orders) {
     if (g.cities[o.city].owner !== o.owner) fail(`${label}: Auftrag ${o.id} von Seite ${o.owner} in fremder Stadt ${g.cities[o.city].name}`);
@@ -277,6 +282,7 @@ for (const [seed, size, np] of CASES) {
       `${ms.toFixed(2)} ms/Schritt (max ${worst.toFixed(0)} ms), bis zu ${maxDivs} Divisionen, ` +
       `Land ${g.players.map((p) => Math.round(g.share[p] * 100) + '%').join('/')}, ` +
       `Ausgaben ${g.players.map((p) => Math.round(g.eco[p].spent)).join('/')}, ` +
+      `Handel ${g.players.map((p) => Math.round(g.eco[p].trade)).join('/')}, ` +
       `Frontangriffe ${g.players.map((p) => attacks[p]).join('/')} s`);
   } catch (e) {
     fail(`${label}: Absturz\n${e.stack}`);
