@@ -401,8 +401,9 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   #menu .sub { display: none; }
   #menu h1 { font-size: 34px; }
   #menu .menuHead .label { padding: 6px 20px; }
-  #menu .panel { grid-template-columns: 1fr 1.2fr 1.2fr; padding: 28px 16px 12px; }
-  #menu .choice button { min-height: 34px; padding: 0.25em 0.3em; font-size: 14px; }
+  #menu .panel { grid-template-columns: 1fr 1fr 1.2fr; gap: 6px 12px; padding: 28px 14px 12px; }
+  #menu .choice { gap: 4px; }
+  #menu .choice button { min-height: 34px; padding: 0.25em 0.2em; font-size: 13px; }
   #menu #startBtn { min-height: 44px; font-size: 16px; padding: 0.4em 0.7em; }
 }
 .overlay {
@@ -555,4 +556,74 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 
 @media (max-width: 560px) {
   #divBar { bottom: calc(104px + env(safe-area-inset-bottom)); }
+}
+
+/* Handy quer: wenig Höhe. Oben eine schmale Leiste, die Knöpfe als Spalte rechts, die
+   Divisionsleiste ganz unten; Befehls-, Bau- und Diplomatiefeld kompakt dazwischen. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .bar { padding-top: 4px; padding-bottom: 4px; }
+  .bar button { min-height: 34px; min-width: 36px; padding: 0.25em 0.5em; font-size: 14px; }
+  .bar.top .buttons { gap: 4px; }
+  .stats { font-size: 12px; padding: 4px 10px; gap: 2px 8px; }
+  #seedLabel { display: none; }
+  .bar.bottom {
+    top: calc(46px + env(safe-area-inset-top)); bottom: auto; left: auto;
+    flex-direction: column; align-items: flex-end; padding-top: 0;
+  }
+  .bar.bottom > span { display: none; }
+  .bar.bottom .buttons { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 3px; width: 104px; }
+  .bar.bottom button { min-height: 30px; font-size: 13px; padding: 0.2em 0.4em; white-space: normal; line-height: 1.15; }
+  #divBar { bottom: calc(4px + env(safe-area-inset-bottom)); right: calc(118px + env(safe-area-inset-right)); padding-left: max(8px, env(safe-area-inset-left)); }
+  .divcard { min-width: 96px; padding: 3px 6px 4px 5px; font-size: 11px; }
+  #cmdPanel {
+    left: calc(50% - 58px); bottom: calc(66px + env(safe-area-inset-bottom));
+    width: min(58vw, 460px); max-height: calc(100vh - 120px); overflow-y: auto; padding: 6px 8px 12px;
+  }
+  .cmdHead { margin-bottom: 4px; }
+  .cmdRow { gap: 4px; }
+  .cmdRow button { min-height: 32px; font-size: 13px; padding: 0.2em 0.5em; }
+  .cmdRow + .cmdRow:not(:empty) { margin-top: 4px; padding-top: 4px; }
+  #buildPanel, #diploPanel {
+    top: calc(46px + env(safe-area-inset-top)); right: calc(118px + env(safe-area-inset-right));
+    width: min(330px, 52vw); max-height: calc(100vh - 54px - env(safe-area-inset-top));
+  }
+  /* Meldungen unter dem Pausenschild und unter den Fenstern, damit sie nichts verdecken */
+  #cmdPanel, #buildPanel, #diploPanel, #offerBox { z-index: 2; }
+  #toasts { z-index: 1; top: calc(92px + env(safe-area-inset-top)); left: calc(50% - 58px); width: min(56vw, 440px); gap: 4px; }
+  .toast { font-size: 12px; padding: 5px 10px; }
+  #pausedBanner { top: calc(68px + env(safe-area-inset-top)); left: calc(50% - 58px); font-size: 18px; padding: 4px 16px; }
+  #pausedBanner small { display: inline; margin-left: 8px; font-size: 11px; }
+  #pickBanner { top: calc(48px + env(safe-area-inset-top)); left: calc(50% - 58px); font-size: 13px; }
+  #frontBanner { bottom: calc(66px + env(safe-area-inset-bottom)); left: calc(50% - 58px); font-size: 13px; }
+  #offerBox { top: calc(48px + env(safe-area-inset-top)); left: calc(50% - 58px); font-size: 13px; }
+}
+
+/* Handy hoch: gespielt wird quer, der Hinweis bittet ums Drehen */
+#rotateHint { display: none; }
+@media (orientation: portrait) and (pointer: coarse) and (max-width: 600px) {
+  #rotateHint {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    padding: 24px; text-align: center;
+    background: linear-gradient(rgba(8, 14, 22, 0.7), rgba(8, 14, 22, 0.85)), url('../assets/menu-bg.png') 18% 50% / cover no-repeat, #0b111a;
+    image-rendering: pixelated;
+  }
+  #rotateHint .card {
+    image-rendering: auto;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    max-width: 300px; padding: 22px 22px 18px; transform: rotate(-1.2deg);
+    background: linear-gradient(rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.06)), #e6d9b8; color: #2b2418;
+    border-radius: 3px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65), inset 0 0 50px rgba(120, 90, 40, 0.35);
+    font-family: 'Special Elite', 'Courier New', monospace; font-size: 14px;
+  }
+  #rotateHint b { font-family: 'Black Ops One', system-ui, sans-serif; font-weight: 400; font-size: 22px; letter-spacing: 1px; color: #20190f; }
+  #rotateHint .phone {
+    width: 38px; height: 64px; margin: 6px 0 10px; border: 4px solid #2b2418; border-radius: 8px; position: relative;
+    animation: rotatePhone 2.4s ease-in-out infinite;
+  }
+  #rotateHint .phone::after { content: ''; position: absolute; left: 50%; bottom: 3px; width: 8px; height: 3px; margin-left: -4px; border-radius: 2px; background: #2b2418; }
+}
+@keyframes rotatePhone {
+  0%, 25% { transform: rotate(0deg); }
+  55%, 100% { transform: rotate(-90deg); }
 }

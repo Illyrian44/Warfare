@@ -1,17 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=98';
-import { Game } from './game.js?v=98';
-import { AI } from './ai.js?v=98';
-import { Renderer, isFrontShown } from './render.js?v=98';
-import { Input } from './input.js?v=98';
-import { formationSlots } from './formation.js?v=98';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=98';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=98';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=98';
-import { templateCost } from './production.js?v=98';
+import { loadMap, MAPS } from './map.js?v=99';
+import { Game } from './game.js?v=99';
+import { AI } from './ai.js?v=99';
+import { Renderer, isFrontShown } from './render.js?v=99';
+import { Input } from './input.js?v=99';
+import { formationSlots } from './formation.js?v=99';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=99';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=99';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=99';
+import { templateCost } from './production.js?v=99';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '98'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '99'; // für Kartendaten, siehe scripts/bump-version.sh
 
 const app = {
   game: null,
@@ -960,7 +960,24 @@ setupChoice('diffChoice', app.settings.difficulty || 'medium');
 $('mapChoice').innerHTML = MAPS.map((m) => `<button data-value="${m.id}">${m.name}</button>`).join('');
 setupChoice('mapChoice', MAPS.some((m) => m.id === app.settings.map) ? app.settings.map : MAPS[0].id);
 setupChoice('oppChoice', String(app.settings.opponents || 1));
-$('startBtn').onclick = () => app.start(randomSeed(), choice('mapChoice'), choice('diffChoice'), +choice('oppChoice'));
+// Handys spielen quer: beim Start Vollbild und Querformat sperren (geht auf Android). Wo das
+// nicht geht (iPhone), bittet im Hochformat ein Hinweis ums Drehen (#rotateHint) und das
+// laufende Spiel hält an.
+const isPhone = () => matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
+function lockLandscape() {
+  if (!isPhone() || !screen.orientation?.lock) return;
+  const el = document.documentElement;
+  const full = document.fullscreenElement || !el.requestFullscreen ? null : el.requestFullscreen({ navigationUI: 'hide' });
+  Promise.resolve(full).then(() => screen.orientation.lock('landscape')).catch(() => { /* nicht unterstützt */ });
+}
+const portrait = matchMedia('(orientation: portrait) and (pointer: coarse) and (max-width: 600px)');
+portrait.addEventListener('change', () => {
+  if (portrait.matches && app.game && !app.paused && $('menu').hidden) app.togglePause();
+});
+$('startBtn').onclick = () => {
+  lockLandscape();
+  app.start(randomSeed(), choice('mapChoice'), choice('diffChoice'), +choice('oppChoice'));
+};
 $('pauseBtn').onclick = () => app.togglePause();
 $('speedBtn').onclick = () => app.setSpeed(app.speed >= 3 ? 1 : app.speed + 1);
 // Die Hilfe hebt nur eine Pause auf, die sie selbst ausgelöst hat
@@ -981,7 +998,7 @@ $('menuBtn').onclick = () => {
   $('menu').hidden = false;
   $('resumeBtn').hidden = false;
 };
-$('resumeBtn').onclick = () => { $('menu').hidden = true; if (app.paused) app.togglePause(); };
+$('resumeBtn').onclick = () => { lockLandscape(); $('menu').hidden = true; if (app.paused) app.togglePause(); };
 $('selectBtn').onclick = () => app.setSelectMode(!app.ui.selectMode);
 $('buildBtn').onclick = () => app.toggleBuild();
 $('diploBtn').onclick = () => app.toggleDiplo();
@@ -1057,8 +1074,8 @@ $('newArmyBtn').onclick = () => app.newArmy();
 $('unArmyBtn').onclick = () => app.removeFromArmy();
 $('autoBtn').onclick = () => app.autoOrganize();
 $('centerBtn').onclick = () => app.fitCamera();
-$('againBtn').onclick = () => app.start(app.current.seed, app.current.map, app.current.difficulty, app.current.opponents);
-$('newBtn').onclick = () => app.start(randomSeed(), app.current.map, app.current.difficulty, app.current.opponents);
+$('againBtn').onclick = () => { lockLandscape(); app.start(app.current.seed, app.current.map, app.current.difficulty, app.current.opponents); };
+$('newBtn').onclick = () => { lockLandscape(); app.start(randomSeed(), app.current.map, app.current.difficulty, app.current.opponents); };
 $('endMenuBtn').onclick = () => { $('end').hidden = true; $('menu').hidden = false; $('resumeBtn').hidden = true; };
 
 // Fenster (Befehlsfeld, Baumenü) verschieben (Titelzeile ziehen) und größer oder kleiner

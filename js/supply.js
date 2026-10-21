@@ -1,5 +1,5 @@
-import { CELL, KM, TERRAIN_INFO, HOURS_PER_SECOND, SUPPLY } from './config.js?v=98';
-import { MinHeap } from './map.js?v=98';
+import { CELL, KM, TERRAIN_INFO, HOURS_PER_SECOND, SUPPLY } from './config.js?v=99';
+import { MinHeap } from './map.js?v=99';
 
 // Nachschub wie in HOI4, vereinfacht: Depot (Stadt) -> Route über eigenes Gebiet -> Kompanie.
 //

@@ -1,0 +1,10 @@
+{
+  "name": "Phase Line",
+  "short_name": "Phase Line",
+  "description": "Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser.",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b111a",
+  "theme_color": "#14202e"
+}

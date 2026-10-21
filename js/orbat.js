@@ -3,7 +3,7 @@
 // zusammen. Die Regimenter innerhalb einer Division ordnet das Spiel selbst. Divisionen
 // lassen sich zu Armeen gruppieren (beliebig viele, wie im Krieg flexibel).
 
-import { PLAYER_HUES } from './config.js?v=98';
+import { PLAYER_HUES } from './config.js?v=99';
 
 export const LEVELS = [
   { name: 'Kompanie', short: 'Kp.', echelon: 'I' },
