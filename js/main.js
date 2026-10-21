@@ -1,17 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=91';
-import { Game } from './game.js?v=91';
-import { AI } from './ai.js?v=91';
-import { Renderer, isFrontShown } from './render.js?v=91';
-import { Input } from './input.js?v=91';
-import { formationSlots } from './formation.js?v=91';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=91';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=91';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=91';
-import { templateCost } from './production.js?v=91';
+import { loadMap, MAPS } from './map.js?v=92';
+import { Game } from './game.js?v=92';
+import { AI } from './ai.js?v=92';
+import { Renderer, isFrontShown } from './render.js?v=92';
+import { Input } from './input.js?v=92';
+import { formationSlots } from './formation.js?v=92';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=92';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=92';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=92';
+import { templateCost } from './production.js?v=92';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '91'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '92'; // für Kartendaten, siehe scripts/bump-version.sh
 
 const app = {
   game: null,

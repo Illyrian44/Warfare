@@ -1,4 +1,4 @@
-import { CELL, T, TRADE } from './config.js?v=91';
+import { CELL, T, TRADE } from './config.js?v=92';
 
 // Handel wie bei OpenFront: Städte schicken regelmäßig Kolonnen über Land zu anderen Städten
 // derselben Seite (später auch zu Verbündeten), Häfen schicken Schiffe zu anderen Häfen im
@@ -189,7 +189,8 @@ export class Trade {
       if (k.kind === 'land') {
         // Überfall oder Weg abgeschnitten: die Kolonne ist verloren
         const tr = g.territory[map.cellIndex(k.x, k.y)];
-        const raided = g.units.some((u) => g.hostile(u.owner, k.owner) && Math.abs(u.x - k.x) < TRADE.raid && Math.abs(u.y - k.y) < TRADE.raid);
+        const near = g.unitGrid ? g.unitGrid.near(k, 1) : g.units; // Raster aus dem Kampfschritt
+        const raided = near.some((u) => u.hp > 0 && g.hostile(u.owner, k.owner) && Math.abs(u.x - k.x) < TRADE.raid && Math.abs(u.y - k.y) < TRADE.raid);
         if (raided || !this.partnerOk(k.owner, tr)) {
           done.push(k);
           g.events.push({ type: 'convoyLost', owner: k.owner, x: k.x, y: k.y });

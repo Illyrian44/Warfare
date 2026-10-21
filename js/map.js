@@ -1,4 +1,4 @@
-import { CELL, T, TERRAIN_INFO, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=91';
+import { CELL, T, TERRAIN_INFO, ROAD_SPEED, BRIDGE_SPEED } from './config.js?v=92';
 
 // Echte Karten (maps/*.json, gebaut mit scripts/build-maps.mjs aus Natural Earth und
 // offenen Höhendaten). Höhe in der Spielskala 0..1, siehe classify.

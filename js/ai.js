@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM, DIPLOMACY } from './config.js?v=91';
-import { unitStrength } from './game.js?v=91';
-import { mulberry32 } from './rng.js?v=91';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=91';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=91';
+import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX } from './config.js?v=92';
+import { unitStrength } from './game.js?v=92';
+import { mulberry32 } from './rng.js?v=92';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=92';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=92';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -57,27 +57,50 @@ export class AI {
       }
     }
     this.construct(cities);
+    this.equip();
   }
 
-  // Städte ausbauen, wenn Geld übrig ist: zuerst eine Fabrik (Panzer), dann je nach Engpass
-  // Wohnviertel (Manpower), Kaserne (Ausbildungsplätze) oder weitere Fabriken (Geld)
+  // Städte ausbauen, wenn Geld übrig ist (mehrere Bauten zugleich, je 4 Städte einer):
+  // zuerst eine Fabrik (Panzer), dann Festungen in bedrohten Städten, Depots wo der Nachschub
+  // knapp ist, sonst je nach Engpass Wohnviertel, Kasernen, Fabriken oder Häfen
   construct(cities) {
     const g = this.game, prod = g.production, e = g.eco[this.me];
-    if (e.money < 250 || cities.some((c) => c.construction)) return;
+    const building = cities.filter((c) => c.construction).length;
+    if (e.money < 250 || building >= Math.max(1, Math.ceil(cities.length / 4))) return;
+    const free = cities.filter((c) => !c.construction);
     const tryBuild = (c, key) => {
-      const next = prod.nextBuilding(c, key);
+      const next = c && prod.nextBuilding(c, key);
       return next && e.money >= next.cost.money + 120 && prod.construct(this.me, c.id, key);
     };
-    const big = cities[0];
-    if (!big) return;
-    if (!cities.some((c) => c.buildings.factory) && tryBuild(big, 'factory')) return;
+    if (!free.length) return;
+    if (!cities.some((c) => c.buildings.factory || (c.construction && c.construction.key === 'factory')) && tryBuild(free[0], 'factory')) return;
+    // Festung (bis Stufe 2) in einer Stadt mit Feinden in der Nähe
+    const enemies = this.visibleEnemies();
+    const threatened = free.find((c) => c.buildings.fort < 2 &&
+      enemies.some((u) => Math.abs(u.x - c.x) < THREAT_RADIUS && Math.abs(u.y - c.y) < THREAT_RADIUS));
+    if (threatened && tryBuild(threatened, 'fort')) return;
+    // Depot, wo mehrere eigene Kompanien schlecht versorgt sind
+    const hungry = free.find((c) => c.buildings.depot < BUILDING_MAX && g.units.filter((u) => u.owner === this.me &&
+      u.supplyEff < 0.6 && Math.hypot(u.x - c.x, u.y - c.y) < 300).length >= 3);
+    if (hungry && tryBuild(hungry, 'depot')) return;
     const busy = prod.ordersOf(this.me).length >= cities.reduce((s, c) => s + prod.citySlots(c), 0);
     // Häfen bringen Seehandel, sobald es mindestens zwei Küstenstädte gibt
     const port = cities.filter((c) => c.coastal).length >= 2 ? ['port'] : [];
     const order = e.manpower < 400 ? ['housing', 'barracks', 'factory', ...port] : busy ? ['barracks', 'factory', ...port, 'housing'] : ['factory', ...port, 'housing', 'barracks'];
     for (const key of order) {
-      const c = cities.find((x) => prod.nextBuilding(x, key));
+      const c = free.find((x) => prod.nextBuilding(x, key));
       if (c && tryBuild(c, key)) return;
+    }
+  }
+
+  // Ausrüstung: mit Geld im Überfluss die Front-Divisionen aufrüsten (Artillerie, dann Ausbildung)
+  equip() {
+    const g = this.game, e = g.eco[this.me];
+    if (e.money < 600) return;
+    const divs = g.orbat[this.me].all(DIVISION).filter((d) => d.front).sort((a, b) => strength(b) - strength(a));
+    for (const key of ['artillery', 'training']) {
+      const d = divs.find((x) => x.equip[key] < UPGRADES[key].cost.length && e.money >= UPGRADES[key].cost[x.equip[key]] + 300);
+      if (d && g.production.upgrade(this.me, d, key)) return;
     }
   }
 

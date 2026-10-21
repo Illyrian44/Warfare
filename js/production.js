@@ -1,5 +1,5 @@
-import { UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX } from './config.js?v=91';
-import { DIVISION, DIVISION_MAX, strength, unitsOf, centerOf } from './orbat.js?v=91';
+import { UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX } from './config.js?v=92';
+import { DIVISION, DIVISION_MAX, strength, unitsOf, centerOf } from './orbat.js?v=92';
 
 // Ausbildung über das Baumenü: Aufträge je Stadt. Eine Stadt bildet je nach Größe 1 bis 3
 // Kompanien gleichzeitig aus (citySlots), die übrigen Aufträge warten in ihrer Reihenfolge.

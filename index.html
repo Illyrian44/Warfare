@@ -7,7 +7,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=91">
+  <link rel="stylesheet" href="css/style.css?v=92">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -134,7 +134,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 91</small>
+      <small id="version" class="muted">Version 92</small>
     </div>
   </div>
 
@@ -171,15 +171,16 @@
             <svg viewBox="0 0 30 20" width="30" height="20"><rect x="1" y="2" width="28" height="16" fill="#c9d2dc" stroke="#000"/><path d="M1 2L29 18M29 2L1 18" stroke="#000"/></svg> eigene Kompanie ohne Division (grau)
             <svg viewBox="0 0 30 20" width="30" height="20"><rect x="1" y="2" width="28" height="16" fill="#7fe3ff" stroke="#000" opacity="0.5"/><path d="M1 2L29 18M29 2L1 18" stroke="#000" opacity="0.5"/></svg> zerschlagen (Organisation 0, zieht sich zurück)
             <svg viewBox="0 0 20 20" width="20" height="20"><path d="M10 2L18 17H2Z" fill="#ffd23f" stroke="#000"/><path d="M10 7V12M10 14V15" stroke="#000" stroke-width="1.6"/></svg> knapper Nachschub
-            <svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 1L23 12L12 23L1 12Z" fill="#ff8080" stroke="#000"/><path d="M6.5 6.5L17.5 17.5M17.5 6.5L6.5 17.5" stroke="#000"/></svg> feindliche Infanterie
+            <svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 1L23 12L12 23L1 12Z" fill="#ff8080" stroke="#000"/><path d="M6.5 6.5L17.5 17.5M17.5 6.5L6.5 17.5" stroke="#000"/></svg> feindliche Infanterie (Raute, in der Farbe ihrer Seite)
             <svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 1L23 12L12 23L1 12Z" fill="#ff8080" stroke="#000"/><ellipse cx="12" cy="12" rx="6" ry="3.5" fill="none" stroke="#000"/></svg> feindliche Panzer
+            <svg viewBox="0 0 30 20" width="30" height="20"><rect x="1" y="2" width="28" height="16" fill="#8fd6a2" stroke="#000"/><path d="M1 2L29 18M29 2L1 18" stroke="#000"/></svg> verbündete Einheit (eckig, in der Farbe ihrer Seite)
           </span>
         </li>
         <li><b>Straßen</b> verbinden die Städte. Auf Straßen sind Einheiten 60&nbsp;% schneller, Brücken führen über Seen und Flüsse. Die Wegfindung nutzt Straßen automatisch – ideal für Nachschub und schnelle Verlegungen.</li>
-        <li><b>Gliederung:</b> Armee (XXXX) → Division (XX) → Regiment (III) → Kompanie (I). Eine Division hat höchstens 12 Kompanien; die Regimenter (2–3 Kompanien, Infanterie und Panzer getrennt) ordnet das Spiel selbst. Leere Divisionen lösen sich auf, ihre Nummer und Farbe werden wieder frei. Neue Kompanien entstehen ohne Division. Auf der Karte werden Kompanien derselben Division zusammengefasst, sobald sich ihre Symbole überdecken würden; Symbol und Name zeigen den kleinsten gemeinsamen Verband mit Stärke wie „5/8“, Kompanien ohne Division erscheinen als „n Kp.“. Kompanien auf dem Marsch werden nie zusammengefasst. Antippen wählt die gezeigte Gruppe, weiteres Antippen die Division und dann die Kompanie. Fällt eine Kompanie im Gefecht unter 25&nbsp;%, tauscht sie den Platz mit einer frischen Kompanie ihrer Division in der Nähe.</li>
+        <li><b>Gliederung:</b> Armee (XXXX) → Division (XX) → Regiment (III) → Kompanie (I). Eine Division hat höchstens 12 Kompanien; die Regimenter (2–3 Kompanien, Infanterie und Panzer getrennt) ordnet das Spiel selbst. Leere Divisionen lösen sich auf, ihre Nummer und Farbe werden wieder frei. Einzeln ausgebildete Kompanien entstehen ohne Division; Divisionsvorlagen und Verstärkungen kommen gleich in ihre Division. Auf der Karte werden Kompanien derselben Division zusammengefasst, sobald sich ihre Symbole überdecken würden; Symbol und Name zeigen den kleinsten gemeinsamen Verband mit Stärke wie „5/8“, Kompanien ohne Division erscheinen als „n Kp.“. Kompanien auf dem Marsch werden nie zusammengefasst. Antippen wählt die gezeigte Gruppe, weiteres Antippen die Division und dann die Kompanie. Fällt eine Kompanie im Gefecht unter 25&nbsp;%, tauscht sie den Platz mit einer frischen Kompanie ihrer Division in der Nähe.</li>
         <li><b>Divisionen oder Reserve?</b> Divisionen halten Fronten, rotieren Verwundete und werden von ihrem HQ geführt. Kompanien ohne Division sind frei verfügbar – als Reserve, zum Erobern von Städten oder für eigene Wege, aber ohne HQ-Unterstützung.</li>
         <li><b>Divisions-HQs</b> (Symbol mit Stab, „HQ“ und XX) stehen hinter der Linie und zählen nicht als Einheiten. In der Verteidigung schicken sie ruhige Kompanien dorthin, wo der Feind überlegen ist, und riegeln Durchbrüche mit einem freien Regiment ab. <b>HQs funken miteinander</b> (gestrichelte Linie zwischen den HQs): Ist der Frontabschnitt einer Division weitgehend leer, bittet ihr HQ die Nachbarfronten um Hilfe, und der Nachbar mit Reserven übernimmt den Abschnitt vorübergehend mit bis zu 3 Kompanien. Angriffe, Rotation und deine eigenen Befehle haben Vorrang.</li>
-        <li><b>Divisionsfarben:</b> Jede Division hat einen eigenen Blauton (beim Gegner Rottöne) – auf der Karte, beim HQ, als Band hinter ihrer Front und in der Divisionsleiste. Die Leiste zeigt je Division Symbol, Stärke und Regimenter; 〰 heißt, die Division hält eine Front. Antippen wählt die Division aus und zeigt sie auf der Karte.</li>
+        <li><b>Divisionsfarben:</b> Jede Division hat einen eigenen Ton in der Farbe ihrer Seite (deine Blautöne, beim Gegner Rot-, Grün-, Gelb- oder Violetttöne) – auf der Karte, beim HQ, als Band hinter ihrer Front und in der Divisionsleiste. Die Leiste zeigt je Division Symbol, Stärke und Regimenter; 〰 heißt, die Division hält eine Front. Antippen wählt die Division aus und zeigt sie auf der Karte.</li>
         <li><b>Einheiten:</b> Infanterie (leicht) marschiert mit 10&nbsp;km/h und ist günstig. Panzer (schwer) fahren 18&nbsp;km/h, halten mehr aus und schlagen härter zu – am besten auf offener Ebene. Auf Straßen sind beide 60&nbsp;% schneller, Wald, Hügel und Wasser bremsen.</li>
         <li><b>Karten:</b> Balkan und Mitteleuropa nach echter Geografie – Küsten, Gebirge, Flüsse, Seen, Fernstraßen und die großen Städte mit ihren Namen. Flüsse sind langsam zu durchqueren und schwer anzugreifen, Straßen führen über Brücken und durch Pässe. Grau ist Ausland: sichtbar, aber nicht spielbar. Ein Feld misst etwa 6&nbsp;km; das Tempo ist für flüssiges Spiel stilisiert (Einheiten kommen schneller voran als in Wirklichkeit). Kartendaten: Natural Earth (gemeinfrei), Höhen: Terrain Tiles von Mapzen/Tilezen (AWS Open Data).</li>
         <li><b>Nachschub:</b> Jede eigene Stadt ist ein Depot. LKW bringen Nachschub über <i>eigenes Gebiet</i> – auf Straßen 50&nbsp;km/h, im Gelände viel langsamer; in der Nähe von Feinden dauert es viermal so lange, durch Feindgebiet geht nichts. Bis 3 Stunden Fahrt kommt alles an, ab 8 Stunden nichts mehr. Jede Kompanie hat einen Vorrat (reicht etwa 6 Stunden, im Gefecht halb so lange). Depots, die über eigenes Gebiet verbunden sind, teilen sich ihre Lieferleistung; reicht sie nicht, bekommen alle gleichmäßig weniger. Eingekesselte Truppen sind abgeschnitten. <b>Folgen:</b> Heilen nur mit gefülltem Vorrat, unter 15&nbsp;% Abnutzung, Kampfkraft bis auf die Hälfte, Panzer ohne Treibstoff werden langsam. Ein gelbes Warndreieck markiert knappen Vorrat (gelb blinkend: fast leer). „Nachschub“ (Taste N) zeigt die Lieferquote auf der Karte (grün voll, gelb knapp, rot nichts, dunkelrot abgeschnitten), die Auslastung an den Städten und den Nachschubweg der Auswahl.</li>
@@ -189,8 +190,8 @@
         <li><b>Erobern:</b> Stell dich in eine Stadt, die nicht verteidigt wird. Der gestrichelte Ring zeigt den Fortschritt.</li>
         <li><b>Gebiet:</b> Zu Beginn gehört jeder Seite nur das Land um ihre Startstadt, alles andere ist neutral. Eroberte Städte bringen das Land ringsum, und dein Gebiet wächst langsam von selbst in angrenzendes neutrales Land (nie in feindliches). Wo deine Einheiten stehen, wird das Land deins – außer bei Kompanien, die eine Grenzfront nur halten: Sie nehmen weder neutrales noch feindliches Land ein. Grenzfronten zeigen zu den Gegnern; solange du keinen berührst, liegen sie am Rand deines Gebiets in ihrer Richtung.</li>
         <li>Gegner siehst du nur in Sichtweite deiner Einheiten und Städte.</li>
-        <li><b>Die KI</b> erobert zuerst neutrale Städte, bildet dann Divisionen, fasst sie zu einer Armee zusammen und teilt die Grenze unter ihnen auf. Ist sie an einer Stelle überlegen, stoßen die ein bis zwei Divisionen, die einer feindlichen Stadt am nächsten sind, dorthin vor; die übrigen halten. Jede KI kämpft gegen jede andere Seite. Mit ihrer Reserve ohne Division verteidigt und erobert sie Städte. Fronten und Angriffspläne sind geheim: Du siehst die Linien und Pfeile der KI nicht, und die KI sieht deine nicht – nur die Truppen selbst, sobald sie in Sichtweite sind.</li>
-        <li><b>Schwierigkeit:</b> Je schwerer, desto schneller denkt und produziert die KI. Auf „Schwer“ sieht sie außerdem die ganze Karte, auf „Leicht“ produziert sie langsamer als du.</li>
+        <li><b>Die KI</b> erobert zuerst neutrale Städte, bildet dann Divisionen, fasst sie zu einer Armee zusammen und teilt die Grenze unter ihnen auf. Ist sie an einer Stelle überlegen, stoßen die ein bis zwei Divisionen, die einer feindlichen Stadt am nächsten sind, dorthin vor; die übrigen halten. Jede KI kämpft gegen jede andere Seite, mit der sie nicht verbündet ist. Sie bildet über das Baumenü aus, baut ihre Städte aus (zuerst eine Fabrik, Festungen in bedrohten Städten, Depots bei knappem Nachschub), rüstet ihre Front-Divisionen auf und schließt und bricht Bündnisse. Mit ihrer Reserve ohne Division verteidigt und erobert sie Städte. Fronten und Angriffspläne sind geheim: Du siehst die Linien und Pfeile der KI nicht, und die KI sieht deine nicht – nur die Truppen selbst, sobald sie in Sichtweite sind.</li>
+        <li><b>Schwierigkeit:</b> Je schwerer, desto schneller denkt die KI und desto mehr Geld und Manpower nimmt sie ein (Leicht 80&nbsp;%, Mittel 100&nbsp;%, Schwer 125&nbsp;%). Auf „Schwer“ sieht sie außerdem die ganze Karte.</li>
       </ul>
       <button id="helpClose" class="primary">Verstanden</button>
     </div>
@@ -206,6 +207,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=91"></script>
+  <script type="module" src="js/main.js?v=92"></script>
 </body>
 </html>
