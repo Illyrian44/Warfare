@@ -1,12 +1,12 @@
-import { generateMap } from './map.js?v=76';
-import { Game } from './game.js?v=76';
-import { AI } from './ai.js?v=76';
-import { Renderer, isFrontShown } from './render.js?v=76';
-import { Input } from './input.js?v=76';
-import { formationSlots } from './formation.js?v=76';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=76';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=76';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES } from './config.js?v=76';
+import { generateMap } from './map.js?v=78';
+import { Game } from './game.js?v=78';
+import { AI } from './ai.js?v=78';
+import { Renderer, isFrontShown } from './render.js?v=78';
+import { Input } from './input.js?v=78';
+import { formationSlots } from './formation.js?v=78';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=78';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=78';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS } from './config.js?v=78';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -23,7 +23,8 @@ const app = {
   settings: loadSettings(),
   lastHud: 0,
 
-  start(seed, size, difficulty, opponents = 1) {
+  // Ohne startCity: erst die Karte zeigen und die Startstadt wählen lassen (pickStart)
+  start(seed, size, difficulty, opponents = 1, startCity = null) {
     let map;
     try {
       map = generateMap(seed, size);
@@ -35,8 +36,10 @@ const app = {
       return;
     }
     $('menuError').hidden = true;
-    this.game = new Game(map, { players: 1 + opponents });
-    this.ais = this.game.players.filter((p) => p !== this.human).map((p) => new AI(this.game, p, difficulty));
+    const preview = startCity === null;
+    this.picking = preview;
+    this.game = new Game(map, { players: 1 + opponents, preview, starts: [null, startCity] });
+    this.ais = preview ? [] : this.game.players.filter((p) => p !== this.human).map((p) => new AI(this.game, p, difficulty));
     this.fronts = new FrontManager(this.game, this.human);
     this.ui.frontMode = null;
     this.ui.front = null;
@@ -59,12 +62,37 @@ const app = {
     $('end').hidden = true;
     $('hud').hidden = false;
     $('pauseBtn').textContent = '▶';
-    $('pausedBanner').hidden = false;
+    $('pausedBanner').hidden = preview;
+    $('pickBanner').hidden = !preview;
     $('resumeBtn').hidden = true;
     $('seedLabel').textContent = `Karte #${seed} · ${DIFFICULTY[difficulty].name}`;
+    this.ui.pickHover = null;
     this.updateSelectionInfo();
-    this.toast('Einheiten anklicken, Rechtsklick (Handy: Antippen) bewegt sie. Erobere alle Städte!');
-    this.toast('Deine Kompanien haben noch keine Division: auswählen und „＋ Neue Division“ – oder unten „Auto-Gliederung“.');
+    if (preview) return;
+    this.toast('Einheiten anklicken, Rechtsklick (Handy: Antippen) bewegt sie. Halte 70 % des Landes!');
+    this.toast('Erobere zuerst neutrale Städte in der Nähe – jede bringt Land und Nachschub für neue Truppen.');
+  },
+
+  // Stadt unter dem Zeiger (für die Wahl der Startstadt)
+  cityAt(w) {
+    const tol = CITY_RADIUS + Math.max(4, 12 / this.cam.zoom);
+    let best = null, bd = tol;
+    for (const c of this.game.cities) {
+      const d = Math.hypot(c.x - w.x, c.y - w.y);
+      if (d < bd) { bd = d; best = c; }
+    }
+    return best;
+  },
+
+  // Startstadt gewählt: das eigentliche Spiel beginnt dort, die KIs verteilen sich
+  // möglichst weit entfernt
+  pickStart(w) {
+    const c = w ? this.cityAt(w) : this.game.cities[Math.floor(Math.random() * this.game.cities.length)];
+    if (!c) { this.toast('Tippe auf eine Stadt (gelber Kreis), um dort zu beginnen'); return; }
+    const { seed, size, difficulty, opponents } = this.current;
+    const cam = { ...this.cam };
+    this.start(seed, size, difficulty, opponents, c.id);
+    if (window.innerWidth >= 700) Object.assign(this.cam, cam); // Ansicht beibehalten
   },
 
   fitCamera() {
@@ -111,7 +139,7 @@ const app = {
   },
 
   togglePause() {
-    if (!this.game || this.game.winner) return;
+    if (!this.game || this.game.winner || this.picking) return;
     this.paused = !this.paused;
     $('pauseBtn').textContent = this.paused ? '▶' : '❚❚';
     $('pausedBanner').hidden = !this.paused;
@@ -815,6 +843,7 @@ $('disbandBtn').onclick = () => {
   app.selectFront(null);
   app.divBarSig = null;
 };
+$('pickRandom').onclick = () => app.pickStart(null);
 $('frontCancel').onclick = () => app.setFrontMode(null);
 $('cmdClose').onclick = () => { app.ui.selection.clear(); app.selectFront(null); app.updateSelectionInfo(); };
 $('haltBtn').onclick = () => app.stopSelection();

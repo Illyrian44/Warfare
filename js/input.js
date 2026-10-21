@@ -1,5 +1,5 @@
-import { CITY_RADIUS } from './config.js?v=76';
-import { divisionOf, unitsOf } from './orbat.js?v=76';
+import { CITY_RADIUS } from './config.js?v=78';
+import { divisionOf, unitsOf } from './orbat.js?v=78';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -118,6 +118,11 @@ export class Input {
 
   move(e) {
     // PC: zeigen, was ein Klick auswählen würde
+    if (!this.gesture && e.pointerType === 'mouse' && this.app.game && this.app.picking) {
+      this.ui.pickHover = this.app.cityAt(this.toWorld(e.offsetX, e.offsetY));
+      this.canvas.style.cursor = this.ui.pickHover ? 'pointer' : '';
+      return;
+    }
     if (!this.gesture && e.pointerType === 'mouse' && this.app.game) {
       const hit = this.pickHit(this.toWorld(e.offsetX, e.offsetY), false);
       this.ui.hover = hit ? hit.members : null;
@@ -195,6 +200,7 @@ export class Input {
 
   // Klick (PC, links) bzw. Antippen (Handy) ohne Ziehen
   tap(g, e) {
+    if (this.app.picking) { this.app.pickStart(g.world); return; } // Startstadt wählen
     const sel = this.ui.selection;
     const hit = this.pickHit(g.world, g.touch);
     if (hit) { this.clickTroops(hit, g.world, g.shift); return; }

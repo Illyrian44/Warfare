@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=76';
-import { classify } from './map.js?v=76';
-import { frontBadge, pointAt } from './fronts.js?v=76';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=76';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=78';
+import { classify } from './map.js?v=78';
+import { frontBadge, pointAt } from './fronts.js?v=78';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=78';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -541,6 +541,14 @@ export class Renderer {
     const { ctx, game } = this;
     const me = this.human;
     const R = CITY_RADIUS;
+    if (ui.pickHover === c) {
+      // Wahl der Startstadt: Stadt unter dem Zeiger hervorheben
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, R * 2.4, 0, Math.PI * 2);
+      ctx.lineWidth = 3 * px;
+      ctx.strokeStyle = PLAYER_COLORS[me];
+      ctx.stroke();
+    }
     const known = c.owner === me || ui.revealAll || game.isVisible(me, c.x, c.y);
     ctx.beginPath();
     ctx.arc(c.x, c.y, R, 0, Math.PI * 2);

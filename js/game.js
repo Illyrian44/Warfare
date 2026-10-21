@@ -2,15 +2,16 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, UNITS_PER_CITY, WIN_SHARE, START_UNITS,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=76';
-import { mulberry32 } from './rng.js?v=76';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=76';
-import { HQManager } from './hq.js?v=76';
-import { SupplyNetwork } from './supply.js?v=76';
+} from './config.js?v=78';
+import { mulberry32 } from './rng.js?v=78';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=78';
+import { HQManager } from './hq.js?v=78';
+import { SupplyNetwork } from './supply.js?v=78';
 
 export class Game {
   // opts.players: Zahl der Seiten (2 bis 5; Seite 1 ist der Spieler)
   // opts.starts: Startstädte je Seite (Index in map.cities, fehlende werden verteilt)
+  // opts.preview: nur die Karte mit neutralen Städten (zur Wahl der Startstadt)
   constructor(map, opts = {}) {
     this.map = map;
     this.rng = mulberry32((map.seed ^ 0x5bd1e995) >>> 0);
@@ -47,8 +48,8 @@ export class Game {
 
     // Start: je Seite eine Stadt mit etwas Land und wenigen Kompanien ohne Division
     this.orbat = slots().map((_, p) => (p ? new OrderOfBattle(p) : null));
-    this.starts = this.chooseStarts(opts.starts || []);
-    for (const p of this.players) {
+    this.starts = opts.preview ? null : this.chooseStarts(opts.starts || []);
+    for (const p of opts.preview ? [] : this.players) {
       const c = this.cities[this.starts[p]];
       c.owner = p;
       this.paint(p, c.x, c.y, CITY_BORDER);
@@ -59,6 +60,7 @@ export class Game {
     this.hq = new HQManager(this);
     this.hq.place();
     this.updateVision();
+    if (opts.preview) for (const p of this.players) this.vision[p].fill(1); // ganze Karte zeigen
   }
 
   // Startstädte: vorgegebene übernehmen, die übrigen Seiten so verteilen, dass jede neue

@@ -7,7 +7,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=76">
+  <link rel="stylesheet" href="css/style.css?v=78">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -68,6 +68,10 @@
     </div>
     <div id="seedLabel" class="muted"></div>
     <div id="pausedBanner" hidden>Pausiert<small>Leertaste oder ▶: weiter</small></div>
+    <div id="pickBanner" hidden>
+      <span>Wähle deine Startstadt: Stadt anklicken bzw. antippen</span>
+      <button id="pickRandom">Zufällig</button>
+    </div>
     <div id="frontBanner" hidden>
       <span>Front zeichnen: Linie mit dem Finger ziehen</span>
       <button id="frontCancel">Abbrechen</button>
@@ -108,7 +112,7 @@
       <button id="startBtn" class="primary">Spiel starten</button>
       <button id="resumeBtn" hidden>Weiterspielen</button>
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 76</small>
+      <small id="version" class="muted">Version 78</small>
     </div>
   </div>
 
@@ -116,7 +120,7 @@
     <div class="panel help">
       <h2>So wird gespielt</h2>
       <h3>Ziel</h3>
-      <p>Halte 70&nbsp;% des Landes – oder bleib als Letzter übrig. Du bist <b class="blue-t">blau</b> und spielst gegen 1 bis 4 KI-Gegner (rot, grün, gelb, violett), die auch untereinander kämpfen. Jeder beginnt mit einer Stadt, etwas Land und 4 Kompanien; der Rest der Karte und alle übrigen Städte sind neutral. Wer weder Städte noch Truppen hat, scheidet aus. Oben siehst du je Seite Städte und Landanteil. Jede Runde beginnt pausiert: Gliedere in Ruhe deine Divisionen und setze Fronten, dann geht es mit der Leertaste oder ▶ los.</p>
+      <p>Halte 70&nbsp;% des Landes – oder bleib als Letzter übrig. Du bist <b class="blue-t">blau</b> und spielst gegen 1 bis 4 KI-Gegner (rot, grün, gelb, violett), die auch untereinander kämpfen. Zu Beginn wählst du deine Startstadt auf der Karte (oder „Zufällig“), die KI-Gegner verteilen sich möglichst weit entfernt. Jeder beginnt mit einer Stadt, etwas Land und 4 Kompanien; der Rest der Karte und alle übrigen Städte sind neutral. Wer weder Städte noch Truppen hat, scheidet aus. Oben siehst du je Seite Städte und Landanteil. Jede Runde beginnt pausiert: Gliedere in Ruhe deine Divisionen und setze Fronten, dann geht es mit der Leertaste oder ▶ los.</p>
       <h3>Steuerung</h3>
       <ul>
         <li><b>Auswählen:</b> Eigene Einheit anklicken bzw. antippen. Wiederholtes Klicken auf dieselbe Stelle geht die Stufen durch: <i>gezeigte Gruppe → ganze Division → einzelne Kompanie</i> → wieder die Gruppe. PC: Rahmen mit linker Maustaste aufziehen (Umschalt = hinzufügen; zerschlagene Kompanien werden nicht erfasst), Klick ins Leere hebt die Auswahl auf. Handy: „▢ Auswahl“ und dann Rahmen ziehen.</li>
@@ -175,6 +179,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=76"></script>
+  <script type="module" src="js/main.js?v=78"></script>
 </body>
 </html>

@@ -113,7 +113,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 }
 #pausedBanner {
   position: fixed;
-  top: 40%;
+  top: 19%;
   left: 50%;
   transform: translate(-50%, -50%);
   font-size: 32px;
@@ -146,7 +146,13 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   font-size: 14px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
-#frontBanner button { min-height: 34px; background: rgba(0, 0, 0, 0.25); }
+#frontBanner button, #pickBanner button { min-height: 34px; background: rgba(0, 0, 0, 0.25); }
+#pickBanner {
+  position: fixed; top: calc(70px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; width: max-content; max-width: 94vw;
+  color: #fff; background: var(--blue); padding: 6px 6px 6px 14px; border-radius: 12px;
+  font-weight: 600; font-size: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
 
 /* Front-Menü */
 #cmdPanel {
