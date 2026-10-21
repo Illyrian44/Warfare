@@ -394,8 +394,17 @@ export class Game {
     if (city && (inCity || this.territory[this.map.cellIndex(tx, ty)] !== u.owner || !this.map.passableAt(tx, ty))) {
       tx = city.x; ty = city.y;
     }
-    u.path = this.map.findPath(u.x, u.y, tx, ty) || (city && this.map.findPath(u.x, u.y, city.x, city.y)) || [];
+    const opts = this.routingFor(u, true);
+    u.path = this.map.findPath(u.x, u.y, tx, ty, opts) || (city && this.map.findPath(u.x, u.y, city.x, city.y, opts)) || [];
     u.stuck = 0;
+  }
+
+  // Wege hinter der eigenen Linie (siehe FrontManager.safeRouting) für haltende
+  // Front-Kompanien und auf Wunsch (Rückzug) für alle; sonst der kürzeste Weg
+  routingFor(u, always = false) {
+    const fm = this.routers && this.routers[u.owner];
+    if (!fm || !(always || (u.front && !u.front.attack))) return null;
+    return fm.safeRouting();
   }
 
   moveUnit(u, dt) {
@@ -453,7 +462,7 @@ export class Game {
         const goal = u.path[u.path.length - 1];
         if (!u.repathed && goal && this.repathBudget > 0) {
           this.repathBudget--;
-          u.path = map.findPath(u.x, u.y, goal.x, goal.y) || [];
+          u.path = map.findPath(u.x, u.y, goal.x, goal.y, this.routingFor(u)) || [];
           u.repathed = true;
         } else {
           u.path.shift();

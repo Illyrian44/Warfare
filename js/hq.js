@@ -243,7 +243,7 @@ export class HQManager {
   // helper: Regiment eines Nachbarn; behält seinen Frontplatz und kehrt nach dem Befehl zurück
   send(u, x, y, task, helper = false, duration = ORDER_TIME) {
     const g = this.game;
-    u.path = g.map.findPath(u.x, u.y, x, y) || [];
+    u.path = g.map.findPath(u.x, u.y, x, y, g.routingFor(u)) || [];
     u.stuck = 0;
     u.hqOrder = g.time + duration;
     u.hqTask = task;

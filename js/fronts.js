@@ -31,6 +31,8 @@ export class FrontManager {
     // Löst sich eine Division auf, verschwindet ihre Front sofort
     game.orbat[owner].onDissolve.push((div) => { if (this.fronts.includes(div.front)) this.remove(div.front); });
     this.key({ x: 0, y: 0 }); // Achse aus der Startaufstellung festlegen (siehe key())
+    // Wegfindung hinter der eigenen Linie auch für Spiel und HQs (Festgefahrene, Rückzug)
+    (game.routers || (game.routers = {}))[owner] = this;
   }
 
   // Front einer Division anlegen oder ihre bestehende Front neu ausrichten
@@ -448,7 +450,9 @@ export class FrontManager {
     this.timer = Math.min(this.timer, 0.05);
   }
 
-  // Gefahrenkarte: Feindgebiet kostet mehr, die Nähe feindlicher Einheiten sehr viel mehr.
+  // Gefahrenkarte für Verschiebungen hinter der eigenen Linie: Feindgebiet ist so teuer,
+  // dass es nur betreten wird, wenn es keinen anderen Weg gibt; die Nähe feindlicher
+  // Einheiten kostet mäßig (kurze Wege an der eigenen Front entlang, weite dahinter).
   // Wird höchstens alle 0,5 s neu berechnet.
   safeRouting() {
     const g = this.game;
@@ -471,7 +475,7 @@ export class FrontManager {
     }
     const tr = g.territory, me = this.owner;
     const opts = {
-      cost: (i) => (danger[i] ? 8 : 0) + (tr[i] !== me ? 3 : 0),
+      cost: (i) => (danger[i] ? 4 : 0) + (tr[i] !== me ? 30 : 0),
       safe: (x, y) => {
         const i = g.map.cellIndex(x, y);
         return !danger[i] && tr[i] === me;
