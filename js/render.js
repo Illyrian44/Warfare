@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=65';
-import { classify } from './map.js?v=65';
-import { frontBadge, pointAt } from './fronts.js?v=65';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=65';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY } from './config.js?v=67';
+import { classify } from './map.js?v=67';
+import { frontBadge, pointAt } from './fronts.js?v=67';
+import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=67';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -19,7 +19,7 @@ const TERR_PX = 3;      // Auflösung der Gebietsfarben
 // geöffnetes Frontmenü, Angriff in Planung oder „Fronten“ eingeschaltet
 export function isFrontShown(f, ui) {
   if (ui.showFronts || f === ui.front) return true;
-  if (ui.frontMode && ui.frontMode.plan === f) return true;
+  if (ui.frontMode && ui.frontMode.plan && ui.frontMode.plan.includes(f)) return true;
   for (const u of ui.selection) if (divisionOf(u) === f.division) return true;
   return false;
 }

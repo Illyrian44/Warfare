@@ -296,6 +296,9 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 .divcard.sel { border-color: #fff; box-shadow: 0 0 0 1px #fff inset; }
 .divcard { position: relative; }
 .divcard.can-add { padding-right: 34px; }
+.divcard.armycard { background: #22324a; border-color: #8aa4c8; }
+.divcard.armycard .toggle { font-weight: 400; color: var(--muted); margin-left: 4px; padding: 0 4px; }
+.divcard.inarmy { border-top: 3px solid #8aa4c8; }
 .divcard.refill { border-left: 4px solid var(--good); } /* Auffüllen eingeschaltet */
 .divcard .add {
   position: absolute;

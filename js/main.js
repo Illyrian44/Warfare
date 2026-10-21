@@ -1,11 +1,11 @@
-import { generateMap } from './map.js?v=65';
-import { Game } from './game.js?v=65';
-import { AI } from './ai.js?v=65';
-import { Renderer, isFrontShown } from './render.js?v=65';
-import { Input } from './input.js?v=65';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=65';
-import { DIVISION, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, strength } from './orbat.js?v=65';
-import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=65';
+import { generateMap } from './map.js?v=67';
+import { Game } from './game.js?v=67';
+import { AI } from './ai.js?v=67';
+import { Renderer, isFrontShown } from './render.js?v=67';
+import { Input } from './input.js?v=67';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=67';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=67';
+import { DIFFICULTY, UNITS_PER_CITY, SUPPLY, KM, CELL } from './config.js?v=67';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
@@ -16,7 +16,7 @@ const app = {
   renderer: null,
   human: 1,
   cam: { x: 0, y: 0, zoom: 1, min: 0.2, max: 6 },
-  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null, showFronts: false, showSupply: false },
+  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null, showFronts: false, showSupply: false, armyClosed: new Set(), hover: null },
   paused: false,
   speed: 1,
   settings: loadSettings(),
@@ -181,9 +181,12 @@ const app = {
       return;
     }
     if (mode && mode.plan) {
-      this.fronts.planAttack(mode.plan, line);
-      this.selectFront(mode.plan);
-      this.toast('Angriff geplant – „▶ Angriff starten“ drücken');
+      const fronts = mode.plan.filter((f) => this.fronts.fronts.includes(f));
+      if (!fronts.length) return;
+      this.fronts.planAttackGroup(fronts, line);
+      this.updateFrontPanel();
+      this.toast(fronts.length > 1 ? `Angriff für ${fronts.length} Divisionen geplant – „▶ Angriff starten“ drücken`
+        : 'Angriff geplant – „▶ Angriff starten“ drücken');
       return;
     }
     const divs = ((mode && mode.divs) || []).filter((d) => !d.dissolved);
@@ -195,6 +198,7 @@ const app = {
       : (divs.length > 1 ? this.fronts.splitLine(divs, line) : [this.fronts.assign(divs[0], 'line', line)]);
     if (made.length === 1) this.selectFront(made[0]);
     this.divBarSig = null;
+    this.updateSelectionInfo();
     const what = anchors ? 'den Grenzabschnitt' : 'die neue Front';
     this.toast(divs.length > 1 ? `${divs.length} Divisionen teilen sich ${what}` : `${divs[0].name} hält ${what}`);
   },
@@ -206,6 +210,7 @@ const app = {
     const made = divs.length > 1 ? this.fronts.splitBorder(divs) : [this.fronts.assign(divs[0], 'border', null)];
     if (made.length === 1) this.selectFront(made[0]);
     this.divBarSig = null;
+    this.updateSelectionInfo();
     if (!made.length || !made[0].chains.length) this.toast('Keine Grenze zum Gegner gefunden');
     else this.toast(divs.length > 1 ? `${divs.length} Divisionen teilen sich die Grenze` : `${divs[0].name} hält die Grenze`);
   },
@@ -251,23 +256,43 @@ const app = {
     return null;
   },
 
+  // Fronten, auf die das Frontmenü wirkt: die aller ausgewählten Divisionen (z. B. einer
+  // ganzen Armee), sonst die zuletzt angetippte Front
+  panelFronts() {
+    const divs = new Set(this.ownSelection().map(divisionOf).filter(Boolean));
+    const fs = this.fronts.fronts.filter((f) => divs.has(f.division));
+    if (fs.length) return fs;
+    return this.ui.front && this.fronts.fronts.includes(this.ui.front) ? [this.ui.front] : [];
+  },
+
+  // Gemeinsamer Name der Auswahl: Armee, wenn genau ihre Divisionen gewählt sind
+  selectionName(fronts) {
+    const divs = [...new Set(fronts.map((f) => f.division))];
+    const army = armyOf(divs[0]);
+    if (army && divs.length === army.children.length && divs.every((d) => armyOf(d) === army)) return army.name;
+    return divs.length === 1 ? divs[0].name : `${divs.length} Divisionen`;
+  },
+
   updateFrontPanel() {
-    const f = this.ui.front;
-    if (f && !this.fronts.fronts.includes(f)) this.ui.front = null;
-    const cur = this.ui.front;
-    $('frontPanel').hidden = !cur;
-    if (!cur) return;
-    const kind = cur.kind === 'border' ? 'Grenzfront' : cur.kind === 'segment' ? 'Grenzabschnitt' : 'Front';
-    $('frontTitle').textContent = `${cur.division.name} · ${kind} · ${cur.units.length} Kompanien`;
-    $('planBtn').hidden = !!cur.plan;
-    $('planBtn').textContent = cur.attack ? '➜ Neues Ziel' : '➜ Angriff planen';
-    $('attackBtn').hidden = !cur.plan;
-    $('stopAttackBtn').hidden = !cur.attack;
-    $('cancelPlanBtn').hidden = !cur.plan;
-    $('rotateBtn').classList.toggle('active', cur.rotate);
-    const off = this.fronts.detached(cur);
+    if (this.ui.front && !this.fronts.fronts.includes(this.ui.front)) this.ui.front = null;
+    const fs = this.panelFronts();
+    $('frontPanel').hidden = !fs.length;
+    if (!fs.length) return;
+    const one = fs.length === 1 ? fs[0] : null;
+    const kind = !one ? `${fs.length} Fronten` : one.kind === 'border' ? 'Grenzfront' : one.kind === 'segment' ? 'Grenzabschnitt' : 'Front';
+    const companies = fs.reduce((s, f) => s + f.units.length, 0);
+    $('frontTitle').textContent = `${this.selectionName(fs)} · ${kind} · ${companies} Kompanien`;
+    const planned = fs.some((f) => f.plan), attacking = fs.some((f) => f.attack);
+    $('planBtn').hidden = planned;
+    $('planBtn').textContent = attacking ? '➜ Neues Ziel' : '➜ Angriff planen';
+    $('attackBtn').hidden = !planned;
+    $('stopAttackBtn').hidden = !attacking;
+    $('cancelPlanBtn').hidden = !planned;
+    $('rotateBtn').classList.toggle('active', fs.every((f) => f.rotate));
+    const off = fs.reduce((s, f) => s + this.fronts.detached(f), 0);
     $('rejoinBtn').hidden = !off;
     $('rejoinBtn').textContent = `↺ ${off} zurück an die Front`;
+    $('disbandBtn').textContent = one ? 'Front auflösen' : 'Fronten auflösen';
   },
 
   // Eigene, lebende Einheiten der Auswahl
@@ -319,6 +344,67 @@ const app = {
     div.refill = !div.refill;
     this.afterOrbatChange();
     this.toast(div.refill ? `${div.name} wird mit neuen Kompanien aufgefüllt` : `${div.name}: Auffüllen aus`);
+  },
+
+  // --- Armeen --------------------------------------------------------------------
+
+  selectedDivisions() {
+    return [...new Set(this.ownSelection().map(divisionOf).filter(Boolean))];
+  },
+
+  newArmy() {
+    const divs = this.selectedDivisions();
+    if (!divs.length) { this.toast('Erst Divisionen auswählen'); return; }
+    const army = this.game.orbat[this.human].createArmy(divs);
+    this.fronts.regroup(army.children);
+    this.afterOrbatChange();
+    this.toast(`${army.name} gebildet (${army.children.length} Divisionen)`);
+  },
+
+  addToArmy(id) {
+    const ob = this.game.orbat[this.human];
+    const army = ob.all(ARMY).find((a) => a.id === id);
+    const divs = this.selectedDivisions().filter((d) => armyOf(d) !== army);
+    if (!army || !divs.length) return;
+    ob.addToArmy(army, divs);
+    // Neue Divisionen bekommen einen Teil des Abschnitts, den die Armee hält
+    this.fronts.regroup(army.children);
+    this.afterOrbatChange();
+    this.toast(`${divs.length} Division${divs.length > 1 ? 'en' : ''} zur ${army.name}`);
+  },
+
+  removeFromArmy() {
+    const divs = this.selectedDivisions().filter((d) => armyOf(d));
+    if (!divs.length) return;
+    this.game.orbat[this.human].removeFromArmy(divs);
+    this.afterOrbatChange();
+    this.toast(`${divs.length} Division${divs.length > 1 ? 'en' : ''} ohne Armee`);
+  },
+
+  toggleArmyOpen(id) {
+    if (this.ui.armyClosed.has(id)) this.ui.armyClosed.delete(id); else this.ui.armyClosed.add(id);
+    this.divBarSig = null;
+    this.updateDivBar();
+  },
+
+  selectArmy(id, focus = true) {
+    const army = this.game.orbat[this.human].all(ARMY).find((a) => a.id === id);
+    if (!army) return;
+    const units = unitsOf(army);
+    if (!units.length) return;
+    this.ui.selection.clear();
+    for (const u of units) this.ui.selection.add(u);
+    this.updateSelectionInfo();
+    this.divBarSig = null;
+    if (focus) this.focusOn(units);
+  },
+
+  focusOn(units) {
+    const cx = units.reduce((a, u) => a + u.x, 0) / units.length;
+    const cy = units.reduce((a, u) => a + u.y, 0) / units.length;
+    this.cam.x = cx - canvas.clientWidth / 2 / this.cam.zoom;
+    this.cam.y = cy - canvas.clientHeight / 2 / this.cam.zoom;
+    this.clampCamera();
   },
 
   afterOrbatChange() {
@@ -416,7 +502,9 @@ const app = {
     let info = n ? `${n} ausgewählt` : '';
     if (n && this.game) {
       const divs = new Set(this.ownSelection().map(divisionOf));
-      if (divs.size === 1) {
+      const army = armyOf([...divs][0]);
+      if (army && divs.size === army.children.length && [...divs].every((d) => armyOf(d) === army)) info += ` · ${army.name}`;
+      else if (divs.size === 1) {
         const div = [...divs][0];
         info += div ? ` · ${div.name}` : ' · ohne Division';
       }
@@ -491,30 +579,46 @@ const app = {
   updateDivBar() {
     const g = this.game;
     const bar = $('divBar');
-    const divs = g.orbat[this.human].all(DIVISION)
-      .map((f) => ({ f, units: unitsOf(f) }))
-      .filter((d) => d.units.length);
+    const ob = g.orbat[this.human];
+    const divs = ob.all(DIVISION).map((f) => ({ f, units: unitsOf(f) })).filter((d) => d.units.length);
+    const armies = ob.all(ARMY).map((a) => ({ a, units: unitsOf(a), divs: divs.filter((d) => armyOf(d.f) === a) }))
+      .filter((x) => x.units.length);
     const sel = this.ownSelection();
     const selDivs = new Set(sel.map(divisionOf));
     const single = selDivs.size === 1 ? [...selDivs][0] : null; // ganze Auswahl in einer Division
+    const pickedDivs = [...selDivs].filter(Boolean);
     const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
-    const canAdd = (d) => strength(d.f) < DIVISION_MAX && sel.some((u) => divisionOf(u) !== d.f);
+    // „＋“ auf einer Division verschiebt Kompanien; nicht anbieten, wenn ganze Verbände
+    // (mehrere Divisionen, z. B. eine Armee) ausgewählt sind
+    const wholeDivs = pickedDivs.length > 1 && sel.every((u) => u.regiment);
+    const canAdd = (d) => !wholeDivs && strength(d.f) < DIVISION_MAX && sel.some((u) => divisionOf(u) !== d.f);
+    const canAddArmy = (x) => pickedDivs.some((d) => armyOf(d) !== x.a);
     const supplyOf = (units) => units.reduce((s, u) => s + u.supply, 0) / units.length;
     const orgOf = (units) => units.reduce((s, u) => s + u.org, 0) / units.reduce((s, u) => s + u.maxOrg, 0);
-    const sig = divs.map((d) => d.f.id + ':' + d.units.length + ':' + Math.round(strengthOf(d.units) * 20) + ':' + Math.round(supplyOf(d.units) * 20) + ':' + Math.round(orgOf(d.units) * 20) + ':' +
+    const stats = (units) => Math.round(strengthOf(units) * 20) + ':' + Math.round(supplyOf(units) * 20) + ':' + Math.round(orgOf(units) * 20);
+    const sig = divs.map((d) => d.f.id + ':' + d.units.length + ':' + stats(d.units) + ':' + (armyOf(d.f) ? armyOf(d.f).id : '-') + ':' +
       (d.units.some((u) => this.ui.selection.has(u)) ? 1 : 0) + (canAdd(d) ? 1 : 0) + (d.f.refill ? 1 : 0) + (d.f.front ? 1 : 0)).join('|') +
-      `#${sel.length}:${loose}:${single ? single.id : '-'}:${sel.some((u) => u.regiment) ? 1 : 0}`;
+      '#' + armies.map((x) => x.a.id + ':' + stats(x.units) + (this.ui.armyClosed.has(x.a.id) ? 'c' : 'o') + (canAddArmy(x) ? 1 : 0)).join('|') +
+      `#${sel.length}:${loose}:${single ? single.id : '-'}:${sel.some((u) => u.regiment) ? 1 : 0}:${pickedDivs.some((d) => armyOf(d)) ? 1 : 0}`;
     if (sig === this.divBarSig) return;
     this.divBarSig = sig;
+    const bars = (units) => {
+      const sup = supplyOf(units), org = orgOf(units);
+      return `<span class="str" title="Stärke"><i style="width:${Math.round(strengthOf(units) * 100)}%"></i></span>` +
+        `<span class="org" title="Organisation ${Math.round(org * 100)} %"><i style="width:${Math.round(org * 100)}%"></i></span>` +
+        `<span class="sup${sup < SUPPLY.warnBelow ? ' low' : ''}" title="Nachschub ${Math.round(sup * 100)} %"><i style="width:${Math.round(sup * 100)}%"></i></span>`;
+    };
     const tools = [];
     if (sel.length) tools.push('<button class="divtool" data-act="new" title="Neue Division aus der Auswahl (D)">＋ Neue Division</button>');
     if (sel.some((u) => u.regiment)) tools.push('<button class="divtool" data-act="remove" title="Auswahl aus ihrer Division nehmen (Umschalt+D)">− Aus Division</button>');
+    if (pickedDivs.length) tools.push('<button class="divtool" data-act="newarmy" title="Neue Armee aus den ausgewählten Divisionen">＋ Neue Armee</button>');
+    if (pickedDivs.some((d) => armyOf(d))) tools.push('<button class="divtool" data-act="unarmy" title="Ausgewählte Divisionen aus ihrer Armee nehmen">− Aus Armee</button>');
     if (single) {
       tools.push(`<button class="divtool${single.refill ? ' active' : ''}" data-act="refill" data-id="${single.id}" ` +
         `title="Neue Kompanien aus der nächsten Stadt füllen ${single.name} bis ${DIVISION_MAX} Kompanien auf">Auffüllen</button>`);
     }
     if (loose) tools.push(`<button class="divtool" data-act="auto" title="Kompanien ohne Division nach ihrer Lage zu Divisionen zusammenfassen">Auto-Gliederung (${loose})</button>`);
-    bar.innerHTML = tools.join('') + divs.map((d) => {
+    const divCard = (d, inArmy) => {
       const heavy = d.units.filter((u) => u.type === 'heavy').length / d.units.length;
       const regs = d.f.children.map((reg) => {
         const alive = reg.units.filter((u) => u.hp > 0).length;
@@ -522,14 +626,23 @@ const app = {
       });
       const chosen = d.units.some((u) => this.ui.selection.has(u)) ? ' sel' : '';
       const add = canAdd(d) ? `<span class="add" data-act="add" data-id="${d.f.id}" title="Auswahl zur ${d.f.name} hinzufügen">＋</span>` : '';
-      return `<button class="divcard${chosen}${d.f.refill ? ' refill' : ''}${add ? ' can-add' : ''}" data-id="${d.f.id}" title="${d.f.name}: ${d.units.length} Kompanien">${add}` +
+      const tag = inArmy ? ` style="border-top-color:${armyColor(armyOf(d.f))}"` : '';
+      return `<button class="divcard${chosen}${d.f.refill ? ' refill' : ''}${add ? ' can-add' : ''}${inArmy ? ' inarmy' : ''}" data-id="${d.f.id}"${tag} title="${d.f.name}: ${d.units.length} Kompanien">${add}` +
         `<span class="sym">${natoIcon(heavy, 26, 18, 1, 'XX', divisionColor(d.f))}</span>` +
         `<span class="name">${d.f.name}${d.f.front ? ' <span class="fr" title="hält eine Front">〰</span>' : ''}</span>` +
-        `<span class="str" title="Stärke"><i style="width:${Math.round(strengthOf(d.units) * 100)}%"></i></span>` +
-        `<span class="org" title="Organisation ${Math.round(orgOf(d.units) * 100)} %"><i style="width:${Math.round(orgOf(d.units) * 100)}%"></i></span>` +
-        `<span class="sup${supplyOf(d.units) < SUPPLY.warnBelow ? ' low' : ''}" title="Nachschub ${Math.round(supplyOf(d.units) * 100)} %"><i style="width:${Math.round(supplyOf(d.units) * 100)}%"></i></span>` +
-        `<span class="regs">${regs.join('')}</span></button>`;
-    }).join('');
+        bars(d.units) + `<span class="regs">${regs.join('')}</span></button>`;
+    };
+    const armyCard = (x) => {
+      const heavy = x.units.filter((u) => u.type === 'heavy').length / x.units.length;
+      const open = !this.ui.armyClosed.has(x.a.id);
+      const chosen = x.units.every((u) => this.ui.selection.has(u)) ? ' sel' : '';
+      const add = canAddArmy(x) ? `<span class="add" data-act="armyadd" data-id="${x.a.id}" title="Ausgewählte Divisionen zur ${x.a.name}">＋</span>` : '';
+      return `<button class="divcard armycard${chosen}${add ? ' can-add' : ''}" data-army="${x.a.id}" style="border-color:${armyColor(x.a)}" title="${x.a.name}: ${x.divs.length} Divisionen, ${x.units.length} Kompanien">${add}` +
+        `<span class="sym">${natoIcon(heavy, 30, 18, 1, 'XXXX', armyColor(x.a))}</span>` +
+        `<span class="name">${x.a.name} <span class="toggle" data-act="armyopen" data-id="${x.a.id}" title="Divisionen ein-/ausklappen">${open ? '▾' : '▸'} ${x.divs.length}</span></span>` +
+        bars(x.units) + '</button>' + (open ? x.divs.map((d) => divCard(d, true)).join('') : '');
+    };
+    bar.innerHTML = tools.join('') + armies.map(armyCard).join('') + divs.filter((d) => !armyOf(d.f)).map((d) => divCard(d, false)).join('');
   },
 
   selectDivision(id, focus = true) {
@@ -542,13 +655,7 @@ const app = {
     for (const u of units) this.ui.selection.add(u);
     this.updateSelectionInfo();
     this.divBarSig = null;
-    if (!focus) return;
-    const cx = units.reduce((a, u) => a + u.x, 0) / units.length;
-    const cy = units.reduce((a, u) => a + u.y, 0) / units.length;
-    this.cam.x = cx - canvas.clientWidth / 2 / this.cam.zoom;
-    this.cam.y = cy - canvas.clientHeight / 2 / this.cam.zoom;
-    this.clampCamera();
-    this.divBarSig = null;
+    if (focus) this.focusOn(units);
   },
 
   updateHud() {
@@ -663,8 +770,14 @@ $('divBar').onclick = (e) => {
     else if (act === 'add') app.addToDivision(id);
     else if (act === 'refill') app.toggleRefill(id);
     else if (act === 'auto') app.autoOrganize();
+    else if (act === 'newarmy') app.newArmy();
+    else if (act === 'unarmy') app.removeFromArmy();
+    else if (act === 'armyadd') app.addToArmy(id);
+    else if (act === 'armyopen') app.toggleArmyOpen(id);
     return;
   }
+  const army = e.target.closest('[data-army]');
+  if (army) { app.selectArmy(+army.dataset.army); return; }
   const card = e.target.closest('.divcard');
   if (card) app.selectDivision(+card.dataset.id);
 };
@@ -672,27 +785,34 @@ $('frontBtn').onclick = () => app.toggleFrontMode();
 $('showFrontsBtn').onclick = () => app.toggleShowFronts();
 $('supplyBtn').onclick = () => app.toggleSupply();
 $('borderBtn').onclick = () => app.borderFront();
-$('planBtn').onclick = () => app.setFrontMode({ plan: app.ui.front });
+$('planBtn').onclick = () => app.setFrontMode({ plan: app.panelFronts() });
 $('attackBtn').onclick = () => {
-  app.fronts.startAttack(app.ui.front);
+  for (const f of app.panelFronts()) app.fronts.startAttack(f);
   app.toast('Angriff läuft!', 'good');
   app.updateFrontPanel();
 };
 $('stopAttackBtn').onclick = () => {
-  app.fronts.stopAttack(app.ui.front);
-  app.toast('Angriff gestoppt – die Division hält ihren Frontabschnitt');
+  for (const f of app.panelFronts()) app.fronts.stopAttack(f);
+  app.toast('Angriff gestoppt – die Divisionen halten ihre Frontabschnitte');
   app.updateFrontPanel();
 };
-$('cancelPlanBtn').onclick = () => { app.fronts.cancelPlan(app.ui.front); app.updateFrontPanel(); };
-$('rotateBtn').onclick = () => { app.ui.front.rotate = !app.ui.front.rotate; app.updateFrontPanel(); };
-$('rejoinBtn').onclick = () => { app.fronts.rejoin(app.ui.front); app.updateFrontPanel(); };
+$('cancelPlanBtn').onclick = () => { for (const f of app.panelFronts()) app.fronts.cancelPlan(f); app.updateFrontPanel(); };
+$('rotateBtn').onclick = () => {
+  const fs = app.panelFronts(), on = !fs.every((f) => f.rotate);
+  for (const f of fs) f.rotate = on;
+  app.updateFrontPanel();
+};
+$('rejoinBtn').onclick = () => { for (const f of app.panelFronts()) app.fronts.rejoin(f); app.updateFrontPanel(); };
 $('disbandBtn').onclick = () => {
-  for (const u of app.ui.front.units) u.path = [];
-  app.fronts.remove(app.ui.front);
+  for (const f of app.panelFronts()) {
+    for (const u of f.units) u.path = [];
+    app.fronts.remove(f);
+  }
   app.selectFront(null);
+  app.divBarSig = null;
 };
 $('frontCancel').onclick = () => app.setFrontMode(null);
-$('frontClose').onclick = () => app.selectFront(null);
+$('frontClose').onclick = () => { app.ui.selection.clear(); app.selectFront(null); app.updateSelectionInfo(); };
 $('haltBtn').onclick = () => app.stopSelection();
 $('deselectBtn').onclick = () => { app.ui.selection.clear(); app.updateSelectionInfo(); };
 $('centerBtn').onclick = () => app.fitCamera();
@@ -732,8 +852,9 @@ function natoIcon(armorShare, w, h, opacity = 1, echelon = '', fill = '#80e0ff')
   if (inf) inner += `<path d="M${rx} ${ry}L${rx + rw} ${ry + rh}M${rx + rw} ${ry}L${rx} ${ry + rh}" stroke="#000" stroke-width="1"/>`;
   if (arm) inner += `<ellipse cx="${w / 2}" cy="${ry + rh / 2}" rx="${rw * 0.31}" ry="${rh * 0.25}" fill="none" stroke="#000" stroke-width="1"/>`;
   let ech = '';
-  if (echelon === 'XX') {
-    for (const cx of [w / 2 - 3, w / 2 + 3]) ech += `<path d="M${cx - 2} 0.5L${cx + 2} 4.5M${cx + 2} 0.5L${cx - 2} 4.5" stroke="#fff" stroke-width="1"/>`;
+  for (let k = 0; k < echelon.length; k++) {
+    const cx = w / 2 + (k - (echelon.length - 1) / 2) * 6;
+    ech += `<path d="M${cx - 2} 0.5L${cx + 2} 4.5M${cx + 2} 0.5L${cx - 2} 4.5" stroke="#fff" stroke-width="1"/>`;
   }
   return `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" style="opacity:${opacity.toFixed(2)}">${ech}` +
     `<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" fill="${fill}" stroke="#000" stroke-width="1"/>${inner}</svg>`;

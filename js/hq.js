@@ -1,6 +1,6 @@
-import { unitStrength } from './game.js?v=65';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=65';
-import { pointAt } from './fronts.js?v=65';
+import { unitStrength } from './game.js?v=67';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=67';
+import { pointAt } from './fronts.js?v=67';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie

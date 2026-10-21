@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=65';
-import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=65';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=67';
+import { DIVISION, formationOf, unitsOf, centerOf } from './orbat.js?v=67';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -375,6 +375,38 @@ export class FrontManager {
     // Phasenlinien tragen wie bei der NATO einen Decknamen
     const name = CODENAMES[this.codename++ % CODENAMES.length];
     f.plan = { line, name };
+  }
+
+  // Angriff für mehrere Fronten (z. B. eine Armee): die Ziellinie wird nach Lage und Stärke
+  // der Divisionen aufgeteilt, alle Teile tragen denselben Decknamen
+  planAttackGroup(fronts, line) {
+    if (fronts.length === 1) { this.planAttack(fronts[0], line); return; }
+    const name = CODENAMES[this.codename++ % CODENAMES.length];
+    const total = chainLength(line);
+    const order = this.byPosition(fronts.map((f) => f.division), (c) => projectOnChains([line], c));
+    const sum = order.reduce((s, o) => s + o.s, 0) || 1;
+    let acc = 0;
+    for (const o of order) {
+      const from = acc;
+      acc += total * o.s / sum;
+      const part = sliceChains([line], from, acc)[0] || line;
+      o.d.front.plan = { line: part.map((q) => ({ x: q.x, y: q.y })), name };
+    }
+  }
+
+  // Den Grenzbereich, den diese Divisionen gemeinsam halten, neu unter ihnen aufteilen
+  // (z. B. wenn eine Division zu ihrer Armee kommt). Nicht während eines Angriffs.
+  regroup(divs) {
+    const held = divs.map((d) => d.front).filter((f) => f && this.fronts.includes(f) && f.kind !== 'line');
+    if (!held.length || held.some((f) => f.attack)) return [];
+    const ranges = held.map((f) => ({ f, r: this.rangeOf(f) }));
+    const lo = ranges.reduce((a, b) => (b.r[0] < a.r[0] ? b : a));
+    const hi = ranges.reduce((a, b) => (b.r[1] > a.r[1] ? b : a));
+    const end = (f, i) => (f.kind === 'segment' ? f.anchors[i] : null);
+    const rotate = held[0].rotate;
+    const made = this.splitBorder(divs, [end(lo.f, 0), end(hi.f, 1)]);
+    for (const f of made) f.rotate = rotate;
+    return made;
   }
 
   cancelPlan(f) {

@@ -1,13 +1,15 @@
-// Gliederung (Order of Battle): Division (XX) → Regiment (III) → Kompanie (I).
+// Gliederung (Order of Battle): Armee (XXXX) → Division (XX) → Regiment (III) → Kompanie (I).
 // Kompanien starten ohne Division; Spieler und KI fassen sie nach Bedarf zu Divisionen
-// zusammen. Die Regimenter innerhalb einer Division ordnet das Spiel selbst.
+// zusammen. Die Regimenter innerhalb einer Division ordnet das Spiel selbst. Divisionen
+// lassen sich zu Armeen gruppieren (beliebig viele, wie im Krieg flexibel).
 
 export const LEVELS = [
   { name: 'Kompanie', short: 'Kp.', echelon: 'I' },
   { name: 'Regiment', short: 'Rgt.', echelon: 'III' },
   { name: 'Division', short: 'Div.', echelon: 'XX' },
+  { name: 'Armee', short: 'Armee', echelon: 'XXXX' },
 ];
-export const REGIMENT = 1, DIVISION = 2;
+export const REGIMENT = 1, DIVISION = 2, ARMY = 3;
 
 export const DIVISION_MAX = 12; // Höchststärke einer Division in Kompanien
 export const REGIMENT_MAX = 3;  // Kompanien je Regiment
@@ -22,6 +24,13 @@ export const DIVISION_COLORS = [
   ['#7fe3ff', '#5aa8ff', '#b4a8ff', '#6fe0cf', '#d4f1ff', '#7f86f5', '#9cc3dc', '#3f8fd9'],
   ['#ff8080', '#ffa36b', '#ff6f9c', '#ffbfae', '#e8735f', '#ff9fd0', '#d99a8c', '#ffc27a'],
 ];
+
+// Kennfarben der Armeen (Rand der Armee- und Divisionskarten)
+export const ARMY_COLORS = ['#f2c94c', '#6fd3b0', '#c49bff', '#ff9f68', '#7fb8ff', '#ff7fa8'];
+
+export function armyColor(a) {
+  return ARMY_COLORS[(a.colorIndex || 0) % ARMY_COLORS.length];
+}
 
 export function divisionColor(f) {
   const pal = DIVISION_COLORS[f.owner];
@@ -40,6 +49,7 @@ export class OrderOfBattle {
   constructor(owner) {
     this.owner = owner;
     this.divisions = [];
+    this.armies = [];
     this.onDissolve = []; // Rückrufe, z. B. damit die Front einer aufgelösten Division verschwindet
   }
 
@@ -73,6 +83,7 @@ export class OrderOfBattle {
   }
 
   all(level) {
+    if (level === ARMY) return this.armies;
     if (level === DIVISION) return this.divisions;
     if (level === REGIMENT) return this.divisions.flatMap((d) => d.children);
     return [];
@@ -167,7 +178,50 @@ export class OrderOfBattle {
     if (!div.children.length) this.dissolve(div);
   }
 
+  // --- Armeen --------------------------------------------------------------------
+
+  // Neue Armee aus Divisionen (sie verlassen ihre bisherige Armee)
+  createArmy(divs) {
+    const list = divs.filter((d) => d && !d.dissolved && d.owner === this.owner);
+    if (!list.length) return null;
+    const n = this.freeNumber(this.armies);
+    const army = {
+      id: ++OrderOfBattle.nextId, level: ARMY, owner: this.owner, parent: null, children: [],
+      number: n, colorIndex: n - 1, name: `${n}. Armee`,
+    };
+    this.armies.push(army);
+    this.armies.sort((a, b) => a.number - b.number);
+    this.addToArmy(army, list);
+    return army;
+  }
+
+  addToArmy(army, divs) {
+    for (const d of divs) {
+      if (!d || d.dissolved || d.owner !== this.owner || d.parent === army) continue;
+      this.removeFromArmy([d]);
+      d.parent = army;
+      army.children.push(d);
+    }
+    army.children.sort((a, b) => a.number - b.number);
+  }
+
+  // Divisionen aus ihrer Armee nehmen; leere Armeen lösen sich auf
+  removeFromArmy(divs) {
+    for (const d of divs) {
+      const army = d.parent;
+      if (!army) continue;
+      army.children = army.children.filter((o) => o !== d);
+      d.parent = null;
+      if (!army.children.length) this.armies = this.armies.filter((a) => a !== army);
+    }
+  }
+
+  disbandArmy(army) {
+    this.removeFromArmy([...army.children]);
+  }
+
   dissolve(div) {
+    this.removeFromArmy([div]);
     for (const r of div.children) for (const u of r.units) if (u.regiment === r) u.regiment = null;
     div.children = [];
     div.dissolved = true;
@@ -257,6 +311,10 @@ export function formationOf(u, level) {
   let f = u.regiment;
   while (f && f.level < level) f = f.parent;
   return f;
+}
+
+export function armyOf(div) {
+  return div && div.parent && div.parent.level === ARMY ? div.parent : null;
 }
 
 export function divisionOf(u) {
