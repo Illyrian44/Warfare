@@ -19,13 +19,14 @@ const { REGIMENT, DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, strength, division
 const { formationSlots } = await load('formation');
 const { FrontManager } = await load('fronts');
 const { cycleSelection } = await load('input');
-const { KM } = await load('config');
+const { KM, CELL, CITY_BORDER, UNIT_BORDER } = await load('config');
 
 const STEP = 1 / 30;
 // Sekunden Spielzeit, bis die Partie entschieden sein muss (mit mehr Seiten dauert es länger)
 const maxTime = (np) => (np >= 5 ? 40 : 20) * 60;
 // Zufall der Partie, Karte, Zahl der Seiten (alle von der KI gespielt)
-const CASES = [[1, 'balkan', 2], [42, 'mitteleuropa', 3], [777, 'balkan', 5]];
+// QUICK=1 npm test: nur die schnellen Prüfungen, ohne ganze Partien
+const CASES = process.env.QUICK ? [] : [[1, 'balkan', 2], [42, 'mitteleuropa', 3], [777, 'balkan', 5]];
 
 let failed = 0;
 const fail = (msg) => { failed++; console.error('  FEHLER: ' + msg); };
@@ -191,6 +192,28 @@ function checkState(g, label, ais) {
   const grown = terr() - t60;
   if (grown > 20) fail(`Haltende Grenzfront nimmt von selbst Land ein (+${grown} Felder in 2 Minuten)`);
   else console.log('ok   Haltende Grenzfront bleibt stehen');
+}
+
+// --- Feindliche Städte holen sich kein Land zurück -----------------------------------
+{
+  // Seite 1 steht vor einer Stadt von Seite 2 und hält das Land ringsum, Seite 2 hat keine
+  // Truppen: das Land hinter den eigenen Truppen darf nicht an die Stadt zurückfallen
+  // (früher färbte jede Stadt ständig 80 Einheiten um sich ein, auch feindliches Land)
+  const g = new Game(realMap('mitteleuropa', 1));
+  g.growTimer = Infinity;
+  const c = g.cities[g.starts[2]];
+  g.units = g.units.filter((u) => u.owner === 1);
+  const { w, h } = g.map;
+  const dist = (i) => Math.hypot((i % w + 0.5) * CELL - c.x, (Math.floor(i / w) + 0.5) * CELL - c.y);
+  for (let i = 0; i < w * h; i++) if (g.map.isLand(i) && dist(i) < 140 && dist(i) > 30) g.territory[i] = 1;
+  for (const u of g.units) { u.x = c.x + 60; u.y = c.y; u.path = []; }
+  const behind = [];
+  for (let i = 0; i < w * h; i++) if (g.territory[i] === 1 && dist(i) < CITY_BORDER && g.units.every((u) => Math.hypot((i % w + 0.5) * CELL - u.x, (Math.floor(i / w) + 0.5) * CELL - u.y) > UNIT_BORDER + CELL)) behind.push(i);
+  for (let s = 0; s < 10 * 30; s++) { g.step(STEP); g.events.length = 0; }
+  const lost = behind.filter((i) => g.territory[i] !== 1).length;
+  if (!behind.length) fail('Stadt ohne Truppen: Testaufbau ohne Land hinter den Truppen');
+  else if (lost) fail(`Stadt ohne Truppen holt sich ${lost} von ${behind.length} Feldern hinter den eigenen Truppen zurück`);
+  else console.log(`ok   Feindliche Stadt ohne Truppen nimmt kein Land (${behind.length} Felder geprüft)`);
 }
 
 // --- Baumenü: Ausbildung, Vorlagen, Abbruch, Ausrüstung ---------------------------------

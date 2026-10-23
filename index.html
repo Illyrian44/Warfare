@@ -10,7 +10,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=100">
+  <link rel="stylesheet" href="css/style.css?v=101">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -162,7 +162,7 @@
     </div>
     <footer class="menuFoot">
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 100</small>
+      <small id="version" class="muted">Version 101</small>
     </footer>
   </div>
 
@@ -216,7 +216,7 @@
         <li><b>Städte</b> bilden aus, was du im Baumenü bestellst – nichts entsteht von selbst. Eine Kleinstadt bildet eine Kompanie gleichzeitig aus, eine Mittelstadt zwei, eine Großstadt (und deine Hauptstadt) drei; der Ring an der Stadt zeigt den Fortschritt, das Zeichen darin, was ausgebildet wird. Jede Kompanie kostet <b>Geld</b> und <b>Manpower</b> (oben angezeigt): Infanterie 30&nbsp;💰 und 150&nbsp;👥 (15&nbsp;s), Panzer 100&nbsp;💰 und 90&nbsp;👥 (26&nbsp;s).</li>
         <li><b>Wirtschaft:</b> Städte bringen Geld und Manpower nach ihrer Größe – Klein-, Mittel- oder Großstadt nach der echten Einwohnerzahl (Großstädte sind auf der Karte etwas größer). Deine Hauptstadt (die Startstadt) zählt immer als Großstadt, solange du sie hältst. Dazu bringt jedes Prozent Land etwas Geld. Manpower sammelt sich nur bis zu einem Vorrat an, Geld unbegrenzt.</li>
         <li><b>Erobern:</b> Stell dich in eine Stadt, die nicht verteidigt wird. Der gestrichelte Ring zeigt den Fortschritt.</li>
-        <li><b>Gebiet:</b> Zu Beginn gehört jeder Seite nur das Land um ihre Startstadt, alles andere ist neutral. Eroberte Städte bringen das Land ringsum, und dein Gebiet wächst langsam von selbst in angrenzendes neutrales Land (nie in feindliches). Wo deine Einheiten stehen, wird das Land deins – außer bei Kompanien, die eine Grenzfront nur halten: Sie nehmen weder neutrales noch feindliches Land ein. Grenzfronten zeigen zu den Gegnern; solange du keinen berührst, liegen sie am Rand deines Gebiets in ihrer Richtung.</li>
+        <li><b>Gebiet:</b> Zu Beginn gehört jeder Seite nur das Land um ihre Startstadt, alles andere ist neutral. Eroberte Städte bringen das Land ringsum (außer was näher an feindlichen Truppen liegt). Feindliches Land fällt nie von selbst an eine Stadt zurück, nur Truppen verschieben die Grenze. Dein Gebiet wächst langsam von selbst in angrenzendes neutrales Land (nie in feindliches). Wo deine Einheiten stehen, wird das Land deins – außer bei Kompanien, die eine Grenzfront nur halten: Sie nehmen weder neutrales noch feindliches Land ein. Grenzfronten zeigen zu den Gegnern; solange du keinen berührst, liegen sie am Rand deines Gebiets in ihrer Richtung.</li>
         <li>Gegner siehst du nur in Sichtweite deiner Einheiten und Städte.</li>
         <li><b>Die KI</b> erobert zuerst neutrale Städte, bildet dann Divisionen, fasst sie zu einer Armee zusammen und teilt die Grenze unter ihnen auf. Ist sie an einer Stelle überlegen, stoßen die ein bis zwei Divisionen, die einer feindlichen Stadt am nächsten sind, dorthin vor; die übrigen halten. Jede KI kämpft gegen jede andere Seite, mit der sie nicht verbündet ist. Sie bildet über das Baumenü aus, baut ihre Städte aus (zuerst eine Fabrik, Festungen in bedrohten Städten, Depots bei knappem Nachschub), rüstet ihre Front-Divisionen auf und schließt und bricht Bündnisse. Mit ihrer Reserve ohne Division verteidigt und erobert sie Städte. Fronten und Angriffspläne sind geheim: Du siehst die Linien und Pfeile der KI nicht, und die KI sieht deine nicht – nur die Truppen selbst, sobald sie in Sichtweite sind.</li>
         <li><b>Schwierigkeit:</b> Je schwerer, desto schneller denkt die KI und desto mehr Geld und Manpower nimmt sie ein (Leicht 80&nbsp;%, Mittel 100&nbsp;%, Schwer 125&nbsp;%). Auf „Schwer“ sieht sie außerdem die ganze Karte.</li>
@@ -235,6 +235,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=100"></script>
+  <script type="module" src="js/main.js?v=101"></script>
 </body>
 </html>
