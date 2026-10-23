@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=99';
-import { DIVISION, ARMY, formationOf, unitsOf, centerOf } from './orbat.js?v=99';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=100';
+import { DIVISION, ARMY, formationOf, unitsOf, centerOf } from './orbat.js?v=100';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -228,6 +228,45 @@ export class FrontManager {
     return made;
   }
 
+  // Auffanglinie wie in HOI4: eine Linie hinter der Front, auf die sich der Auftrag auf Befehl
+  // zurückzieht. Mehrere Aufträge teilen sich eine gezogene Linie nach Lage und Stärke
+  setFallback(holds, line) {
+    const total = chainLength(line);
+    const order = holds.map((hd) => {
+      const c = centerOf(hd.formation);
+      return { hd, t: c ? projectOnChains([line], c) : 0, s: Math.max(0.1, formStrength(hd.formation)) };
+    }).sort((a, b) => a.t - b.t);
+    const sum = order.reduce((s, o) => s + o.s, 0);
+    let acc = 0;
+    for (const o of order) {
+      const from = acc;
+      acc += total * o.s / sum;
+      const part = holds.length > 1 ? sliceChains([line], from, acc)[0] || line : line;
+      o.hd.fallback = { line: part.map((q) => ({ x: q.x, y: q.y })) };
+      if (o.hd.falling) this.refreshHold(o.hd);
+    }
+  }
+
+  // Auf die Auffanglinie zurückfallen (on) bzw. wieder die Front halten. Laufende Angriffe
+  // enden; die Sektoren bleiben dem Auftrag zugeteilt
+  fallBack(hd, on) {
+    hd.falling = on && !!hd.fallback;
+    for (const f of this.fronts) if (f.hold === hd) { f.plan = null; this.stopAttack(f); }
+    this.refreshHold(hd);
+  }
+
+  clearFallback(hd) {
+    hd.fallback = null;
+    if (hd.falling) this.fallBack(hd, false);
+  }
+
+  // Linie eines Auftrags neu bestimmen und seine Divisionen neu ausrichten
+  refreshHold(hd) {
+    hd.ver = -1;
+    for (const f of this.fronts) if (f.hold === hd) { for (const u of f.units) u.frontGoal = null; this.prepare(f); }
+    this.updateNeighbors();
+  }
+
   // Divisionen, die einer Armee beitreten, bringen ihre Sektoren mit: die Armee hält sie
   // danach gemeinsam, ihre Divisionen teilen sie neu auf
   mergeInto(army) {
@@ -372,9 +411,10 @@ export class FrontManager {
     this.border();
     const slot = this.borderCache.slot;
     if (hd.slot === slot && hd.ver === this.version) return hd.chains;
-    hd.chains = hd.kind === 'line'
-      ? (hd.line ? [withNormals(hd.line, (p, n) => this.facing(p, n))] : [])
-      : this.runs((r) => this.assign.get(r) === hd);
+    const facing = (p, n) => this.facing(p, n);
+    hd.chains = hd.falling && hd.fallback ? [withNormals(hd.fallback.line, facing)]
+      : hd.kind === 'line' ? (hd.line ? [withNormals(hd.line, facing)] : [])
+        : this.runs((r) => this.assign.get(r) === hd);
     hd.length = hd.chains.reduce((s, c) => s + chainLength(c), 0);
     hd.slot = slot;
     hd.ver = this.version;
@@ -426,7 +466,7 @@ export class FrontManager {
     for (const seq of this.sequences()) {
       for (let k = 1; k < seq.length; k++) {
         const a = this.assign.get(seq[k - 1].r) || null, b = this.assign.get(seq[k].r) || null;
-        if (a && b && a !== b && a.kind === 'sectors' && b.kind === 'sectors') list.push({ a, b, x: seq[k].at.x, y: seq[k].at.y });
+        if (a && b && a !== b && a.kind === 'sectors' && b.kind === 'sectors' && !a.falling && !b.falling) list.push({ a, b, x: seq[k].at.x, y: seq[k].at.y });
       }
     }
     this.boundCache = { slot: this.borderCache.slot, ver: this.version, list };

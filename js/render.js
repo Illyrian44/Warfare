@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=99';
-import { classify } from './map.js?v=99';
-import { frontBadge, chainLength } from './fronts.js?v=99';
-import { LEVELS, REGIMENT, DIVISION, ARMY, formationOf, divisionColor, armyColor, unitsOf, divisionOf } from './orbat.js?v=99';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=100';
+import { classify } from './map.js?v=100';
+import { frontBadge, chainLength } from './fronts.js?v=100';
+import { LEVELS, REGIMENT, DIVISION, ARMY, formationOf, divisionColor, armyColor, unitsOf, divisionOf } from './orbat.js?v=100';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -444,6 +444,7 @@ export class Renderer {
     ctx.lineJoin = 'round';
     for (const hd of fronts.holds) {
       const color = holdColor(hd);
+      if (hd.fallback && !hd.falling) drawFallback(ctx, hd.fallback.line, px, color, hd.formation.name);
       for (const c of fronts.holdChains(hd)) {
         if (c.length < 2) continue;
         ctx.beginPath();
@@ -493,7 +494,7 @@ export class Renderer {
       const st = fronts.holdStatus(hd);
       const color = holdColor(hd);
       const name = hd.formation.name;
-      const sub = hd.kind === 'line' ? `${st.divs} Div · Linie` : `${st.divs} Div · ${st.sectors} Sek`;
+      const sub = hd.falling ? `${st.divs} Div · Auffanglinie` : hd.kind === 'line' ? `${st.divs} Div · Linie` : `${st.divs} Div · ${st.sectors} Sek`;
       ctx.font = `600 ${11 * px}px system-ui, sans-serif`;
       const tw = Math.max(ctx.measureText(name).width, ctx.measureText(sub).width);
       const hw = (tw + 34 * px) / 2, hh = 15 * px;
@@ -899,6 +900,39 @@ function drawTeeth(ctx, c, px, color) {
     carry = d - seg;
   }
   ctx.fill();
+}
+
+// Auffanglinie (geplant): gestrichelt in der Farbe des Verbands, Winkel zeigen zurück auf die
+// Linie, Beschriftung „AL“ mit dem Namen
+function drawFallback(ctx, line, px, color, name) {
+  if (line.length < 2) return;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.setLineDash([10 * px, 6 * px]);
+  ctx.beginPath();
+  ctx.moveTo(line[0].x, line[0].y);
+  for (const p of line) ctx.lineTo(p.x, p.y);
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = 5 * px;
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5 * px;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const m = polylineMid(line);
+  if (m) {
+    ctx.font = `600 ${11 * px}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3 * px;
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    const label = `⤶ AL ${name}`;
+    ctx.strokeText(label, m.x, m.y - 5 * px);
+    ctx.fillStyle = color;
+    ctx.fillText(label, m.x, m.y - 5 * px);
+  }
+  ctx.restore();
 }
 
 function polylineMid(line) {

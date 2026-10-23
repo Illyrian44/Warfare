@@ -1,20 +1,20 @@
-import { loadMap, MAPS } from './map.js?v=99';
-import { Game } from './game.js?v=99';
-import { AI } from './ai.js?v=99';
-import { Renderer } from './render.js?v=99';
-import { Input } from './input.js?v=99';
-import { formationSlots } from './formation.js?v=99';
-import { FrontManager, chainLength } from './fronts.js?v=99';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=99';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY, FRONT } from './config.js?v=99';
-import { templateCost } from './production.js?v=99';
+import { loadMap, MAPS } from './map.js?v=100';
+import { Game } from './game.js?v=100';
+import { AI } from './ai.js?v=100';
+import { Renderer } from './render.js?v=100';
+import { Input } from './input.js?v=100';
+import { formationSlots } from './formation.js?v=100';
+import { FrontManager, chainLength } from './fronts.js?v=100';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=100';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY, FRONT } from './config.js?v=100';
+import { templateCost } from './production.js?v=100';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '99'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '100'; // für Kartendaten, siehe scripts/bump-version.sh
 // Reiter der oberen Leiste: Inhalt in der Seitenleiste
-const TAB_BODIES = { build: 'buildBody', city: 'cityBody', diplo: 'diploBody', troops: 'troopBody' };
-const TAB_TITLES = { build: 'Produktion', city: 'Städte', diplo: 'Diplomatie', troops: 'Truppen' };
+const TAB_BODIES = { build: 'buildBody', city: 'cityBody', diplo: 'diploBody', logistics: 'logiBody', troops: 'troopBody' };
+const TAB_TITLES = { build: 'Produktion', city: 'Städte', diplo: 'Diplomatie', logistics: 'Logistik', troops: 'Truppen' };
 
 const app = {
   game: null,
@@ -192,8 +192,9 @@ const app = {
     if (!mode) return;
     $('frontErase').classList.toggle('active', !!mode.erase);
     $('frontCancel').textContent = mode.forms ? 'Fertig' : 'Abbrechen';
-    $('frontBanner').firstElementChild.textContent = !mode.forms
-      ? 'Angriffsziel: Linie ziehen, bis wohin die Front vorstoßen soll'
+    $('frontBanner').firstElementChild.textContent = mode.fallback
+      ? 'Auffanglinie: Linie hinter der Front ziehen'
+      : !mode.forms ? 'Angriffsziel: Linie ziehen, bis wohin die Front vorstoßen soll'
       : mode.erase
         ? 'Front entziehen: über die Grenze ziehen'
         : `Front für ${this.formsName(mode.forms)}: über die Grenze ziehen · Feindgebiet antippen = ganze Grenze zum Gegner`;
@@ -298,13 +299,21 @@ const app = {
     this.toast(`${name} hält eine Verteidigungslinie`);
   },
 
-  // Angriffsziel gezogen
+  // Angriffsziel bzw. Auffanglinie gezogen
   finishFront(line) {
     const mode = this.ui.frontMode;
     this.setFrontMode(null);
-    if (!mode || !mode.plan) return;
+    if (!mode || !(mode.plan || mode.fallback)) return;
     if (chainLength(line) < 30) {
       this.toast('Linie zu kurz – nochmal versuchen');
+      return;
+    }
+    if (mode.fallback) {
+      const holds = mode.fallback.filter((hd) => this.fronts.holds.includes(hd));
+      if (!holds.length) return;
+      this.fronts.setFallback(holds, line);
+      this.updateCommands();
+      this.toast('Auffanglinie gezogen – „⤶ Zurückfallen“ zieht die Front dorthin zurück');
       return;
     }
     const fronts = mode.plan.filter((f) => this.fronts.fronts.includes(f));
@@ -413,6 +422,23 @@ const app = {
     return this.ui.front && this.fronts.fronts.includes(this.ui.front) ? [this.ui.front] : [];
   },
 
+  // Aufträge (Armee- bzw. Divisionsfronten) der ausgewählten Divisionen
+  panelHolds() {
+    return [...new Set(this.panelFronts().map((f) => f.hold))].filter((hd) => this.fronts.holds.includes(hd));
+  },
+
+  // Auffanglinie: ohne Linie ziehen, sonst zurückfallen bzw. wieder die Front halten
+  fallbackAction() {
+    const holds = this.panelHolds();
+    if (!holds.length) return;
+    const lined = holds.filter((hd) => hd.fallback);
+    if (!lined.length) { this.setFrontMode({ fallback: holds }); return; }
+    const back = lined.some((hd) => hd.falling);
+    for (const hd of lined) this.fronts.fallBack(hd, !back);
+    this.updateCommands();
+    this.toast(back ? 'Die Front wird wieder gehalten' : 'Rückzug auf die Auffanglinie', back ? '' : 'bad');
+  },
+
   // Gemeinsamer Name der Auswahl: Armee, wenn genau ihre Divisionen gewählt sind
   selectionName(fronts) {
     const divs = [...new Set(fronts.map((f) => f.division))];
@@ -441,6 +467,11 @@ const app = {
     enable('planBtn', fs.length > 0);
     $('planBtn').textContent = attacking ? '➜ Neues Ziel' : '➜ Angriff';
     enable('attackBtn', planned);
+    const holds = this.panelHolds(), lined = holds.filter((hd) => hd.fallback), falling = lined.some((hd) => hd.falling);
+    enable('fallbackBtn', holds.length > 0);
+    $('fallbackBtn').textContent = !lined.length ? '⤶ Auffanglinie' : falling ? '↥ Front halten' : '⤶ Zurückfallen';
+    $('fallbackBtn').classList.toggle('stop', lined.length > 0 && !falling);
+    enable('clearFallbackBtn', lined.length > 0);
     enable('stopAttackBtn', attacking);
     $('stopAttackBtn').classList.toggle('stop', attacking);
     $('moreBtn').classList.toggle('active', this.ui.more);
@@ -591,7 +622,7 @@ const app = {
     for (const [t, id] of Object.entries(TAB_BODIES)) $(id).hidden = t !== tab;
     if (!tab) return;
     $('sideTitle').textContent = TAB_TITLES[tab];
-    this.buildSig = this.diploSig = this.troopSig = null;
+    this.buildSig = this.diploSig = this.troopSig = this.logiSig = null;
     this.updateTab();
   },
 
@@ -603,6 +634,7 @@ const app = {
     if (!this.game) return;
     if (this.ui.tab === 'build' || this.ui.tab === 'city') this.updateBuildPanel();
     else if (this.ui.tab === 'troops') this.updateTroops();
+    else if (this.ui.tab === 'logistics') this.updateLogistics();
     this.updateDiplo();
   },
 
@@ -705,6 +737,100 @@ const app = {
     this.updateTroops();
   },
 
+  // --- Logistik ---------------------------------------------------------------------
+
+  // Nachschub im Überblick: Lage aller Kompanien, je Armee und Division Vorrat und
+  // Lieferquote, je Versorgungsnetz (zusammenhängendes Gebiet) Depots und Auslastung
+  updateLogistics() {
+    if (!this.game || this.ui.tab !== 'logistics') return;
+    const g = this.game, p = this.human, ob = g.orbat[p], prod = g.production;
+    const pct = (v) => `${Math.round(v * 100)} %`;
+    const own = g.units.filter((u) => u.owner === p);
+    const cut = (u) => u.depot < 0 || !u.supplyEff;
+    const count = { full: 0, low: 0, empty: 0, cut: 0 };
+    for (const u of own) count[cut(u) ? 'cut' : u.supply >= 0.6 ? 'full' : u.supply >= 0.2 ? 'low' : 'empty']++;
+    let h = '<h4>Versorgungslage</h4><div class="logiSum">' +
+      `<span class="tag good">${count.full} voll</span><span class="tag thin">${count.low} knapp</span>` +
+      `<span class="tag weak">${count.empty} leer</span><span class="tag none">${count.cut} abgeschnitten</span></div>` +
+      `<div class="buildRow"><button data-act="layer" class="${this.ui.showSupply ? 'on' : ''}">Kartenebene Nachschub: ${this.ui.showSupply ? 'an' : 'aus'}<small>Lieferquote auf der Karte, Auslastung an den Städten (N)</small></button></div>`;
+    const level = (units) => {
+      const sup = units.reduce((s, u) => s + u.supply, 0) / units.length;
+      const eff = units.reduce((s, u) => s + (u.supplyEff || 0), 0) / units.length;
+      const cls = units.some(cut) ? 'none' : sup >= 0.6 ? 'good' : sup >= 0.2 ? 'thin' : 'weak';
+      return { sup, eff, cls, text: units.some(cut) ? `${units.filter(cut).length} abgeschnitten` : sup >= 0.6 ? 'versorgt' : sup >= 0.2 ? 'knapp' : 'leer' };
+    };
+    const row = (f, act, color, child) => {
+      const units = unitsOf(f);
+      if (!units.length) return '';
+      const l = level(units);
+      return `<li class="${child ? 'child' : ''}"><button data-act="${act}" data-id="${f.id}"><span class="sw" style="background:${color}"></span>` +
+        `<span class="nm">${f.name}</span><span class="tag ${l.cls}">${l.text}</span>` +
+        `<span class="sub">Vorrat ${pct(l.sup)} · Lieferquote ${pct(l.eff)}</span></button></li>`;
+    };
+    h += '<h4>Armeen und Divisionen</h4><ul class="rows">' +
+      ob.all(ARMY).map((a) => row(a, 'selarmy', armyColor(a), false) + a.children.map((d) => row(d, 'seldiv', divisionColor(d), true)).join('')).join('') +
+      ob.all(DIVISION).filter((d) => !armyOf(d)).map((d) => row(d, 'seldiv', divisionColor(d), false)).join('') + '</ul>';
+    // Versorgungsnetze: Städte im selben zusammenhängenden Gebiet teilen ihre Lieferleistung
+    const net = g.supply.nets[p];
+    const pools = new Map();
+    for (const c of g.citiesOf(p)) {
+      const k = net.pool[g.map.cellIndex(c.x, c.y)];
+      if (!pools.has(k)) pools.set(k, []);
+      pools.get(k).push(c);
+    }
+    h += '<h4>Depots</h4><p class="muted">Jede Stadt ist ein Depot. Städte in zusammenhängendem Gebiet bilden ein Netz und teilen sich ihre Lieferleistung; über 100 % Auslastung bekommen alle weniger. Ein Depot-Ausbau bringt +50 % je Stufe.</p>';
+    [...pools.values()].sort((a, b) => b.length - a.length).forEach((cities, k) => {
+      const load = Math.max(...cities.map((c) => c.supplyLoad || 0));
+      const cls = load > 1 ? 'weak' : load > 0.8 ? 'thin' : 'good';
+      h += `<p><b>Netz ${k + 1}</b> · ${cities.length} ${cities.length > 1 ? 'Städte' : 'Stadt'} <span class="tag ${cls}">Auslastung ${pct(load)}</span></p><ul class="rows">` +
+        cities.sort((a, b) => b.buildings.depot - a.buildings.depot || a.name.localeCompare(b.name)).map((c) => {
+          const next = prod.nextBuilding(c, 'depot');
+          const busy = c.construction;
+          const btn = next && !busy ? `<span class="tag good" data-act="depot" data-id="${c.id}" title="Depot Stufe ${c.buildings.depot + 1} bauen: ${next.cost.money}💰, ${Math.round(next.time)} s">＋ Depot</span>` : '';
+          return `<li><button data-act="pickcity" data-id="${c.id}"><span class="sw" style="background:${PLAYER_COLORS[p]}"></span>` +
+            `<span class="nm">${c.name}</span>${btn}<span class="sub">📦 Depot Stufe ${c.buildings.depot}${busy ? ` · baut ${BUILDINGS[busy.key].icon}` : ''}</span></button></li>`;
+        }).join('') + '</ul>';
+    });
+    if (h !== this.logiSig) { this.logiSig = h; $('logiBody').innerHTML = h; }
+  },
+
+  logiAction(t) {
+    const g = this.game, act = t.dataset.act, id = +t.dataset.id;
+    if (act === 'layer') this.toggleSupply();
+    else if (act === 'selarmy') this.selectArmy(id);
+    else if (act === 'seldiv') this.selectDivision(id);
+    else if (act === 'pickcity') this.focusOn([g.cities[id]]);
+    else if (act === 'depot') {
+      const c = g.cities[id];
+      if (g.production.construct(this.human, id, 'depot')) this.toast(`${c.name}: Depot wird ausgebaut`);
+      else this.toast('Dafür reicht das Geld nicht oder die Stadt baut schon');
+    }
+    this.logiSig = null;
+    this.updateLogistics();
+  },
+
+  // Division per Ziehen umhängen: zu einer Armee (army), in die Reserve (null) oder in eine
+  // neue Armee ('new'). Sie bringt ihre Sektoren mit, die Armee teilt neu auf
+  moveDivision(id, target) {
+    const ob = this.game.orbat[this.human];
+    const div = ob.all(DIVISION).find((d) => d.id === id);
+    if (!div || armyOf(div) === target) return;
+    if (target === 'new') {
+      const army = ob.createArmy([div]);
+      this.fronts.mergeInto(army);
+      this.ui.openGroup = army.id;
+      this.toast(`${army.name} gebildet aus ${div.name}`);
+    } else if (target) {
+      ob.addToArmy(target, [div]);
+      this.fronts.mergeInto(target);
+      this.toast(`${div.name} zur ${target.name}`);
+    } else {
+      ob.removeFromArmy([div]);
+      this.toast(`${div.name} in der Reserve`);
+    }
+    this.afterOrbatChange();
+  },
+
   // Kamera zum ersten Grenzstück ohne Front
   showGap() {
     const part = this.fronts.uncovered()[0];
@@ -730,7 +856,7 @@ const app = {
 
   alertAction(k) {
     if (k === 'gap') this.showGap();
-    else if (k === 'supply') { if (!this.ui.showSupply) this.toggleSupply(); }
+    else if (k === 'supply') { if (!this.ui.showSupply) this.toggleSupply(); this.setTab('logistics'); }
     else if (k === 'loose') { this.ui.openGroup = 'reserve'; this.divBarSig = null; this.updateDivBar(); }
   },
 
@@ -1109,7 +1235,7 @@ const app = {
         `<span class="sym">${natoIcon(0, 30, 18, 1, '', '#c9d2dc')}</span><span class="name">Reserve</span>` +
         `<span class="meta">${reserve.length} Div${loose ? ` · ${loose} Kp.` : ''}</span></button>`;
     }
-    if (pickedDivs.length) bar += '<button class="divcard newarmy" data-act="newarmy" title="Neue Armee aus den ausgewählten Divisionen">＋ Armee</button>';
+    if (divs.length) bar += '<button class="divcard newarmy" data-act="newarmy" title="Neue Armee aus den ausgewählten Divisionen – oder eine Division hierher ziehen">＋ Armee</button>';
     $('divBar').innerHTML = bar;
     let row = '';
     if (open === 'reserve') {
@@ -1251,6 +1377,10 @@ $('selectBtn').onclick = () => app.setSelectMode(!app.ui.selectMode);
 for (const b of document.querySelectorAll('#topbar .tabs button')) b.onclick = () => app.toggleTab(b.dataset.tab);
 $('sideClose').onclick = () => app.setTab(null);
 $('alerts').onclick = (e) => { const t = e.target.closest('[data-alert]'); if (t && app.game) app.alertAction(t.dataset.alert); };
+$('logiBody').addEventListener('click', (e) => {
+  const t = e.target.closest('[data-act]');
+  if (t && app.game) app.logiAction(t);
+});
 $('troopBody').addEventListener('click', (e) => {
   const t = e.target.closest('button[data-act]');
   if (t && app.game) app.troopAction(t);
@@ -1298,6 +1428,55 @@ function onBarClick(e) {
 }
 $('divBar').onclick = onBarClick;
 $('divRow').onclick = onBarClick;
+
+// Divisionskarten ziehen: aus der Divisionsreihe auf eine Armeekarte, die Reserve oder
+// „＋ Armee“. Waagrecht scrollt die Reihe weiter; erst ein Zug nach oben oder unten hebt
+// die Karte an
+let cardDrag = null;
+const dropTarget = (e) => {
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  return el && el.closest('#divBar [data-army], #divBar [data-reserve], #divBar [data-act="newarmy"]');
+};
+$('divRow').addEventListener('pointerdown', (e) => {
+  const card = e.target.closest('.divcard[data-id]');
+  if (!card || e.target.closest('[data-act]') || e.button > 0 || !app.game) return;
+  cardDrag = { card, id: +card.dataset.id, x: e.clientX, y: e.clientY, pointer: e.pointerId, ghost: null, over: null };
+});
+window.addEventListener('pointermove', (e) => {
+  const d = cardDrag;
+  if (!d || e.pointerId !== d.pointer) return;
+  const dx = e.clientX - d.x, dy = e.clientY - d.y;
+  if (!d.ghost) {
+    if (Math.abs(dy) < 10 || Math.abs(dy) < Math.abs(dx)) { if (Math.abs(dx) > 10) cardDrag = null; return; }
+    d.ghost = d.card.cloneNode(true);
+    d.ghost.classList.add('dragghost');
+    document.body.appendChild(d.ghost);
+    d.card.classList.add('lifted');
+  }
+  d.ghost.style.left = `${e.clientX - d.ghost.offsetWidth / 2}px`;
+  d.ghost.style.top = `${e.clientY - d.ghost.offsetHeight / 2}px`;
+  const over = dropTarget(e);
+  if (over !== d.over) {
+    if (d.over) d.over.classList.remove('drop');
+    if (over) over.classList.add('drop');
+    d.over = over;
+  }
+});
+const endDrag = (e, drop) => {
+  const d = cardDrag;
+  if (!d || e.pointerId !== d.pointer) return;
+  cardDrag = null;
+  if (!d.ghost) return;
+  d.ghost.remove();
+  d.card.classList.remove('lifted');
+  if (d.over) d.over.classList.remove('drop');
+  if (!drop || !d.over) return;
+  const t = d.over;
+  const army = t.dataset.army && app.game.orbat[app.human].all(ARMY).find((a) => a.id === +t.dataset.army);
+  app.moveDivision(d.id, army || (t.dataset.reserve ? null : 'new'));
+};
+window.addEventListener('pointerup', (e) => endDrag(e, true));
+window.addEventListener('pointercancel', (e) => endDrag(e, false));
 $('frontBtn').onclick = () => app.toggleFrontMode();
 $('showFrontsBtn').onclick = () => app.toggleShowFronts();
 $('supplyBtn').onclick = () => app.toggleSupply();
@@ -1321,6 +1500,8 @@ $('rotateBtn').onclick = () => {
 };
 $('rejoinBtn').onclick = () => { for (const f of app.panelFronts()) app.fronts.rejoin(f); app.updateCommands(); };
 $('disbandBtn').onclick = () => app.disbandFronts();
+$('fallbackBtn').onclick = () => app.fallbackAction();
+$('clearFallbackBtn').onclick = () => { for (const hd of app.panelHolds()) app.fronts.clearFallback(hd); app.updateCommands(); };
 $('pickRandom').onclick = () => app.pickStart(null);
 $('frontCancel').onclick = () => app.setFrontMode(null);
 $('frontErase').onclick = () => app.toggleFrontErase();
