@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX } from './config.js?v=97';
-import { unitStrength } from './game.js?v=97';
-import { mulberry32 } from './rng.js?v=97';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=97';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=97';
+import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX } from './config.js?v=98';
+import { unitStrength } from './game.js?v=98';
+import { mulberry32 } from './rng.js?v=98';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=98';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=98';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -367,7 +367,8 @@ export class AI {
       }
       // ... die übrigen nach ihrer Lage an der Grenze zu neuen Divisionen zusammenfassen
       if (rest.length >= DIV_MIN) {
-        rest.sort((a, b) => this.fronts.key(a) - this.fronts.key(b));
+        const along = new Map(rest.map((u) => [u, projectOnChains(chains, u)]));
+        rest.sort((a, b) => along.get(a) - along.get(b));
         const size = Math.ceil(rest.length / Math.ceil(rest.length / DIV_SIZE));
         for (let k = 0; k + 3 <= rest.length; k += size) {
           const group = rest.slice(k, k + size);
@@ -395,16 +396,19 @@ export class AI {
     if (changed || this.needSplit || gap > GAP_RESPLIT) this.splitFronts();
   }
 
-  // Alle Divisionen teilen sich die Grenze wie beim Spieler. Während eines Angriffs wird
-  // nicht neu aufgeteilt (das würde ihn abbrechen), sondern danach.
+  // Die Armee der KI hält die ganze Grenze, ihre Divisionen teilen sie sich wie beim
+  // Spieler. Während eines Angriffs wird nicht neu aufgeteilt, sondern danach.
   splitFronts() {
     const ob = this.game.orbat[this.me];
     if (this.fronts.fronts.some((f) => f.attack)) { this.needSplit = true; return; }
-    const holders = ob.all(DIVISION);
+    const army = ob.armies[0];
     this.needSplit = false;
-    if (!holders.length) return;
-    for (const d of holders) for (const u of unitsOf(d)) u.ai = null; // eigene Aufträge enden
-    for (const f of this.fronts.splitBorder(holders)) f.rotate = this.cfg.rotate;
+    if (!army) return;
+    for (const d of army.children) for (const u of unitsOf(d)) u.ai = null; // eigene Aufträge enden
+    const hd = this.fronts.assignAll(army);
+    if (!hd) return;
+    hd.rotate = this.cfg.rotate;
+    for (const f of this.fronts.fronts) if (f.hold === hd) f.rotate = this.cfg.rotate;
   }
 
   // Angriffe von der Front: die 1–2 Divisionen, die einer Stadt am nächsten sind, stoßen

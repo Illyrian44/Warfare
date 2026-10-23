@@ -1,5 +1,5 @@
-import { CITY_RADIUS } from './config.js?v=97';
-import { divisionOf, unitsOf } from './orbat.js?v=97';
+import { CITY_RADIUS } from './config.js?v=98';
+import { divisionOf, unitsOf } from './orbat.js?v=98';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -106,8 +106,15 @@ export class Input {
       return;
     }
     if (this.ui.frontMode) {
-      this.gesture = { kind: 'front', moved: false };
+      // Front malen (Sektoren, Klick auf Gegner, Verteidigungslinie) oder Angriffsziel ziehen
+      this.gesture = { kind: 'front', moved: false, start: w, last: null, stroke: new Set() };
       this.ui.drawPath = [w];
+      return;
+    }
+    // Trenner zwischen zwei Armeefronten verschieben
+    const bnd = this.app.pickBoundary(w);
+    if (bnd) {
+      this.gesture = { kind: 'divider', moved: false, a: bnd.a, b: bnd.b, near: { x: bnd.x, y: bnd.y } };
       return;
     }
     // PC: Linksziehen zieht immer einen Rahmen; Handy: ein Finger verschiebt die Karte
@@ -154,9 +161,16 @@ export class Input {
       this.app.clampCamera();
     } else if (g.kind === 'front') {
       const w = this.toWorld(p.x, p.y);
-      const path = this.ui.drawPath;
+      const path = g.path || (g.path = [g.start]);
       const last = path[path.length - 1];
-      if (Math.hypot(w.x - last.x, w.y - last.y) >= Math.max(5, 8 / cam.zoom)) path.push(w);
+      if (Math.hypot(w.x - last.x, w.y - last.y) >= Math.max(5, 8 / cam.zoom)) {
+        path.push(w);
+        if (this.ui.drawPath) this.ui.drawPath = path;
+      }
+      if (g.moved) this.app.frontStroke(g, w);
+    } else if (g.kind === 'divider') {
+      const w = this.toWorld(p.x, p.y);
+      g.near = this.app.fronts.moveBoundary(g.a, g.b, g.near, w) || g.near;
     } else if (g.kind === 'box' && g.moved) {
       this.ui.box = { x0: p.sx, y0: p.sy, x1: p.x, y1: p.y };
     }
@@ -174,9 +188,12 @@ export class Input {
     this.gesture = null;
     const sel = this.ui.selection;
     if (g.kind === 'front') {
-      const path = this.ui.drawPath || [];
+      const path = g.path || [g.start];
       this.ui.drawPath = null;
-      if (g.moved && path.length >= 2) this.app.finishFront(path);
+      if (this.ui.frontMode && this.ui.frontMode.forms) this.app.frontStrokeEnd(g, path);
+      else if (g.moved && path.length >= 2) this.app.finishFront(path);
+    } else if (g.kind === 'divider') {
+      this.app.afterFrontChange();
     } else if (g.kind === 'box') {
       this.ui.box = null;
       if (g.moved) {
@@ -202,16 +219,13 @@ export class Input {
   tap(g, e) {
     if (this.app.picking) { this.app.pickStart(g.world); return; } // Startstadt wählen
     const sel = this.ui.selection;
+    // Frontabzeichen liegen über den Truppen; Antippen wählt die Armee bzw. Division
+    const badge = this.app.pickHoldBadge(g.world);
+    if (badge) { this.app.selectFormation(badge.formation); return; }
     const hit = this.pickHit(g.world, g.touch);
     if (hit) { this.clickTroops(hit, g.world, g.shift); return; }
-    const badge = this.app.pickFrontBadge(g.world);
-    const f = badge || this.app.pickFront(g.world);
-    if (f && (badge || !sel.size || f === this.ui.front)) {
-      // Front antippen = ihre Division auswählen (öffnet das Frontmenü)
-      if (f === this.ui.front) { sel.clear(); this.app.selectFront(null); }
-      else this.app.selectDivision(f.division.id, false);
-      return;
-    }
+    const hd = !sel.size && this.app.pickHold(g.world);
+    if (hd) { this.app.selectFormation(hd.formation); return; }
     const city = this.pickOwnCity(g.world);
     if (city && !sel.size) { this.app.openBuildFor(city); return; } // eigene Stadt: dort ausbilden
     if (!sel.size) return;

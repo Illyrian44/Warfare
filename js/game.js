@@ -1,14 +1,15 @@
 import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS, DIPLOMACY, GROWTH,
-  UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=97';
-import { mulberry32 } from './rng.js?v=97';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=97';
-import { HQManager } from './hq.js?v=97';
-import { SupplyNetwork } from './supply.js?v=97';
-import { Trade } from './trade.js?v=97';
-import { Production } from './production.js?v=97';
+  UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND, FRONT,
+} from './config.js?v=98';
+import { buildSectors } from './sectors.js?v=98';
+import { mulberry32 } from './rng.js?v=98';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=98';
+import { HQManager } from './hq.js?v=98';
+import { SupplyNetwork } from './supply.js?v=98';
+import { Trade } from './trade.js?v=98';
+import { Production } from './production.js?v=98';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -17,8 +18,10 @@ export class Game {
   // opts.players: Zahl der Seiten (2 bis 5; Seite 1 ist der Spieler)
   // opts.starts: Startstädte je Seite (Index in map.cities, fehlende werden verteilt)
   // opts.preview: nur die Karte mit neutralen Städten (zur Wahl der Startstadt)
+  // opts.sectorKm: Größe der Frontsektoren (Standard FRONT.sectorKm)
   constructor(map, opts = {}) {
     this.map = map;
+    this.sectors = buildSectors(map, opts.sectorKm || FRONT.sectorKm);
     this.rng = mulberry32((map.seed ^ 0x5bd1e995) >>> 0);
     const np = Math.max(2, Math.min(5, opts.players || 2));
     this.players = Array.from({ length: np }, (_, k) => k + 1);

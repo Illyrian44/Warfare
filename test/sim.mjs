@@ -30,7 +30,6 @@ const CASES = [[1, 'balkan', 2], [42, 'mitteleuropa', 3], [777, 'balkan', 5]];
 let failed = 0;
 const fail = (msg) => { failed++; console.error('  FEHLER: ' + msg); };
 
-const overlapSince = new Map();
 const brokenStuck = new Map(); // zerschlagene Kompanien, die ohne Rückzugsweg im Gefecht stehen
 
 function checkState(g, label, ais) {
@@ -106,23 +105,22 @@ function checkState(g, label, ais) {
       if (u.owner === p && u.regiment && u.regiment.parent.dissolved) fail(`${label}: Kompanie ${u.id} hängt an einer aufgelösten Division`);
     }
   }
-  // Fronten: je Division höchstens eine, nur Kompanien der eigenen Division,
-  // Grenzabschnitte einer Seite überlappen sich nicht
+  // Fronten: je Division höchstens eine, nur Kompanien der eigenen Division, jede gehört zu
+  // einem bestehenden Auftrag, die Teile eines Auftrags überlappen sich nicht
   for (const ai of ais) {
-    const ranges = ai.fronts.fronts.filter((f) => f.kind !== 'line').map((f) => [f, ...ai.fronts.rangeOf(f)]);
-    for (let i = 0; i < ranges.length; i++) {
-      for (let j = i + 1; j < ranges.length; j++) {
-        const [fa, a0, a1] = ranges[i], [fb, b0, b1] = ranges[j];
-        // kurzzeitig erlaubt: die Frontverwaltung repariert Überlappungen bei der nächsten Neuberechnung
-        const key = `${ai.me}:${fa.id}:${fb.id}`;
-        if (Math.min(a1, b1) - Math.max(a0, b0) > 40) overlapSince.set(key, (overlapSince.get(key) || 0) + 1);
-        else overlapSince.delete(key);
-        if (overlapSince.get(key) === 4) fail(`${label}: Grenzabschnitte von ${fa.division.name} und ${fb.division.name} überlappen seit 3 s`);
-      }
+    const fm = ai.fronts;
+    for (const hd of fm.holds) {
+      const parts = fm.fronts.filter((f) => f.hold === hd).map((f) => hd.parts.get(f.division));
+      if (parts.some((p) => !p)) fail(`${label}: Division ohne Anteil am Auftrag ${hd.formation.name}`);
+      parts.filter(Boolean).sort((a, b) => a[0] - b[0]).forEach((p, i, l) => {
+        if (i && p[0] < l[i - 1][1] - 1e-9) fail(`${label}: Teile im Auftrag ${hd.formation.name} überlappen`);
+      });
     }
+    for (const [r, hd] of fm.assign) if (hd && !fm.holds.includes(hd)) fail(`${label}: Sektor ${r} gehört zu einem aufgelösten Auftrag`);
     const divs = new Set();
-    for (const f of ai.fronts.fronts) {
+    for (const f of fm.fronts) {
       if (!f.division || f.division.dissolved) fail(`${label}: Front ${f.id} ohne bestehende Division`);
+      if (!fm.holds.includes(f.hold)) fail(`${label}: Front von ${f.division.name} ohne Auftrag`);
       if (divs.has(f.division)) fail(`${label}: ${f.division.name} hat zwei Fronten`);
       // Angriffe sind Aufträge: die KI-Division bleibt ihrem Grenzabschnitt zugewiesen
       if (f.kind === 'line') fail(`${label}: Front von ${f.division.name} ist zur freien Linie geworden`);
@@ -181,7 +179,7 @@ function checkState(g, label, ais) {
   for (let k = 0; k < 12; k++) g.spawnUnit(1, 'light', home);
   const fm = new FrontManager(g, 1);
   g.orbat[1].autoOrganize(g.units.filter((u) => u.owner === 1));
-  fm.splitBorder(g.orbat[1].all(DIVISION));
+  fm.assignAll(g.orbat[1].createArmy(g.orbat[1].all(DIVISION)));
   const terr = () => g.territory.reduce((a, t) => a + (t === 1), 0);
   let t60 = 0;
   for (let s = 1; s <= 180 * 30; s++) {
@@ -191,6 +189,51 @@ function checkState(g, label, ais) {
   const grown = terr() - t60;
   if (grown > 20) fail(`Haltende Grenzfront nimmt von selbst Land ein (+${grown} Felder in 2 Minuten)`);
   else console.log('ok   Haltende Grenzfront bleibt stehen');
+}
+
+// --- Frontsektoren: Aufteilen, Trenner, eigene Division, Erben ------------------------
+{
+  const g = new Game(realMap('balkan', 3), { players: 2 });
+  const home = g.cities[g.starts[1]];
+  for (let k = 0; k < 16; k++) g.spawnUnit(1, k % 4 ? 'light' : 'heavy', home);
+  const ob = g.orbat[1];
+  const fm = new FrontManager(g, 1);
+  const divs = ob.autoOrganize(g.units.filter((u) => u.owner === 1));
+  const all = [...fm.sectorInfo().regions.keys()];
+  if (divs.length < 3) fail(`Sektortest: nur ${divs.length} Divisionen`);
+  else if (all.length < 4) fail(`Sektortest: nur ${all.length} Frontsektoren`);
+  else {
+    const A = ob.createArmy([divs[0]]), B = ob.createArmy(divs.slice(1));
+    fm.paintSplit([A, B], all);
+    const ha = fm.holdOf(A), hb = fm.holdOf(B);
+    const count = (hd) => all.filter((r) => fm.assign.get(r) === hd).length;
+    if (!ha || !hb) fail('Sektortest: Aufteilen auf zwei Armeen ergibt nicht zwei Aufträge');
+    else {
+      if (count(ha) + count(hb) !== all.length) fail('Sektortest: nicht jeder Sektor gehört genau einer Armee');
+      for (const d of [...A.children, ...B.children]) if (!fm.fronts.includes(d.front)) fail(`Sektortest: ${d.name} hat keine Front`);
+      // Trenner zur Mitte des anderen Auftrags ziehen: Sektoren wechseln, beide behalten welche
+      const bnd = fm.boundaries().find((b) => (b.a === ha && b.b === hb) || (b.a === hb && b.b === ha));
+      if (!bnd) fail('Sektortest: kein Trenner zwischen den Armeen');
+      else {
+        const before = count(ha);
+        const theirs = all.filter((r) => fm.assign.get(r) === hb);
+        const R = g.sectors.regions[theirs[Math.floor(theirs.length / 2)]];
+        fm.moveBoundary(ha, hb, bnd, R);
+        if (count(ha) === before && theirs.length > 1) fail('Sektortest: Trenner verschiebt nichts');
+        if (!count(ha) || !count(hb)) fail('Sektortest: Trenner nimmt einer Armee alle Sektoren');
+      }
+      // Eine Division der Armee B bekommt einen eigenen Sektor und verlässt den Auftrag der Armee
+      const d = B.children[0], r = all.find((x) => fm.assign.get(x) === hb);
+      fm.paint(d, [r]);
+      if (fm.holdOf(d) !== d.front.hold || fm.members(fm.holdOf(B) || { formation: B }).includes(d)) fail('Sektortest: eigene Front einer Division greift nicht');
+      // Die Grenze wächst ins neutrale Land: neue Grenzsektoren übernehmen ihre Front
+      for (let s = 0; s < 90 * 30; s++) { fm.update(STEP); g.step(STEP); g.events.length = 0; }
+      const now = [...fm.sectorInfo().regions.keys()];
+      const open = now.filter((x) => !fm.assign.get(x)).length;
+      if (open > now.length * 0.1) fail(`Sektortest: ${open} von ${now.length} Grenzsektoren ohne Front nach 90 s`);
+    }
+  }
+  if (!failed) console.log('ok   Frontsektoren: Aufteilen, Trenner, eigene Division, Erben');
 }
 
 // --- Baumenü: Ausbildung, Vorlagen, Abbruch, Ausrüstung ---------------------------------

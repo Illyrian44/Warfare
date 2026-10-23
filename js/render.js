@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=97';
-import { classify } from './map.js?v=97';
-import { frontBadge, pointAt } from './fronts.js?v=97';
-import { LEVELS, REGIMENT, DIVISION, formationOf, divisionColor, unitsOf, divisionOf } from './orbat.js?v=97';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=98';
+import { classify } from './map.js?v=98';
+import { frontBadge, chainLength } from './fronts.js?v=98';
+import { LEVELS, REGIMENT, DIVISION, ARMY, formationOf, divisionColor, armyColor, unitsOf, divisionOf } from './orbat.js?v=98';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -15,10 +15,11 @@ const TERRAIN_RGB = {
 const PX_PER_CELL = 5;  // Auflösung des Geländebilds
 const TERR_PX = 3;      // Auflösung der Gebietsfarben
 
-// Fronten sind nur zu sehen, wenn sie gebraucht werden: Front der ausgewählten Division,
-// geöffnetes Frontmenü, Angriff in Planung oder „Fronten“ eingeschaltet
+// Einzelheiten einer Divisionsfront (Abschnitt, Zahl der Kompanien) nur bei Bedarf: Division
+// ausgewählt, Front angetippt oder Angriff in Planung. Die Fronten der Armeen sind immer zu
+// sehen (siehe drawHolds)
 export function isFrontShown(f, ui) {
-  if (ui.showFronts || f === ui.front) return true;
+  if (f === ui.front) return true;
   if (ui.frontMode && ui.frontMode.plan && ui.frontMode.plan.includes(f)) return true;
   for (const u of ui.selection) if (divisionOf(u) === f.division) return true;
   return false;
@@ -277,10 +278,17 @@ export class Renderer {
     const me = this.human;
     const visible = (u) => u.owner === me || ui.revealAll || game.isVisible(me, u.x, u.y);
 
-    // Feindliche Fronten bleiben verborgen; eigene nur bei Bedarf, dazu ungedeckte Grenzstücke
-    if (fronts) {
+    // Feindliche Fronten bleiben verborgen. Eigene: Bänder je Armee bzw. Division mit
+    // eigenem Auftrag, ungedeckte Grenzstücke, Einzelheiten der ausgewählten Divisionen
+    if (fronts && ui.showFronts) {
       this.drawUncovered(fronts.uncovered(), px);
-      for (const f of fronts.fronts) if (isFrontShown(f, ui)) this.drawFront(f, px, f === ui.front);
+      this.drawHolds(fronts, px);
+    }
+    if (fronts) {
+      for (const f of fronts.fronts) {
+        if (isFrontShown(f, ui)) this.drawFront(f, px, f === ui.front);
+        else if (ui.showFronts && (f.plan || f.attack)) this.drawOrders(f, px);
+      }
     }
 
     // Geplante Wege eigener Einheiten
@@ -380,6 +388,13 @@ export class Renderer {
       }
     }
 
+    // Abzeichen der Armeefronten und Trenner über den Truppen
+    this.holdHits = [];
+    if (fronts && ui.showFronts) {
+      this.drawHoldBadges(fronts, px, ui);
+      this.drawBoundaries(fronts, px);
+    }
+
     // Weg oder Front, die gerade gezeichnet wird
     if (ui.drawPath && ui.drawPath.length > 1) {
       ctx.strokeStyle = ui.frontMode ? PLAYER_COLORS[me] : 'rgba(255,255,255,0.95)';
@@ -405,13 +420,13 @@ export class Renderer {
     }
   }
 
-  // Grenzstücke ohne Front: dezent rot gestrichelt
+  // Grenzstücke ohne Front: rot gestrichelt
   drawUncovered(parts, px) {
     const { ctx } = this;
-    ctx.setLineDash([6 * px, 6 * px]);
+    ctx.setLineDash([7 * px, 5 * px]);
     ctx.lineCap = 'butt';
-    ctx.strokeStyle = 'rgba(255,80,60,0.8)';
-    ctx.lineWidth = 3 * px;
+    ctx.strokeStyle = 'rgba(255,80,60,0.9)';
+    ctx.lineWidth = 4 * px;
     for (const c of parts) {
       ctx.beginPath();
       ctx.moveTo(c[0].x, c[0].y);
@@ -421,10 +436,122 @@ export class Renderer {
     ctx.setLineDash([]);
   }
 
-  // Frontlinie wie in Hearts of Iron: dicke Linie mit Zacken Richtung Feind
+  // Fronten der Armeen (bzw. Divisionen mit eigenem Auftrag) wie in Hearts of Iron: breites
+  // Band in ihrer Farbe hinter der Linie, darauf die Frontlinie mit Zacken Richtung Feind,
+  // kurze Querstriche an den Sektorgrenzen
+  drawHolds(fronts, px) {
+    const { ctx } = this;
+    ctx.lineJoin = 'round';
+    for (const hd of fronts.holds) {
+      const color = holdColor(hd);
+      for (const c of fronts.holdChains(hd)) {
+        if (c.length < 2) continue;
+        ctx.beginPath();
+        ctx.moveTo(c[0].x, c[0].y);
+        for (const p of c) ctx.lineTo(p.x, p.y);
+        ctx.lineCap = 'butt';
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 16 * px;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.lineWidth = 5.5 * px;
+        ctx.stroke();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3 * px;
+        ctx.stroke();
+        drawTeeth(ctx, c, px, color);
+        // Sektorgrenzen
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+        ctx.lineWidth = 1.5 * px;
+        ctx.beginPath();
+        for (let k = 1; k < c.length; k++) {
+          if (c[k].r === c[k - 1].r) continue;
+          const x = (c[k].x + c[k - 1].x) / 2, y = (c[k].y + c[k - 1].y) / 2;
+          const nx = c[k].nx || 0, ny = c[k].ny || 0;
+          ctx.moveTo(x - nx * 9 * px, y - ny * 9 * px);
+          ctx.lineTo(x + nx * 4 * px, y + ny * 4 * px);
+        }
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Abzeichen je Armeefront an ihrem längsten Stück: NATO-Symbol, Name, Divisionen und
+  // Sektoren, Ampel für die Besetzung (Kompanien je Sektor). Antippen wählt den Verband.
+  drawHoldBadges(fronts, px, ui) {
+    const { ctx } = this;
+    const selDivs = new Set([...ui.selection].map(divisionOf).filter(Boolean));
+    for (const hd of fronts.holds) {
+      const chains = fronts.holdChains(hd);
+      let best = null;
+      for (const c of chains) if (!best || chainLength(c) > chainLength(best)) best = c;
+      if (!best || best.length < 2) continue;
+      const p = best[Math.floor(best.length / 2)];
+      const st = fronts.holdStatus(hd);
+      const color = holdColor(hd);
+      const name = hd.formation.name;
+      const sub = hd.kind === 'line' ? `${st.divs} Div · Linie` : `${st.divs} Div · ${st.sectors} Sek`;
+      ctx.font = `600 ${11 * px}px system-ui, sans-serif`;
+      const tw = Math.max(ctx.measureText(name).width, ctx.measureText(sub).width);
+      const hw = (tw + 34 * px) / 2, hh = 15 * px;
+      const off = 40 * px; // hinter die Linie, ins eigene Gebiet
+      const x = p.x - (p.nx || 0) * off, y = p.y - (p.ny || 0) * off;
+      const chosen = fronts.members(hd).some((d) => selDivs.has(d));
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5 * px;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(20,30,44,0.92)';
+      ctx.fillRect(x - hw, y - hh, hw * 2, hh * 2);
+      ctx.fillStyle = color;
+      ctx.fillRect(x - hw, y - hh, 5 * px, hh * 2);
+      ctx.strokeStyle = chosen ? '#fff' : color;
+      ctx.lineWidth = (chosen ? 2.5 : 1.5) * px;
+      ctx.strokeRect(x - hw, y - hh, hw * 2, hh * 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(name, x - hw + 10 * px, y - 6 * px);
+      ctx.font = `${10 * px}px system-ui, sans-serif`;
+      ctx.fillStyle = '#b8c6d6';
+      ctx.fillText(sub, x - hw + 10 * px, y + 6.5 * px);
+      ctx.beginPath();
+      ctx.arc(x + hw - 8 * px, y - 7 * px, 3.5 * px, 0, Math.PI * 2);
+      ctx.fillStyle = STATUS_COLORS[st.level];
+      ctx.fill();
+      this.holdHits.push({ hd, x, y, hw, hh });
+    }
+  }
+
+  // Trenner zwischen zwei Armeefronten: ziehen verschiebt die Naht
+  drawBoundaries(fronts, px) {
+    const { ctx } = this;
+    for (const b of fronts.boundaries()) {
+      const r = 7 * px;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#14202e';
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2 * px;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 2.2 * px, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+    }
+  }
+
+  // Einzelheiten einer Divisionsfront: ihr Abschnitt in der Farbe der Division, Zahl der
+  // Kompanien, dazu Angriffsziel und -achse
   drawFront(f, px, selected) {
     const { ctx } = this;
-    const color = PLAYER_COLORS[f.owner || this.human];
+    const color = divisionColor(f.division);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     for (const c of f.chains) {
@@ -432,110 +559,30 @@ export class Renderer {
       ctx.beginPath();
       ctx.moveTo(c[0].x, c[0].y);
       for (const p of c) ctx.lineTo(p.x, p.y);
-      ctx.strokeStyle = selected ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.55)';
-      ctx.lineWidth = (selected ? 10 : 9) * px;
+      ctx.strokeStyle = selected ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = (selected ? 8 : 7) * px;
       ctx.stroke();
       ctx.strokeStyle = color;
-      ctx.lineWidth = 5.5 * px;
+      ctx.lineWidth = 4 * px;
       ctx.stroke();
-
-      // Zacken in festen Bildschirmabständen
-      const step = 16 * px, tooth = 8 * px, half = 5 * px;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      let carry = step / 2;
-      for (let i = 1; i < c.length; i++) {
-        const a = c[i - 1], b = c[i];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const seg = Math.hypot(dx, dy);
-        if (!seg) continue;
-        const tx = dx / seg, ty = dy / seg;
-        // Normale zur Feindseite ausrichten
-        let nx = -ty, ny = tx;
-        const fx = (a.nx + b.nx), fy = (a.ny + b.ny);
-        if (nx * fx + ny * fy < 0) { nx = -nx; ny = -ny; }
-        let d = carry;
-        while (d < seg) {
-          const x = a.x + tx * d, y = a.y + ty * d;
-          ctx.moveTo(x - tx * half, y - ty * half);
-          ctx.lineTo(x + nx * tooth, y + ny * tooth);
-          ctx.lineTo(x + tx * half, y + ty * half);
-          d += step;
-        }
-        carry = d - seg;
-      }
-      ctx.fill();
     }
-
-    // NATO-Führungszeichen: Phasenlinie als Ziel und Hauptangriffsachse.
-    // Geplant = gestrichelt, laufend = durchgezogen (wie in APP-6)
-    if (f.plan || f.attack) {
-      const order = f.plan || f.attack;
-      const planned = !!f.plan;
-      drawPhaseLine(ctx, order.line, order.name, px, color, planned);
-      const active = f.units.filter((u) => !u.rotating);
-      const from = active.length && f.attack
-        ? { x: active.reduce((a, u) => a + u.x, 0) / active.length, y: active.reduce((a, u) => a + u.y, 0) / active.length }
-        : frontBadge(f);
-      const to = polylineMid(order.line);
-      if (from && to && Math.hypot(to.x - from.x, to.y - from.y) > 50 * px) {
-        drawAxisOfAdvance(ctx, from, to, px, color, planned);
-      }
-    }
-
-    // Grenzen der Divisionsabschnitte als Querstriche, darunter Farbband der Division
-    if (f.sections && f.sections.length) {
-      for (const sec of f.sections) {
-        if (!sec.div) continue;
+    // Enden des Abschnitts: Querstrich wie an Divisionsgrenzen
+    const chains = f.chains.filter((c) => c.length >= 2);
+    if (chains.length) {
+      const first = chains[0], last = chains[chains.length - 1];
+      for (const p of [first[0], last[last.length - 1]]) {
         ctx.beginPath();
-        const steps = Math.max(2, Math.ceil((sec.to - sec.from) / 6));
-        let lx = null, ly = null;
-        for (let k = 0; k <= steps; k++) {
-          const p = pointAt(f.chains, sec.from + (sec.to - sec.from) * k / steps);
-          if (!p) continue;
-          const off = -7 * px; // hinter der Linie
-          const x = p.x + (p.nx || 0) * off, y = p.y + (p.ny || 0) * off;
-          // Sprung zwischen getrennten Teillinien nicht verbinden
-          if (lx === null || Math.hypot(x - lx, y - ly) > 20) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-          lx = x; ly = y;
-        }
-        ctx.strokeStyle = divisionColor(sec.div);
-        ctx.lineWidth = 4 * px;
-        ctx.stroke();
-      }
-      for (let i = 1; i < f.sections.length; i++) {
-        const p = pointAt(f.chains, f.sections[i].from);
-        if (!p) continue;
-        ctx.beginPath();
-        ctx.moveTo(p.x - (p.nx || 0) * 13 * px, p.y - (p.ny || 0) * 13 * px);
-        ctx.lineTo(p.x + (p.nx || 0) * 9 * px, p.y + (p.ny || 0) * 9 * px);
+        ctx.moveTo(p.x - (p.nx || 0) * 15 * px, p.y - (p.ny || 0) * 15 * px);
+        ctx.lineTo(p.x + (p.nx || 0) * 11 * px, p.y + (p.ny || 0) * 11 * px);
         ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 3 * px;
+        ctx.lineWidth = 3.5 * px;
         ctx.stroke();
         ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1.4 * px;
+        ctx.lineWidth = 1.6 * px;
         ctx.stroke();
       }
     }
-
-    // Enden eines Grenzabschnitts: Querstrich wie an Divisionsgrenzen
-    if (f.kind === 'segment') {
-      const chains = f.chains.filter((c) => c.length >= 2);
-      if (chains.length) {
-        const first = chains[0], last = chains[chains.length - 1];
-        for (const p of [first[0], last[last.length - 1]]) {
-          ctx.beginPath();
-          ctx.moveTo(p.x - (p.nx || 0) * 15 * px, p.y - (p.ny || 0) * 15 * px);
-          ctx.lineTo(p.x + (p.nx || 0) * 11 * px, p.y + (p.ny || 0) * 11 * px);
-          ctx.strokeStyle = '#fff';
-          ctx.lineWidth = 3.5 * px;
-          ctx.stroke();
-          ctx.strokeStyle = '#000';
-          ctx.lineWidth = 1.6 * px;
-          ctx.stroke();
-        }
-      }
-    }
+    this.drawOrders(f, px);
 
     const b = frontBadge(f);
     if (!b) return;
@@ -547,11 +594,30 @@ export class Renderer {
     ctx.lineWidth = 2 * px;
     ctx.strokeStyle = selected ? '#f2c94c' : '#fff';
     ctx.stroke();
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = '#000';
     ctx.font = `bold ${12 * px}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(f.units.length), b.x, b.y + 0.5 * px);
+  }
+
+  // NATO-Führungszeichen: Phasenlinie als Ziel und Hauptangriffsachse in der Farbe der
+  // Armee. Geplant = gestrichelt, laufend = durchgezogen (wie in APP-6)
+  drawOrders(f, px) {
+    if (!f.plan && !f.attack) return;
+    const { ctx } = this;
+    const color = holdColor(f.hold);
+    const order = f.plan || f.attack;
+    const planned = !!f.plan;
+    drawPhaseLine(ctx, order.line, order.name, px, color, planned);
+    const active = f.units.filter((u) => !u.rotating);
+    const from = active.length && f.attack
+      ? { x: active.reduce((a, u) => a + u.x, 0) / active.length, y: active.reduce((a, u) => a + u.y, 0) / active.length }
+      : frontBadge(f);
+    const to = polylineMid(order.line);
+    if (from && to && Math.hypot(to.x - from.x, to.y - from.y) > 50 * px) {
+      drawAxisOfAdvance(ctx, from, to, px, color, planned);
+    }
   }
 
   // Handel: Kolonnen (kleiner Lastwagen) und Schiffe in der Farbe ihrer Seite; fremde nur in Sicht
@@ -798,6 +864,41 @@ function drawSupplyWarning(ctx, x, y, px) {
   ctx.fillStyle = '#000';
   ctx.fillRect(x - 0.45 * px, y - s * 0.45, 0.9 * px, s * 0.7);
   ctx.fillRect(x - 0.45 * px, y + s * 0.38, 0.9 * px, 0.9 * px);
+}
+
+// Ampel der Besetzung einer Armeefront (siehe FrontManager.holdStatus)
+const STATUS_COLORS = { good: '#4cd17a', thin: '#f2c94c', weak: '#ff6b5b', none: '#9a9a9a' };
+
+export function holdColor(hd) {
+  return hd.formation.level === ARMY ? armyColor(hd.formation) : divisionColor(hd.formation);
+}
+
+// Zacken entlang einer Frontlinie in festen Bildschirmabständen, zur Feindseite
+function drawTeeth(ctx, c, px, color) {
+  const step = 16 * px, tooth = 7 * px, half = 4.5 * px;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  let carry = step / 2;
+  for (let i = 1; i < c.length; i++) {
+    const a = c[i - 1], b = c[i];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const seg = Math.hypot(dx, dy);
+    if (!seg) continue;
+    const tx = dx / seg, ty = dy / seg;
+    let nx = -ty, ny = tx;
+    const fx = (a.nx || 0) + (b.nx || 0), fy = (a.ny || 0) + (b.ny || 0);
+    if (nx * fx + ny * fy < 0) { nx = -nx; ny = -ny; }
+    let d = carry;
+    while (d < seg) {
+      const x = a.x + tx * d, y = a.y + ty * d;
+      ctx.moveTo(x - tx * half, y - ty * half);
+      ctx.lineTo(x + nx * tooth, y + ny * tooth);
+      ctx.lineTo(x + tx * half, y + ty * half);
+      d += step;
+    }
+    carry = d - seg;
+  }
+  ctx.fill();
 }
 
 function polylineMid(line) {
