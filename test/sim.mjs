@@ -22,8 +22,9 @@ const { cycleSelection } = await load('input');
 const { KM, CELL, CITY_BORDER, UNIT_BORDER } = await load('config');
 
 const STEP = 1 / 30;
-// Sekunden Spielzeit, bis die Partie entschieden sein muss (mit mehr Seiten dauert es länger)
-const maxTime = (np) => (np >= 5 ? 40 : 20) * 60;
+// Sekunden Spielzeit, bis die Partie entschieden sein muss (mit mehr Seiten dauert es länger;
+// gleiche Karte und Seitenzahl streuen je nach Zufall etwa zwischen 11 und 21 Minuten)
+const maxTime = (np) => (np >= 5 ? 45 : 30) * 60;
 // Zufall der Partie, Karte, Zahl der Seiten (alle von der KI gespielt)
 // QUICK=1 npm test: nur die schnellen Prüfungen, ohne ganze Partien
 const CASES = process.env.QUICK ? [] : [[1, 'balkan', 2], [42, 'mitteleuropa', 3], [777, 'balkan', 5]];

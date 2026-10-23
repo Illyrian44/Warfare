@@ -1,6 +1,6 @@
-import { unitStrength } from './game.js?v=102';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=102';
-import { pointAt } from './fronts.js?v=102';
+import { unitStrength } from './game.js?v=103';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=103';
+import { pointAt } from './fronts.js?v=103';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -85,27 +85,39 @@ export class HQManager {
     return !u.path.length;
   }
 
+  // Sichtbare Feinde bzw. eigene Kompanien im Umkreis, aus dem Raster des Spielschritts
+  // (statt jedes Mal alle Kompanien durchzugehen)
+  foesNear(p, x, y, r) {
+    const g = this.game;
+    return g.unitGrid.within(x, y, r).filter((e) => g.hostile(e.owner, p) && g.isVisible(p, e.x, e.y));
+  }
+
+  ownNear(p, x, y, r) {
+    return this.game.unitGrid.within(x, y, r).filter((o) => o.owner === p);
+  }
+
   command() {
     const g = this.game;
     for (const p of g.players) {
       const enemies = g.units.filter((e) => g.hostile(e.owner, p) && g.isVisible(p, e.x, e.y));
+      // laufende Abriegelungen dieser Seite (für sealBreakthrough)
+      this.sealing = g.units.filter((o) => o.owner === p && o.hqTask === 'abriegeln' && o.hqOrder > g.time && o.path.length);
       for (const f of g.orbat[p].all(DIVISION)) {
         const hq = f.hq;
         if (!hq || !hq.alive) continue;
         const units = unitsOf(f);
         if (units.length < 2) continue;
-        if (!this.sealBreakthrough(p, f, hq, units, enemies)) this.balance(p, units, enemies);
+        if (!this.sealBreakthrough(p, f, hq, units, enemies)) this.balance(p, units);
       }
-      this.coverGaps(p, enemies);
+      this.coverGaps(p);
     }
   }
 
   // HQs sprechen sich ab: ist der Frontabschnitt einer Division (weitgehend) leer,
   // fordert ihr HQ bei den HQs der Nachbarfronten Hilfe an; der Nachbar mit Reserven
   // schickt Kompanien hinüber, bis die eigene Division den Abschnitt wieder besetzen kann
-  coverGaps(p, enemies) {
+  coverGaps(p) {
     const g = this.game;
-    const own = g.units.filter((u) => u.owner === p && !u.rotating);
     // Über die Divisionen suchen: auch ein ganz verlassener Abschnitt bittet um Hilfe
     const fronts = g.orbat[p].all(DIVISION).map((d) => d.front)
       .filter((f) => f && f.chains.length && !f.attack && f.neighbors && f.neighbors.length);
@@ -119,8 +131,7 @@ export class HQManager {
         total++;
         const pt = pointAt(f.chains, t);
         if (!pt) continue;
-        if (!own.some((u) => Math.abs(u.x - pt.x) < GAP_COVER && Math.abs(u.y - pt.y) < GAP_COVER &&
-          Math.hypot(u.x - pt.x, u.y - pt.y) < GAP_COVER)) gaps.push(pt);
+        if (!this.ownNear(p, pt.x, pt.y, GAP_COVER).some((u) => !u.rotating)) gaps.push(pt);
       }
       if (!total || gaps.length / total < 0.5) continue; // Abschnitt ausreichend besetzt
       if ((div.helpUntil || 0) > g.time) continue;       // Hilfe ist schon unterwegs
@@ -130,8 +141,7 @@ export class HQManager {
       for (const nf of f.neighbors) {
         const nd = nf.division;
         if (!nd || nd.dissolved || nf.attack || !nd.hq || !nd.hq.alive) continue;
-        const free = unitsOf(nd).filter((u) => this.controllable(u) &&
-          !enemies.some((e) => Math.hypot(e.x - u.x, e.y - u.y) < PRESSURE_RADIUS));
+        const free = unitsOf(nd).filter((u) => this.controllable(u) && !this.foesNear(p, u.x, u.y, PRESSURE_RADIUS).length);
         if (!best || free.length > best.free.length) best = { div: nd, free };
       }
       if ((div.askUntil || 0) > g.time) continue; // nicht ständig neu funken
@@ -166,7 +176,7 @@ export class HQManager {
     for (const e of enemies) {
       const d = Math.hypot(e.x - hq.x, e.y - hq.y);
       if (d > COMMAND_RANGE || d >= bd) continue;
-      if (g.units.some((o) => o.owner === p && Math.hypot(o.x - e.x, o.y - e.y) < 40)) continue;
+      if (this.ownNear(p, e.x, e.y, 40).length) continue;
       let city = cities[0], cd = Infinity;
       for (const c of cities) { const dc = Math.hypot(c.x - e.x, c.y - e.y); if (dc < cd) { cd = dc; city = c; } }
       const line = units.filter((u) => Math.hypot(u.x - e.x, u.y - e.y) < 220);
@@ -174,8 +184,7 @@ export class HQManager {
       const lineDist = Math.min(...line.map((u) => Math.hypot(u.x - city.x, u.y - city.y)));
       if (cd >= lineDist - SEAL_DEPTH) continue;
       // Schon ein Regiment unterwegs dorthin?
-      if (g.units.some((o) => o.owner === p && o.hqTask === 'abriegeln' && o.hqOrder > g.time &&
-        o.path.length && Math.hypot(o.path[o.path.length - 1].x - e.x, o.path[o.path.length - 1].y - e.y) < 80)) continue;
+      if (this.sealing.some((o) => Math.hypot(o.path[o.path.length - 1].x - e.x, o.path[o.path.length - 1].y - e.y) < 80)) continue;
       target = e; bd = d;
     }
     if (!target) return false;
@@ -190,7 +199,7 @@ export class HQManager {
       const comps = reg.units.filter((u) => u.hp > 0);
       if (!comps.length || !comps.every((u) => this.controllable(u) && u.org > u.maxOrg * 0.5)) continue;
       // Nur Regimenter ohne Feinddruck: sonst reißt das Abriegeln neue Lücken
-      if (comps.some((u) => enemies.some((e) => Math.hypot(e.x - u.x, e.y - u.y) < PRESSURE_RADIUS))) continue;
+      if (comps.some((u) => this.foesNear(p, u.x, u.y, PRESSURE_RADIUS).length)) continue;
       const cx = comps.reduce((a, u) => a + u.x, 0) / comps.length;
       const cy = comps.reduce((a, u) => a + u.y, 0) / comps.length;
       const d = Math.hypot(cx - target.x, cy - target.y);
@@ -212,12 +221,11 @@ export class HQManager {
   }
 
   // Kräfte angleichen: Kompanie mit größtem Überdruck bekommt Verstärkung aus ruhigen Abschnitten
-  balance(p, units, enemies) {
-    const near = (list, x, y, r) => list.reduce((a, o) => (Math.hypot(o.x - x, o.y - y) <= r ? a + unitStrength(o) : a), 0);
-    const own = this.game.units.filter((o) => o.owner === p);
+  balance(p, units) {
+    const sum = (list) => list.reduce((a, o) => a + unitStrength(o), 0);
     const rated = units.map((u) => {
-      const pressure = near(enemies, u.x, u.y, PRESSURE_RADIUS);
-      const support = near(own, u.x, u.y, SUPPORT_RADIUS);
+      const pressure = sum(this.foesNear(p, u.x, u.y, PRESSURE_RADIUS));
+      const support = sum(this.ownNear(p, u.x, u.y, SUPPORT_RADIUS));
       return { u, pressure, gap: pressure - support };
     });
     let moves = 0;
@@ -232,7 +240,7 @@ export class HQManager {
       }
       if (!donor) continue;
       // Hinter die bedrängte Kompanie, vom Feind abgewandt
-      const foes = enemies.filter((e) => Math.hypot(e.x - hot.u.x, e.y - hot.u.y) <= PRESSURE_RADIUS);
+      const foes = this.foesNear(p, hot.u.x, hot.u.y, PRESSURE_RADIUS);
       const ex = foes.reduce((a, e) => a + e.x, 0) / foes.length, ey = foes.reduce((a, e) => a + e.y, 0) / foes.length;
       const dl = Math.hypot(hot.u.x - ex, hot.u.y - ey) || 1;
       const side = (moves % 2 ? 1 : -1) * 14;

@@ -2,13 +2,13 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS, DIPLOMACY, GROWTH,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=102';
-import { mulberry32 } from './rng.js?v=102';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=102';
-import { HQManager } from './hq.js?v=102';
-import { SupplyNetwork } from './supply.js?v=102';
-import { Trade } from './trade.js?v=102';
-import { Production } from './production.js?v=102';
+} from './config.js?v=103';
+import { mulberry32 } from './rng.js?v=103';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=103';
+import { HQManager } from './hq.js?v=103';
+import { SupplyNetwork } from './supply.js?v=103';
+import { Trade } from './trade.js?v=103';
+import { Production } from './production.js?v=103';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -430,7 +430,7 @@ export class Game {
       const lvl = c.owner ? c.buildings.fort : 0;
       if (!lvl) continue;
       const r = CITY_CAPTURE_RADIUS * 1.5;
-      for (const u of U) {
+      for (const u of grid.near(c, 1)) { // Rasterfeld (PAIR_REACH) größer als r
         if (u.owner === c.owner && u.incoming && Math.abs(u.x - c.x) < r && Math.abs(u.y - c.y) < r) u.incoming *= 1 - 0.15 * lvl;
       }
     }
@@ -489,7 +489,7 @@ export class Game {
     this.terrTimer -= dt;
     if (this.terrTimer <= 0) {
       this.terrTimer = 0.25;
-      const grid = this.bucketUnits(PAIR_REACH);
+      const grid = this.bucketUnits(PAIR_REACH); // neu einsortiert: ohne Tote, mit neuen Kompanien
       // Städte färben das Land ringsum, aber nur Felder, die näher an der Stadt liegen als an
       // feindlichen Truppen (sonst fiele das Land hinter Truppen vor der Stadt an sie zurück)
       const cityRing = Math.ceil(CITY_BORDER * 2 / PAIR_REACH);
@@ -559,7 +559,8 @@ export class Game {
   }
 
   // Kompanien in Rasterfelder der Größe size einsortieren (Index _k = Stelle in units).
-  // near(u, r): alle Kompanien in den Feldern bis r Felder um u (u selbst eingeschlossen)
+  // near(u, r): alle Kompanien in den Feldern bis r Felder um u (u selbst eingeschlossen;
+  // dieselbe Liste bei jedem Aufruf). within(x, y, r): alle im Umkreis r (neue Liste)
   bucketUnits(size) {
     const gw = Math.ceil(this.map.worldW / size) + 1, gh = Math.ceil(this.map.worldH / size) + 1;
     if (!this.buckets || this.buckets.size !== size) this.buckets = { size, cells: Array.from({ length: gw * gh }, () => []) };
@@ -581,6 +582,16 @@ export class Game {
           }
         }
         return out;
+      },
+      within(px, py, r) {
+        const res = [], r2 = r * r, k = Math.ceil(r / size);
+        const cx = at(px, gw), cy = at(py, gh);
+        for (let y = Math.max(0, cy - k); y <= Math.min(gh - 1, cy + k); y++) {
+          for (let x = Math.max(0, cx - k); x <= Math.min(gw - 1, cx + k); x++) {
+            for (const o of cells[y * gw + x]) if ((o.x - px) ** 2 + (o.y - py) ** 2 <= r2) res.push(o);
+          }
+        }
+        return res;
       },
     };
   }
@@ -790,8 +801,9 @@ export class Game {
 
     for (const c of this.cities) {
       const present = slots();
-      for (const u of this.units) {
-        if (Math.abs(u.x - c.x) > CITY_CAPTURE_RADIUS || Math.abs(u.y - c.y) > CITY_CAPTURE_RADIUS) continue;
+      // Raster vom Anfang des Schritts: seitdem bewegt sich keine Kompanie um ein ganzes Feld
+      for (const u of this.unitGrid.near(c, 1)) {
+        if (u.hp <= 0 || Math.abs(u.x - c.x) > CITY_CAPTURE_RADIUS || Math.abs(u.y - c.y) > CITY_CAPTURE_RADIUS) continue;
         if (!u.broken && Math.hypot(u.x - c.x, u.y - c.y) <= CITY_CAPTURE_RADIUS) present[u.owner]++;
       }
       // Erobern kann nur eine einzige Seite, die mit dem Besitzer verfeindet ist (oder jede bei
