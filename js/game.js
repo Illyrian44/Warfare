@@ -2,13 +2,13 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS, DIPLOMACY, GROWTH,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=101';
-import { mulberry32 } from './rng.js?v=101';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=101';
-import { HQManager } from './hq.js?v=101';
-import { SupplyNetwork } from './supply.js?v=101';
-import { Trade } from './trade.js?v=101';
-import { Production } from './production.js?v=101';
+} from './config.js?v=102';
+import { mulberry32 } from './rng.js?v=102';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=102';
+import { HQManager } from './hq.js?v=102';
+import { SupplyNetwork } from './supply.js?v=102';
+import { Trade } from './trade.js?v=102';
+import { Production } from './production.js?v=102';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -299,8 +299,7 @@ export class Game {
   }
 
   // rivals: feindliche Einheiten in der Nähe; ein Feld bekommt nur, wer näher dran ist.
-  // take = false: nur eigenes Land halten, weder neutrales noch feindliches einnehmen;
-  // take = 'neutral': nur neutrales Land dazunehmen, kein feindliches
+  // take = false: nur eigenes Land halten, weder neutrales noch feindliches einnehmen
   paint(owner, x, y, radius, rivals = null, take = true) {
     const { w, h } = this.map;
     const cr = radius / CELL;
@@ -316,7 +315,7 @@ export class Game {
         if (!this.map.isLand(i)) continue;
         const cur = this.territory[i];
         // Verbündetes Land wird nie eingenommen, neutrales und feindliches nur mit take
-        if (cur !== owner && (!take || (cur && (take === 'neutral' || !this.hostile(owner, cur))))) continue;
+        if (cur !== owner && (!take || (cur && !this.hostile(owner, cur)))) continue;
         if (rivals && rivals.length) {
           const px = (xx + 0.5) * CELL, py = (yy + 0.5) * CELL;
           const own = (px - x) ** 2 + (py - y) ** 2;
@@ -490,16 +489,18 @@ export class Game {
     this.terrTimer -= dt;
     if (this.terrTimer <= 0) {
       this.terrTimer = 0.25;
-      // Städte halten ihren Kern und nehmen ringsum nur neutrales Land; feindliches Land
-      // gewinnen allein Truppen zurück (sonst fiele Land hinter feindlichen Truppen an die Stadt)
+      const grid = this.bucketUnits(PAIR_REACH);
+      // Städte färben das Land ringsum, aber nur Felder, die näher an der Stadt liegen als an
+      // feindlichen Truppen (sonst fiele das Land hinter Truppen vor der Stadt an sie zurück)
+      const cityRing = Math.ceil(CITY_BORDER * 2 / PAIR_REACH);
       for (const c of this.cities) {
         if (!c.owner) continue;
-        this.paint(c.owner, c.x, c.y, CITY_CAPTURE_RADIUS);
-        this.paint(c.owner, c.x, c.y, CITY_BORDER, null, 'neutral');
+        const rivals = grid.near(c, cityRing).filter((o) => this.hostile(o.owner, c.owner) &&
+          Math.abs(o.x - c.x) < CITY_BORDER * 2 && Math.abs(o.y - c.y) < CITY_BORDER * 2);
+        this.paint(c.owner, c.x, c.y, CITY_BORDER, rivals);
       }
       // Grenze liegt zwischen gegnerischen Truppen, nicht hinter ihnen
       const reach = UNIT_BORDER * 2;
-      const grid = this.bucketUnits(PAIR_REACH);
       const ring = Math.ceil(reach / PAIR_REACH);
       for (const u of this.units) {
         const rivals = grid.near(u, ring).filter((o) => this.hostile(o.owner, u.owner) &&

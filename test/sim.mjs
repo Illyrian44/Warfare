@@ -198,7 +198,7 @@ function checkState(g, label, ais) {
 {
   // Seite 1 steht vor einer Stadt von Seite 2 und hält das Land ringsum, Seite 2 hat keine
   // Truppen: das Land hinter den eigenen Truppen darf nicht an die Stadt zurückfallen
-  // (früher färbte jede Stadt ständig 80 Einheiten um sich ein, auch feindliches Land)
+  // (früher färbte jede Stadt ständig 80 Einheiten um sich ein, auch hinter feindlichen Truppen)
   const g = new Game(realMap('mitteleuropa', 1));
   g.growTimer = Infinity;
   const c = g.cities[g.starts[2]];
@@ -206,9 +206,11 @@ function checkState(g, label, ais) {
   const { w, h } = g.map;
   const dist = (i) => Math.hypot((i % w + 0.5) * CELL - c.x, (Math.floor(i / w) + 0.5) * CELL - c.y);
   for (let i = 0; i < w * h; i++) if (g.map.isLand(i) && dist(i) < 140 && dist(i) > 30) g.territory[i] = 1;
-  for (const u of g.units) { u.x = c.x + 60; u.y = c.y; u.path = []; }
+  g.units.forEach((u, k) => { u.x = c.x + 35; u.y = c.y + (k - (g.units.length - 1) / 2) * 15; u.path = []; }); // Linie vor der Stadt
+  // hinter den Truppen: näher an ihnen als an der Stadt, aber außer Reichweite ihrer eigenen Färbung
+  const near = (i) => Math.min(...g.units.map((u) => Math.hypot((i % w + 0.5) * CELL - u.x, (Math.floor(i / w) + 0.5) * CELL - u.y)));
   const behind = [];
-  for (let i = 0; i < w * h; i++) if (g.territory[i] === 1 && dist(i) < CITY_BORDER && g.units.every((u) => Math.hypot((i % w + 0.5) * CELL - u.x, (Math.floor(i / w) + 0.5) * CELL - u.y) > UNIT_BORDER + CELL)) behind.push(i);
+  for (let i = 0; i < w * h; i++) if (g.territory[i] === 1 && dist(i) < CITY_BORDER && near(i) < dist(i) && near(i) > UNIT_BORDER + CELL) behind.push(i);
   for (let s = 0; s < 10 * 30; s++) { g.step(STEP); g.events.length = 0; }
   const lost = behind.filter((i) => g.territory[i] !== 1).length;
   if (!behind.length) fail('Stadt ohne Truppen: Testaufbau ohne Land hinter den Truppen');
