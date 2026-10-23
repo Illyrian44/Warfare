@@ -19,7 +19,7 @@ const { REGIMENT, DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, strength, division
 const { formationSlots } = await load('formation');
 const { FrontManager } = await load('fronts');
 const { cycleSelection } = await load('input');
-const { KM, CELL, CITY_BORDER, UNIT_BORDER } = await load('config');
+const { KM, CELL, CITY_BORDER, UNIT_BORDER, DIPLOMACY } = await load('config');
 
 const STEP = 1 / 30;
 // Sekunden Spielzeit, bis die Partie entschieden sein muss (mit mehr Seiten dauert es länger;
@@ -217,6 +217,60 @@ function checkState(g, label, ais) {
   if (!behind.length) fail('Stadt ohne Truppen: Testaufbau ohne Land hinter den Truppen');
   else if (lost) fail(`Stadt ohne Truppen holt sich ${lost} von ${behind.length} Feldern hinter den eigenen Truppen zurück`);
   else console.log(`ok   Feindliche Stadt ohne Truppen nimmt kein Land (${behind.length} Felder geprüft)`);
+}
+
+// --- Bündnisende: Ankündigung, Waffenruhe, Räumen, dann Krieg -----------------------
+{
+  const g = new Game(realMap('mitteleuropa', 1), { players: 3 });
+  g.growTimer = Infinity;
+  const c2 = g.cities[g.starts[2]];
+  g.units = [];
+  // Land von Seite 1 gleich neben der Stadt von Seite 2
+  let land = null;
+  for (let a = 0; a < 6.28 && !land; a += 0.2) {
+    const x = c2.x + Math.cos(a) * 150, y = c2.y + Math.sin(a) * 150;
+    if ([0.4, 0.7, 1].every((f) => g.map.passableAt(c2.x + (x - c2.x) * f, c2.y + (y - c2.y) * f))) land = { x, y };
+  }
+  g.paint(1, land.x, land.y, 70);
+  const u1 = g.spawnUnit(1, 'light', c2), u2 = g.spawnUnit(2, 'light', c2);
+  u2.x = u1.x + 12; u2.y = u1.y;
+  const seen = new Set();
+  let fought = false; // haben sich die beiden in der Waffenruhe beschossen?
+  const run = (sec) => {
+    for (let s = 0; s < sec * 30; s++) {
+      g.step(STEP);
+      if (g.inTruce(1, 2) && (u1.target === u2 || u2.target === u1)) fought = true;
+      for (const e of g.events) seen.add(e.type);
+      g.events.length = 0;
+    }
+  };
+  g.answerOffer(g.offerAlliance(1, 2).id, true);
+  const key = g.pairKey(1, 2);
+  run(2);
+  g.allySince.set(key, g.time - DIPLOMACY.duration + 30); // noch 30 s
+  run(1);
+  const warned = seen.has('allianceEnding') && g.allied(1, 2);
+  g.allySince.set(key, g.time - DIPLOMACY.duration - 1);
+  run(1);
+  const truce = seen.has('allianceExpired') && !g.allied(1, 2) && g.inTruce(1, 2) && !g.hostile(1, 2);
+  // Seite 2 schickt ihre Kompanie mitten in der Waffenruhe ins Land von Seite 1: zurück
+  run(4);
+  u2.path = g.map.findPath(u2.x, u2.y, land.x, land.y) || [];
+  run(2);
+  const end2 = u2.path.length ? u2.path[u2.path.length - 1] : u2;
+  const sentBack = g.territory[g.map.cellIndex(end2.x, end2.y)] !== 1;
+  run(DIPLOMACY.truce - 10);
+  const left = g.territory[g.map.cellIndex(u1.x, u1.y)] === 1;
+  const noFight = !fought && u1.hp > 0 && u2.hp > 0;
+  run(4);
+  const war = seen.has('truceEnded') && g.hostile(1, 2) && !g.inTruce(1, 2);
+  if (!warned) fail('Bündnisende: Auslaufen nicht angekündigt');
+  else if (!truce) fail('Bündnisende: keine Waffenruhe nach dem Auslaufen');
+  else if (!noFight) fail('Bündnisende: in der Waffenruhe wurde gekämpft');
+  else if (!left) fail('Bündnisende: Kompanie hat das Land des früheren Verbündeten nicht geräumt');
+  else if (!sentBack) fail('Bündnisende: Kompanie darf in der Waffenruhe ins fremde Land marschieren');
+  else if (!war) fail('Bündnisende: nach der Waffenruhe kein Krieg');
+  else console.log('ok   Bündnisende: Ankündigung, Waffenruhe, Räumen, dann Krieg');
 }
 
 // --- Baumenü: Ausbildung, Vorlagen, Abbruch, Ausrüstung ---------------------------------

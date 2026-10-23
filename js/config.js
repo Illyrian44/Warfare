@@ -84,6 +84,8 @@ export const DIPLOMACY = {
   breakShare: 0.45,   // hält ein Verbündeter so viel Land, bricht die KI das Bündnis
   duration: 480,      // Bündnisse laufen nach dieser Zeit (s) aus, ohne Verrat
   cooldown: 120,      // danach können sich die beiden so lange nicht erneut verbünden
+  warn: 60,           // so lange (s) vor dem Auslaufen wird es angekündigt
+  truce: 60,          // Waffenruhe nach dem Ende (Auslaufen oder Bruch): beide räumen das Land des anderen
 };
 // Eigenes Gebiet wächst langsam in angrenzendes neutrales Land (wie bei OpenFront): alle
 // every Sekunden wird ein neutrales Feld mit eigenen Nachbarn (und keinem fremden) mit

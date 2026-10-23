@@ -1,17 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=103';
-import { Game } from './game.js?v=103';
-import { AI } from './ai.js?v=103';
-import { Renderer, isFrontShown } from './render.js?v=103';
-import { Input } from './input.js?v=103';
-import { formationSlots } from './formation.js?v=103';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=103';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=103';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=103';
-import { templateCost } from './production.js?v=103';
+import { loadMap, MAPS } from './map.js?v=104';
+import { Game } from './game.js?v=104';
+import { AI } from './ai.js?v=104';
+import { Renderer, isFrontShown } from './render.js?v=104';
+import { Input } from './input.js?v=104';
+import { formationSlots } from './formation.js?v=104';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=104';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=104';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=104';
+import { templateCost } from './production.js?v=104';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '103'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '104'; // für Kartendaten, siehe scripts/bump-version.sh
 
 const app = {
   game: null,
@@ -499,20 +499,22 @@ const app = {
     const rows = g.players.filter((p) => p !== me).map((p) => {
       const ally = g.allied(me, p), out = !g.alive(p);
       const since = g.allySince.get(g.pairKey(me, p));
+      const truce = g.truces.get(g.pairKey(me, p));
       const pending = g.offers.some((o) => o.from === me && o.to === p);
-      let status = out ? 'ausgeschieden' : ally ? `verbündet${since !== undefined ? ` · noch ${mmss(DIPLOMACY.duration - (g.time - since))}` : ''}` : 'Krieg';
+      let status = out ? 'ausgeschieden' : ally ? `verbündet${since !== undefined ? ` · noch ${mmss(DIPLOMACY.duration - (g.time - since))}` : ''}`
+        : truce !== undefined ? `Waffenruhe · Krieg in ${mmss(truce - g.time)}` : 'Krieg';
       if (!out && g.isTraitor(p)) status += ' · Verräter';
       let btn = '';
       if (!out && ally) btn = `<button data-act="break" data-p="${p}" title="Bündnis brechen – danach giltst du ${DIPLOMACY.traitorTime / 60} Minuten als Verräter">Brechen</button>`;
       else if (!out && pending) btn = '<button disabled>Angebot läuft …</button>';
       else if (!out) {
-        const wait = g.canAlly(me, p) ? 0 : Math.ceil(g.allyCooldown.get(g.pairKey(me, p)) - g.time);
-        btn = `<button data-act="offer" data-p="${p}"${wait ? ` disabled title="Nach einem ausgelaufenen Bündnis erst in ${wait} s wieder"` : ''}>${wait ? `in ${wait} s` : 'Bündnis anbieten'}</button>`;
+        const wait = g.canAlly(me, p) ? 0 : Math.ceil(Math.max(truce ?? 0, g.allyCooldown.get(g.pairKey(me, p)) ?? 0) - g.time);
+        btn = `<button data-act="offer" data-p="${p}"${wait ? ` disabled title="Nach einem Bündnis erst in ${wait} s wieder"` : ''}>${wait ? `in ${wait} s` : 'Bündnis anbieten'}</button>`;
       }
       return `<div class="diploRow${out ? ' out' : ''}"><span class="dot" style="background:${PLAYER_COLORS[p]}"></span>` +
         `<span class="who"><b>${PLAYER_NAMES[p]}</b><small>${status} · ${g.citiesOf(p).length} Städte · ${Math.round(g.share[p] * 100)} % Land</small></span>${btn}</div>`;
     });
-    const note = `<p class="muted">Verbündete kämpfen nicht gegeneinander, nehmen sich kein Land und handeln mit Bonus. Bündnisse laufen nach ${DIPLOMACY.duration / 60} Minuten aus; wer bricht, gilt ${DIPLOMACY.traitorTime / 60} Minuten als Verräter. Gewinnen kann nur eine Seite allein.${g.isTraitor(me) ? ' <b>Du giltst gerade als Verräter – die KI lehnt Bündnisse ab.</b>' : ''}</p>`;
+    const note = `<p class="muted">Verbündete kämpfen nicht gegeneinander, nehmen sich kein Land und handeln mit Bonus. Bündnisse laufen nach ${DIPLOMACY.duration / 60} Minuten aus (angekündigt ${DIPLOMACY.warn} s vorher); wer bricht, gilt ${DIPLOMACY.traitorTime / 60} Minuten als Verräter. Nach jedem Bündnis folgen ${DIPLOMACY.truce} s Waffenruhe, in denen beide das Land des anderen räumen. Gewinnen kann nur eine Seite allein.${g.isTraitor(me) ? ' <b>Du giltst gerade als Verräter – die KI lehnt Bündnisse ab.</b>' : ''}</p>`;
     const html = rows.join('') + note;
     if (html !== this.diploSig) { this.diploSig = html; $('diploBody').innerHTML = html; }
   },
@@ -741,12 +743,19 @@ const app = {
         this.toast(`${PLAYER_NAMES[ev.to]} lehnt das Bündnis ab`, 'bad');
         this.diploSig = null;
       } else if (ev.type === 'allianceBroken') {
-        if (ev.by === this.human) this.toast(`Bündnis mit ${PLAYER_NAMES[ev.other]} gebrochen – ${DIPLOMACY.traitorTime / 60} Minuten giltst du als Verräter`, 'bad');
-        else if (ev.other === this.human) this.toast(`⚠ ${PLAYER_NAMES[ev.by]} hat das Bündnis gebrochen!`, 'bad');
+        const truce = `${DIPLOMACY.truce} s Waffenruhe, beide räumen das Land des anderen`;
+        if (ev.by === this.human) this.toast(`Bündnis mit ${PLAYER_NAMES[ev.other]} gebrochen – ${truce}. ${DIPLOMACY.traitorTime / 60} Minuten giltst du als Verräter`, 'bad');
+        else if (ev.other === this.human) this.toast(`⚠ ${PLAYER_NAMES[ev.by]} hat das Bündnis gebrochen! ${truce}`, 'bad');
         else this.toast(`${PLAYER_NAMES[ev.by]} bricht das Bündnis mit ${PLAYER_NAMES[ev.other]}`);
         this.diploSig = null;
+      } else if (ev.type === 'allianceEnding' && (ev.a === this.human || ev.b === this.human)) {
+        this.toast(`⏳ Das Bündnis mit ${PLAYER_NAMES[ev.a === this.human ? ev.b : ev.a]} läuft in ${ev.left} s aus`);
+        this.diploSig = null;
       } else if (ev.type === 'allianceExpired' && (ev.a === this.human || ev.b === this.human)) {
-        this.toast(`Das Bündnis mit ${PLAYER_NAMES[ev.a === this.human ? ev.b : ev.a]} ist ausgelaufen`);
+        this.toast(`Das Bündnis mit ${PLAYER_NAMES[ev.a === this.human ? ev.b : ev.a]} ist ausgelaufen – ${DIPLOMACY.truce} s Waffenruhe, deine Truppen räumen sein Land`);
+        this.diploSig = null;
+      } else if (ev.type === 'truceEnded' && (ev.a === this.human || ev.b === this.human)) {
+        this.toast(`⚔ Waffenruhe mit ${PLAYER_NAMES[ev.a === this.human ? ev.b : ev.a]} vorbei – ab jetzt Krieg`, 'bad');
         this.diploSig = null;
       } else if (ev.type === 'convoyLost' && ev.owner === this.human) {
         // höchstens alle 20 s melden
@@ -880,7 +889,7 @@ const app = {
     const myU = g.unitsOf(this.human).length;
     // Je Seite: Städte und Landanteil; ausgeschiedene durchgestrichen
     const side = (p) => `<span class="side${g.alive(p) ? '' : ' out'}" title="${PLAYER_NAMES[p]}: ${Math.round(g.share[p] * 100)} % des Landes">` +
-      `<span class="dot" style="background:${PLAYER_COLORS[p]}"></span>${g.allied(this.human, p) ? '🤝' : ''}${g.citiesOf(p).length}` +
+      `<span class="dot" style="background:${PLAYER_COLORS[p]}"></span>${g.allied(this.human, p) ? '🤝' : g.inTruce(this.human, p) ? '🕊' : ''}${g.citiesOf(p).length}` +
       `<small class="muted">·${Math.round(g.share[p] * 100)}%</small></span>`;
     $('hudCities').innerHTML = side(this.human) + ' <span class="muted">Städte</span> ' +
       g.players.filter((p) => p !== this.human).map(side).join(' ') +
