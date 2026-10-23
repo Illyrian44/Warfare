@@ -17,8 +17,9 @@ import { execFileSync } from 'node:child_process';
 
 const REGIONS = {
   balkan: {
-    name: 'Balkan', lon: [13.3, 29.8], lat: [39.5, 46.8], km: 6, cities: 28, minKm: 75, riverRank: 7, roadRank: 5,
+    name: 'Balkan', lon: [13.3, 29.8], lat: [34.7, 46.8], km: 6, cities: 60, minKm: 75, riverRank: 7, roadRank: 5,
     countries: ['SVN', 'HRV', 'BIH', 'SRB', 'MNE', 'KOS', 'ALB', 'MKD', 'GRC', 'BGR', 'ROU', 'MDA', 'HUN'],
+    include: ['Pristina', 'Tetovo'], // immer dabei, auch dicht an einer größeren Stadt
   },
   mitteleuropa: {
     name: 'Mitteleuropa', lon: [4.4, 19.6], lat: [46.4, 55.2], km: 6, cities: 28, minKm: 75, riverRank: 7, roadRank: 5,
@@ -33,6 +34,8 @@ const GERMAN = {
   Zurich: 'Zürich', Geneva: 'Genf', Krakow: 'Krakau', 'Kraków': 'Krakau', Antwerp: 'Antwerpen', Ghent: 'Gent',
   Brunswick: 'Braunschweig', Aachen: 'Aachen', Gdansk: 'Danzig', 'Gdańsk': 'Danzig', 'Wrocław': 'Breslau',
   Szczecin: 'Stettin', 'Poznań': 'Posen', Thessaloniki: 'Thessaloniki', Chisinau: 'Chișinău', Sofia: 'Sofia',
+  Pristina: 'Prishtina', Pec: 'Peja', Patra: 'Patras', Ioanina: 'Ioannina', Seres: 'Serres', Komatini: 'Komotini',
+  Khaskovo: 'Haskowo', Turnovo: 'Weliko Tarnowo', Iraklio: 'Heraklion', Hania: 'Chania', Kerkira: 'Korfu',
 };
 const ZOOM = 7;           // Kachelstufe der Höhendaten (~1,2 km je Pixel bei 45° N)
 const SUB = 3;            // Stichproben je Feld und Richtung
@@ -354,13 +357,23 @@ async function build(id) {
     .map((f) => f.properties)
     .filter((p) => p.longitude >= r.lon[0] + 0.15 && p.longitude <= r.lon[1] - 0.15 && p.latitude >= r.lat[0] + 0.15 && p.latitude <= r.lat[1] - 0.15)
     .filter((p) => r.countries.includes(p.adm0_a3))
-    .map((p) => ({ name: GERMAN[p.name] || p.name, pop: p.pop_max || 0, cap: p.adm0cap ? 1 : 0, x: toX(p.longitude), y: toY(p.latitude) }))
-    .sort((a, b) => (b.cap - a.cap) || (b.pop - a.pop));
+    .map((p) => ({
+      name: GERMAN[p.name] || p.name, pop: p.pop_max || 0, cap: p.adm0cap ? 1 : 0, must: r.include?.includes(p.name) ? 1 : 0,
+      x: toX(p.longitude), y: toY(p.latitude),
+    }))
+    .sort((a, b) => (b.must - a.must) || (b.cap - a.cap) || (b.pop - a.pop));
   const minD = r.minKm / r.km;
   const cities = [];
   for (const c of places) {
     if (cities.length >= r.cities) break;
     let cx = Math.floor(c.x), cy = Math.floor(c.y);
+    // Inselstädte fallen weg (auch Hafenstädte im Meer, deren nächstes Land eine Insel ist)
+    let land = -1, ld = Infinity;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const x = cx + dx, y = cy + dy, i = y * w + x;
+      if (x >= 0 && y >= 0 && x < w && y < h && !sea[i] && comp[i] >= 0 && Math.hypot(dx, dy) < ld) { ld = Math.hypot(dx, dy); land = i; }
+    }
+    if (land >= 0 && comp[land] !== main) continue;
     // auf begehbares Land rücken (Hafenstädte liegen oft auf einem Meeresfeld)
     if (!passable(cy * w + cx) || water[cy * w + cx] || comp[cy * w + cx] !== main) {
       let best = null, bd = Infinity;
@@ -374,8 +387,9 @@ async function build(id) {
       if (!best) continue;
       [cx, cy] = best;
     }
-    if (cities.some((o) => Math.hypot(o.x - cx, o.y - cy) < minD)) continue;
-    cities.push({ name: c.name, pop: c.pop, x: cx, y: cy });
+    // neben festen Städten genügt der halbe Abstand (Tetovo liegt nah bei Skopje)
+    if (cities.some((o) => Math.hypot(o.x - cx, o.y - cy) < (c.must || o.must ? minD / 2 : minD))) continue;
+    cities.push({ name: c.name, pop: c.pop, x: cx, y: cy, must: c.must });
   }
 
   const b64 = (a) => Buffer.from(a.buffer, a.byteOffset, a.byteLength).toString('base64');
@@ -384,7 +398,7 @@ async function build(id) {
   const out = {
     id, name: r.name, kmPerCell: r.km, w, h, bounds: { lon: r.lon, lat: r.lat },
     height: b64(height), forest: b64(forest), rivers: b64(rivers), roads: b64(road), off: b64(off),
-    riverLines, roadLines, cities,
+    riverLines, roadLines, cities: cities.map(({ must, ...c }) => c),
     sources: 'Natural Earth (gemeinfrei); Höhen: Terrain Tiles von Mapzen/Tilezen (AWS Open Data)',
   };
   fs.writeFileSync(path.join(outDir, id + '.json'), JSON.stringify(out));

@@ -83,11 +83,14 @@ export const BUILDING_MAX = 3;
 // Bündnisse
 export const DIPLOMACY = {
   traitorTime: 180,   // so lange (s) gilt eine Seite nach einem Bündnisbruch als Verräter
+  traitorDefense: 0.2, // so lange −20 % Verteidigung: ihre Kompanien nehmen 20 % mehr Schaden
   offerTimeout: 25,   // unbeantwortete Angebote an den Spieler verfallen danach
   maxAllies: 1,       // die KI hält höchstens so viele Bündnisse
   breakShare: 0.45,   // hält ein Verbündeter so viel Land, bricht die KI das Bündnis
   duration: 480,      // Bündnisse laufen nach dieser Zeit (s) aus, ohne Verrat
   cooldown: 120,      // danach können sich die beiden so lange nicht erneut verbünden
+  warn: 60,           // so lange (s) vor dem Auslaufen wird es angekündigt
+  truce: 60,          // Waffenruhe nach dem Ende (Auslaufen oder Bruch): beide räumen das Land des anderen
 };
 // Eigenes Gebiet wächst langsam in angrenzendes neutrales Land (wie bei OpenFront): alle
 // every Sekunden wird ein neutrales Feld mit eigenen Nachbarn (und keinem fremden) mit

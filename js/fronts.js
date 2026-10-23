@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=100';
-import { DIVISION, ARMY, formationOf, unitsOf, centerOf } from './orbat.js?v=100';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=107';
+import { DIVISION, ARMY, formationOf, unitsOf, centerOf } from './orbat.js?v=107';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -12,6 +12,7 @@ const DANGER_RADIUS = 45;   // so viel Abstand halten Verschiebungen zu Feinden
 const NEIGHBOR_DIST = 70;   // Fronten, deren Enden so nah beieinander liegen, sind Nachbarn
 const INHERIT_HOPS = 3;     // so weit (in Regionen) sucht ein neuer Grenzsektor nach einer Front
 const PICK_DIST = 30;       // so nah an der Grenze trifft ein Pinselstrich noch einen Sektor
+const ATTACK_STALL = 90;    // Sekunden ohne Fortschritt, nach denen ein Angriff endet
 
 // Fronten wie in Hearts of Iron, in zwei Stufen:
 // 1. Aufträge (this.holds): Eine Armee oder eine einzelne Division hält Frontsektoren
@@ -639,7 +640,9 @@ export class FrontManager {
   // gezeichnete Front ('line') rückt selbst auf die Ziellinie vor.
   startAttack(f) {
     if (!f.plan) return;
-    f.attack = { line: f.plan.line, name: f.plan.name, started: this.game.time };
+    // Plätze nur auf begehbarem Gelände: Stücke der Ziellinie über Meer oder Gebirge fallen weg
+    const parts = passableParts(f.plan.line, this.game.map);
+    f.attack = { line: f.plan.line, name: f.plan.name, started: this.game.time, parts, best: 0, gained: this.game.time };
     f.plan = null;
     for (const u of f.units) u.frontGoal = null;
     this.prepare(f);
@@ -758,8 +761,9 @@ export class FrontManager {
     // liegen die Plätze auf der Ziellinie, die Front selbst bleibt unverändert.
     let target = f.chains, targetLen = f.length;
     if (f.attack) {
-      target = [withNormals(f.attack.line, (p, n) => this.facing(p, n))];
-      targetLen = chainLength(target[0]);
+      if (!f.attack.parts.length) { this.stopAttack(f); this.events.push({ type: 'attackStalled', front: f }); return; }
+      target = f.attack.parts.map((c) => withNormals(c, (p, n) => this.facing(p, n)));
+      targetLen = target.reduce((s, c) => s + chainLength(c), 0);
     }
     const { slots, ordered } = this.sectionSlots(f, active, target, targetLen, !f.attack);
     if (!slots.length) return;
@@ -820,6 +824,13 @@ export class FrontManager {
       if (arrived >= active.length * 0.7) {
         this.stopAttack(f, true);
         this.events.push({ type: 'attackDone', front: f });
+      } else if (arrived > f.attack.best) {
+        f.attack.best = arrived;
+        f.attack.gained = g.time;
+      } else if (g.time - f.attack.gained > ATTACK_STALL) {
+        // Kein Fortschritt mehr (Ziel unerreichbar, Gegner zu stark): zurück in den Abschnitt
+        this.stopAttack(f);
+        this.events.push({ type: 'attackStalled', front: f });
       }
     }
   }
@@ -1234,6 +1245,23 @@ export function frontBadge(f) {
     half -= seg;
   }
   return best[0];
+}
+
+// Begehbare Stücke einer Linie (im Abstand von etwa einem halben Feld geprüft)
+function passableParts(line, map) {
+  const out = [];
+  let cur = null;
+  for (let i = 0; i < line.length; i++) {
+    const a = i ? line[i - 1] : line[0], b = line[i];
+    const n = i ? Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (CELL / 2))) : 1;
+    for (let k = i ? 1 : 0; k <= n; k++) {
+      const p = { x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n };
+      if (map.passableAt(p.x, p.y)) (cur || (cur = [])).push(p);
+      else if (cur) { if (cur.length >= 2) out.push(cur); cur = null; }
+    }
+  }
+  if (cur && cur.length >= 2) out.push(cur);
+  return out.filter((c) => chainLength(c) >= CELL);
 }
 
 function midPoint(a, b) {

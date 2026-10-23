@@ -1,17 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=100';
-import { Game } from './game.js?v=100';
-import { AI } from './ai.js?v=100';
-import { Renderer } from './render.js?v=100';
-import { Input } from './input.js?v=100';
-import { formationSlots } from './formation.js?v=100';
-import { FrontManager, chainLength } from './fronts.js?v=100';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=100';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY, FRONT } from './config.js?v=100';
-import { templateCost } from './production.js?v=100';
+import { loadMap, MAPS } from './map.js?v=107';
+import { Game } from './game.js?v=107';
+import { AI } from './ai.js?v=107';
+import { Renderer } from './render.js?v=107';
+import { Input } from './input.js?v=107';
+import { formationSlots } from './formation.js?v=107';
+import { FrontManager, chainLength } from './fronts.js?v=107';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=107';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY, FRONT } from './config.js?v=107';
+import { templateCost } from './production.js?v=107';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '100'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '107'; // für Kartendaten, siehe scripts/bump-version.sh
 // Reiter der oberen Leiste: Inhalt in der Seitenleiste
 const TAB_BODIES = { build: 'buildBody', city: 'cityBody', diplo: 'diploBody', logistics: 'logiBody', troops: 'troopBody' };
 const TAB_TITLES = { build: 'Produktion', city: 'Städte', diplo: 'Diplomatie', logistics: 'Logistik', troops: 'Truppen' };
@@ -658,20 +658,29 @@ const app = {
     const rows = g.players.filter((p) => p !== me).map((p) => {
       const ally = g.allied(me, p), out = !g.alive(p);
       const since = g.allySince.get(g.pairKey(me, p));
+      const truce = g.truces.get(g.pairKey(me, p));
       const pending = g.offers.some((o) => o.from === me && o.to === p);
-      let status = out ? 'ausgeschieden' : ally ? `verbündet${since !== undefined ? ` · noch ${mmss(DIPLOMACY.duration - (g.time - since))}` : ''}` : 'Krieg';
-      if (!out && g.isTraitor(p)) status += ' · Verräter';
+      let status = out ? 'ausgeschieden' : ally ? `verbündet${since !== undefined ? ` · noch ${mmss(DIPLOMACY.duration - (g.time - since))}` : ''}`
+        : truce !== undefined ? `Waffenruhe · Krieg in ${mmss(truce - g.time)}` : 'Krieg';
+      if (!out && g.isTraitor(p)) status += ` · Verräter (−${DIPLOMACY.traitorDefense * 100} % Verteidigung)`;
       let btn = '';
-      if (!out && ally) btn = `<button data-act="break" data-p="${p}" title="Bündnis brechen – danach giltst du ${DIPLOMACY.traitorTime / 60} Minuten als Verräter">Brechen</button>`;
+      if (!out && ally && this.confirmBreak === p) {
+        // Warnung vor dem Bruch: erst bestätigen
+        return '<div class="diploRow warn">' +
+          `<span class="who"><b>Bündnis mit ${PLAYER_NAMES[p]} brechen?</b><small>⚠ Du wirst ${DIPLOMACY.traitorTime / 60} Minuten internationaler Verräter: ` +
+          `−${DIPLOMACY.traitorDefense * 100} % Verteidigung, und keine KI verbündet sich mit dir.</small></span>` +
+          `<button data-act="breakYes" data-p="${p}" class="attack">Brechen</button><button data-act="breakNo" data-p="${p}">Abbrechen</button></div>`;
+      }
+      if (!out && ally) btn = `<button data-act="break" data-p="${p}" title="Bündnis brechen – danach giltst du ${DIPLOMACY.traitorTime / 60} Minuten als internationaler Verräter (−${DIPLOMACY.traitorDefense * 100} % Verteidigung)">Brechen</button>`;
       else if (!out && pending) btn = '<button disabled>Angebot läuft …</button>';
       else if (!out) {
-        const wait = g.canAlly(me, p) ? 0 : Math.ceil(g.allyCooldown.get(g.pairKey(me, p)) - g.time);
-        btn = `<button data-act="offer" data-p="${p}"${wait ? ` disabled title="Nach einem ausgelaufenen Bündnis erst in ${wait} s wieder"` : ''}>${wait ? `in ${wait} s` : 'Bündnis anbieten'}</button>`;
+        const wait = g.canAlly(me, p) ? 0 : Math.ceil(Math.max(truce ?? 0, g.allyCooldown.get(g.pairKey(me, p)) ?? 0) - g.time);
+        btn = `<button data-act="offer" data-p="${p}"${wait ? ` disabled title="Nach einem Bündnis erst in ${wait} s wieder"` : ''}>${wait ? `in ${wait} s` : 'Bündnis anbieten'}</button>`;
       }
       return `<div class="diploRow${out ? ' out' : ''}"><span class="dot" style="background:${PLAYER_COLORS[p]}"></span>` +
         `<span class="who"><b>${PLAYER_NAMES[p]}</b><small>${status} · ${g.citiesOf(p).length} Städte · ${Math.round(g.share[p] * 100)} % Land</small></span>${btn}</div>`;
     });
-    const note = `<p class="muted">Verbündete kämpfen nicht gegeneinander, nehmen sich kein Land und handeln mit Bonus. Bündnisse laufen nach ${DIPLOMACY.duration / 60} Minuten aus; wer bricht, gilt ${DIPLOMACY.traitorTime / 60} Minuten als Verräter. Gewinnen kann nur eine Seite allein.${g.isTraitor(me) ? ' <b>Du giltst gerade als Verräter – die KI lehnt Bündnisse ab.</b>' : ''}</p>`;
+    const note = `<p class="muted">Verbündete kämpfen nicht gegeneinander, nehmen sich kein Land und handeln mit Bonus. Bündnisse laufen nach ${DIPLOMACY.duration / 60} Minuten aus (angekündigt ${DIPLOMACY.warn} s vorher); wer bricht, ist ${DIPLOMACY.traitorTime / 60} Minuten internationaler Verräter (−${DIPLOMACY.traitorDefense * 100} % Verteidigung, keine neuen Bündnisse mit der KI). Nach jedem Bündnis folgen ${DIPLOMACY.truce} s Waffenruhe, in denen beide das Land des anderen räumen. Gewinnen kann nur eine Seite allein.${g.isTraitor(me) ? ' <b>Du bist gerade internationaler Verräter: −${DIPLOMACY.traitorDefense * 100} % Verteidigung, die KI lehnt Bündnisse ab.</b>' : ''}</p>`;
     const html = rows.join('') + note;
     if (html !== this.diploSig) { this.diploSig = html; $('diploBody').innerHTML = html; }
   },
@@ -864,7 +873,9 @@ const app = {
     const g = this.game, me = this.human, p = +t.dataset.p;
     if (t.dataset.act === 'offer') {
       if (g.offerAlliance(me, p)) this.toast(`Bündnis an ${PLAYER_NAMES[p]} angeboten – die Antwort kommt gleich`);
-    } else if (t.dataset.act === 'break') g.breakAlliance(me, p);
+    } else if (t.dataset.act === 'break') this.confirmBreak = p;
+    else if (t.dataset.act === 'breakNo') this.confirmBreak = 0;
+    else if (t.dataset.act === 'breakYes') { this.confirmBreak = 0; g.breakAlliance(me, p); }
     this.diploSig = null;
     this.updateDiplo();
   },
@@ -1099,12 +1110,20 @@ const app = {
         this.toast(`${PLAYER_NAMES[ev.to]} lehnt das Bündnis ab`, 'bad');
         this.diploSig = null;
       } else if (ev.type === 'allianceBroken') {
-        if (ev.by === this.human) this.toast(`Bündnis mit ${PLAYER_NAMES[ev.other]} gebrochen – ${DIPLOMACY.traitorTime / 60} Minuten giltst du als Verräter`, 'bad');
-        else if (ev.other === this.human) this.toast(`⚠ ${PLAYER_NAMES[ev.by]} hat das Bündnis gebrochen!`, 'bad');
-        else this.toast(`${PLAYER_NAMES[ev.by]} bricht das Bündnis mit ${PLAYER_NAMES[ev.other]}`);
+        const truce = `${DIPLOMACY.truce} s Waffenruhe, beide räumen das Land des anderen`;
+        const penalty = `${DIPLOMACY.traitorTime / 60} Minuten −${DIPLOMACY.traitorDefense * 100} % Verteidigung`;
+        if (ev.by === this.human) this.toast(`Bündnis mit ${PLAYER_NAMES[ev.other]} gebrochen – du bist internationaler Verräter: ${penalty}. ${truce}`, 'bad');
+        else if (ev.other === this.human) this.toast(`⚠ ${PLAYER_NAMES[ev.by]} hat das Bündnis gebrochen und ist internationaler Verräter (${penalty})! ${truce}`, 'bad');
+        else this.toast(`${PLAYER_NAMES[ev.by]} bricht das Bündnis mit ${PLAYER_NAMES[ev.other]} – internationaler Verräter (${penalty})`);
+        this.diploSig = null;
+      } else if (ev.type === 'allianceEnding' && (ev.a === this.human || ev.b === this.human)) {
+        this.toast(`⏳ Das Bündnis mit ${PLAYER_NAMES[ev.a === this.human ? ev.b : ev.a]} läuft in ${ev.left} s aus`);
         this.diploSig = null;
       } else if (ev.type === 'allianceExpired' && (ev.a === this.human || ev.b === this.human)) {
-        this.toast(`Das Bündnis mit ${PLAYER_NAMES[ev.a === this.human ? ev.b : ev.a]} ist ausgelaufen`);
+        this.toast(`Das Bündnis mit ${PLAYER_NAMES[ev.a === this.human ? ev.b : ev.a]} ist ausgelaufen – ${DIPLOMACY.truce} s Waffenruhe, deine Truppen räumen sein Land`);
+        this.diploSig = null;
+      } else if (ev.type === 'truceEnded' && (ev.a === this.human || ev.b === this.human)) {
+        this.toast(`⚔ Waffenruhe mit ${PLAYER_NAMES[ev.a === this.human ? ev.b : ev.a]} vorbei – ab jetzt Krieg`, 'bad');
         this.diploSig = null;
       } else if (ev.type === 'convoyLost' && ev.owner === this.human) {
         // höchstens alle 20 s melden
@@ -1130,6 +1149,7 @@ const app = {
     g.events.length = 0;
     for (const ev of this.fronts.events) {
       if (ev.type === 'attackDone') this.toast(`${ev.front.division.name}: Angriffsziel erreicht – sie hält wieder ihren Frontabschnitt`, 'good');
+      else if (ev.type === 'attackStalled') this.toast(`${ev.front.division.name}: Angriff kommt nicht voran (Ziel unerreichbar oder Gegner zu stark) – sie hält wieder ihren Abschnitt`, 'bad');
     }
     this.fronts.events.length = 0;
   },
@@ -1269,7 +1289,7 @@ const app = {
     const myU = g.unitsOf(this.human).length;
     // Je Seite: Städte und Landanteil; ausgeschiedene durchgestrichen
     const side = (p) => `<span class="side${g.alive(p) ? '' : ' out'}" title="${PLAYER_NAMES[p]}: ${Math.round(g.share[p] * 100)} % des Landes">` +
-      `<span class="dot" style="background:${PLAYER_COLORS[p]}"></span>${g.allied(this.human, p) ? '🤝' : ''}${g.citiesOf(p).length}` +
+      `<span class="dot" style="background:${PLAYER_COLORS[p]}"></span>${g.allied(this.human, p) ? '🤝' : g.inTruce(this.human, p) ? '🕊' : ''}${g.citiesOf(p).length}` +
       `<small class="muted">·${Math.round(g.share[p] * 100)}%</small></span>`;
     $('hudCities').innerHTML = side(this.human) + ' <span class="muted">Städte</span> ' +
       g.players.filter((p) => p !== this.human).map(side).join(' ') +
@@ -1349,9 +1369,26 @@ setupChoice('diffChoice', app.settings.difficulty || 'medium');
 $('mapChoice').innerHTML = MAPS.map((m) => `<button data-value="${m.id}">${m.name}</button>`).join('');
 setupChoice('mapChoice', MAPS.some((m) => m.id === app.settings.map) ? app.settings.map : MAPS[0].id);
 setupChoice('oppChoice', String(app.settings.opponents || 1));
+// Handys spielen quer: beim Start Vollbild und Querformat sperren (geht auf Android). Wo das
+// nicht geht (iPhone), bittet im Hochformat ein Hinweis ums Drehen (#rotateHint) und das
+// laufende Spiel hält an.
+const isPhone = () => matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
+function lockLandscape() {
+  if (!isPhone() || !screen.orientation?.lock) return;
+  const el = document.documentElement;
+  const full = document.fullscreenElement || !el.requestFullscreen ? null : el.requestFullscreen({ navigationUI: 'hide' });
+  Promise.resolve(full).then(() => screen.orientation.lock('landscape')).catch(() => { /* nicht unterstützt */ });
+}
+const portrait = matchMedia('(orientation: portrait) and (pointer: coarse) and (max-width: 600px)');
+portrait.addEventListener('change', () => {
+  if (portrait.matches && app.game && !app.paused && $('menu').hidden) app.togglePause();
+});
 $('sectorChoice').innerHTML = FRONT.sectorChoices.map((km) => `<button data-value="${km}">${km} km</button>`).join('');
 setupChoice('sectorChoice', String(FRONT.sectorChoices.includes(app.settings.sectorKm) ? app.settings.sectorKm : FRONT.sectorKm));
-$('startBtn').onclick = () => app.start(randomSeed(), choice('mapChoice'), choice('diffChoice'), +choice('oppChoice'), null, +choice('sectorChoice'));
+$('startBtn').onclick = () => {
+  lockLandscape();
+  app.start(randomSeed(), choice('mapChoice'), choice('diffChoice'), +choice('oppChoice'), null, +choice('sectorChoice'));
+};
 $('pauseBtn').onclick = () => app.togglePause();
 $('speedBtn').onclick = () => app.setSpeed(app.speed >= 3 ? 1 : app.speed + 1);
 // Die Hilfe hebt nur eine Pause auf, die sie selbst ausgelöst hat
@@ -1372,7 +1409,7 @@ $('menuBtn').onclick = () => {
   $('menu').hidden = false;
   $('resumeBtn').hidden = false;
 };
-$('resumeBtn').onclick = () => { $('menu').hidden = true; if (app.paused) app.togglePause(); };
+$('resumeBtn').onclick = () => { lockLandscape(); $('menu').hidden = true; if (app.paused) app.togglePause(); };
 $('selectBtn').onclick = () => app.setSelectMode(!app.ui.selectMode);
 for (const b of document.querySelectorAll('#topbar .tabs button')) b.onclick = () => app.toggleTab(b.dataset.tab);
 $('sideClose').onclick = () => app.setTab(null);
@@ -1513,8 +1550,8 @@ $('refillBtn').onclick = () => { const d = app.selectedDivision(); if (d) app.to
 $('newArmyBtn').onclick = () => app.newArmy();
 $('unArmyBtn').onclick = () => app.removeFromArmy();
 $('centerBtn').onclick = () => app.fitCamera();
-$('againBtn').onclick = () => app.start(app.current.seed, app.current.map, app.current.difficulty, app.current.opponents, null, app.current.sectorKm);
-$('newBtn').onclick = () => app.start(randomSeed(), app.current.map, app.current.difficulty, app.current.opponents, null, app.current.sectorKm);
+$('againBtn').onclick = () => { lockLandscape(); app.start(app.current.seed, app.current.map, app.current.difficulty, app.current.opponents, null, app.current.sectorKm); };
+$('newBtn').onclick = () => { lockLandscape(); app.start(randomSeed(), app.current.map, app.current.difficulty, app.current.opponents, null, app.current.sectorKm); };
 $('endMenuBtn').onclick = () => { $('end').hidden = true; $('menu').hidden = false; $('resumeBtn').hidden = true; };
 
 function loadSettings() {

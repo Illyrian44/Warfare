@@ -205,6 +205,11 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 .diploRow .who small { display: block; color: var(--muted); }
 .diploRow button { min-height: 32px; padding: 0 10px; font-size: 13px; }
 .diploRow.out { opacity: 0.45; }
+/* Warnung vor dem Bündnisbruch */
+.diploRow.warn { flex-wrap: wrap; justify-content: flex-end; background: rgba(224, 65, 47, 0.14); border-radius: 8px; padding: 8px; }
+.diploRow.warn .who { flex-basis: 100%; }
+.diploRow.warn small { color: #ffb4a8; }
+.diploRow button.attack { background: #c0392b; border-color: #e0412f; font-weight: 600; }
 #offerBox {
   position: fixed; left: 50%; transform: translateX(-50%); top: calc(var(--top) + 14px);
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 94vw;
@@ -320,12 +325,165 @@ body.side-open #bottomLeft { left: 358px; }
 .toast.out { opacity: 0; transform: translateY(-6px); }
 
 /* Overlays */
-/* Startmenü: Pixel-Bild im Hintergrund (scharf skaliert), leicht abgedunkelt */
-#menu {
-  background: linear-gradient(rgba(8, 14, 22, 0.25), rgba(8, 14, 22, 0.55)), url('../assets/menu-bg.png') 50% 20% / cover no-repeat, #0b111a;
-  image-rendering: pixelated;
+/* Startmenü: Pixel-Bild im Hintergrund (scharf skaliert). Oben ein Papierschild mit dem Titel,
+   unten die Einstellungen als Stabsakte (Schreibmaschine, Stempel); die Mitte bleibt frei. */
+@font-face {
+  font-family: 'Black Ops One';
+  src: url('../assets/fonts/black-ops-one.woff2') format('woff2');
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
-#menu .panel { image-rendering: auto; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
+@font-face {
+  font-family: 'Special Elite';
+  src: url('../assets/fonts/special-elite.woff2') format('woff2');
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+#menu {
+  --paper: #e6d9b8;
+  --ink: #2b2418;
+  --ink-soft: #4f4330;
+  --ink-faint: #6d5d3f;
+  --stamp: #a81e18;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: max(4vh, 16px, env(safe-area-inset-top)) 16px max(1vh, 6px, env(safe-area-inset-bottom));
+  background: linear-gradient(rgba(8, 14, 22, 0.35), rgba(8, 14, 22, 0) 35%, rgba(8, 14, 22, 0) 60%, rgba(8, 14, 22, 0.55)),
+    url('../assets/menu-bg.png') 50% 20% / cover no-repeat, #0b111a;
+  image-rendering: pixelated;
+  font-family: 'Special Elite', 'Courier New', monospace;
+}
+#menu > * { image-rendering: auto; }
+#menu .menuHead { margin-bottom: auto; } /* Einstellungen und Fußzeile an den unteren Rand */
+#menu .menuHead .label {
+  background: linear-gradient(rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.06)), var(--paper);
+  color: var(--ink);
+  border-radius: 3px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65), inset 0 0 50px rgba(120, 90, 40, 0.35);
+  transform: rotate(-1.2deg);
+  padding: 14px 32px 12px;
+  max-width: min(92vw, 720px);
+  text-align: center;
+}
+#menu h1 {
+  margin: 0;
+  font-family: 'Black Ops One', system-ui, sans-serif;
+  font-weight: 400;
+  font-size: clamp(38px, 6vw, 82px);
+  line-height: 1.05;
+  letter-spacing: 1px;
+  color: #20190f;
+  white-space: nowrap;
+}
+#menu h1 .dot { width: 0.4em; height: 0.4em; box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25); }
+#menu .sub {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px dashed #8b7b5a;
+  color: var(--ink-soft);
+  font-size: clamp(12px, 1.2vw, 15px);
+  letter-spacing: 1px;
+}
+#menu .panel {
+  position: relative;
+  width: min(100%, 1180px);
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1.25fr 1.15fr 0.9fr;
+  align-items: end;
+  gap: 8px 22px;
+  padding: 34px 26px 20px;
+  border: none;
+  background: linear-gradient(rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.06)),
+    repeating-linear-gradient(0deg, rgba(110, 90, 50, 0.05) 0 1px, transparent 1px 26px), var(--paper);
+  color: var(--ink);
+  border-radius: 3px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.7), inset 0 0 60px rgba(120, 90, 40, 0.35);
+}
+#menu .fileNo { position: absolute; left: 26px; top: 10px; font-size: 12px; color: var(--ink-faint); }
+#menu .stamp {
+  position: absolute;
+  right: 22px;
+  top: -16px;
+  transform: rotate(6deg);
+  font-family: 'Black Ops One', system-ui, sans-serif;
+  font-size: 15px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(170, 30, 25, 0.85);
+  border: 3px solid rgba(170, 30, 25, 0.85);
+  border-radius: 4px;
+  padding: 2px 8px;
+  background: rgba(230, 217, 184, 0.75);
+  pointer-events: none;
+}
+#menu .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+#menu #sectorChoice button { white-space: nowrap; }
+#menu label { margin: 0; color: var(--ink-faint); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+#menu .choice button {
+  font-family: inherit;
+  font-size: 15px;
+  min-width: 0;
+  padding: 0.45em 0.4em;
+  background: transparent;
+  color: var(--ink);
+  border: 2px solid var(--ink-soft);
+  border-radius: 2px;
+}
+#menu .choice button:hover { background: rgba(43, 36, 24, 0.1); }
+#menu .choice button.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+#menu .actions { display: flex; flex-direction: column; gap: 6px; grid-column: 1 / -1; }
+#menu #startBtn {
+  margin: 0;
+  padding: 0.5em 1.1em;
+  min-height: 56px;
+  font-family: 'Black Ops One', system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 20px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--stamp);
+  border: 4px double var(--stamp);
+  border-radius: 4px;
+  transform: rotate(-1.5deg);
+}
+#menu #startBtn:hover { background: rgba(168, 30, 24, 0.1); filter: none; }
+#menu #resumeBtn { font-family: inherit; background: var(--ink); color: var(--paper); border: 2px solid var(--ink); border-radius: 2px; min-height: 34px; padding: 0.3em 0.8em; }
+#menu .error { grid-column: 1 / -1; margin: 0; color: var(--stamp); }
+#menu .menuFoot { position: relative; width: 100%; display: flex; justify-content: center; align-items: center; min-height: 24px; }
+#menu .menuFoot .link { font-family: inherit; color: #efe4c8; min-height: 0; padding: 2px 8px; text-shadow: 0 1px 3px #000; }
+#menu #version { position: absolute; right: 0; color: rgba(239, 228, 200, 0.7); font-size: 12px; }
+@media (max-width: 1080px) {
+  #menu .panel { grid-template-columns: 1fr 1.2fr 1.2fr 0.9fr; padding: 32px 18px 16px; }
+  #menu .actions { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  #menu .panel { grid-template-columns: 1fr 1fr; }
+}
+@media (max-aspect-ratio: 9/10) {
+  #menu { background-position: 0 0, 18% 50%; } /* Hochformat: der blaue Offizier */
+}
+@media (max-width: 560px) {
+  #menu .menuHead .label { padding: 10px 16px 8px; }
+  #menu .sub { font-size: 11px; letter-spacing: 0.5px; }
+  #menu .panel { grid-template-columns: 1fr; gap: 6px; padding: 30px 14px 14px; }
+  #menu .stamp { font-size: 12px; right: 12px; }
+  #menu .fileNo { left: 14px; font-size: 11px; }
+  #menu .choice button { font-size: 14px; min-height: 36px; padding: 0.3em; }
+  #menu #startBtn { min-height: 48px; font-size: 18px; margin-top: 4px; }
+  #menu #version { display: none; }
+}
+@media (max-height: 520px) and (min-width: 561px) { /* Handy quer */
+  #menu .sub { display: none; }
+  #menu h1 { font-size: 34px; }
+  #menu .menuHead .label { padding: 6px 20px; }
+  #menu .panel { grid-template-columns: 1fr 1fr 1.2fr 0.9fr; gap: 6px 12px; padding: 28px 14px 12px; }
+  #menu .choice { gap: 4px; }
+  #menu .choice button { min-height: 34px; padding: 0.25em 0.2em; font-size: 13px; }
+  #menu #startBtn { min-height: 44px; font-size: 16px; padding: 0.4em 0.7em; }
+}
 .overlay {
   position: fixed;
   inset: 0;
@@ -493,4 +651,75 @@ body.side-open #bottomLeft { left: 358px; }
   #pausedBanner { top: 26%; font-size: 24px; }
   #menu { background-position: 0 0, 18% 50%; } /* Hochformat: der blaue Offizier */
   #toasts { width: calc(100vw - 80px); }
+}
+
+/* Handy quer: wenig Höhe. Oben eine schmale Leiste, Werkzeuge und Kartenmodi als Spalte
+   rechts, unten links Befehle und Armeeleiste kompakt, die Seitenleiste schmaler. */
+@media (orientation: landscape) and (max-height: 500px) {
+  #topbar { padding-top: calc(3px + env(safe-area-inset-top)); padding-bottom: 3px; gap: 6px; }
+  #topbar button { min-height: 30px; padding: 0 0.55em; font-size: 13px; }
+  #topbar .clock button { min-height: 26px; }
+  .stats { font-size: 12px; gap: 2px 8px; }
+  .clock { font-size: 13px; }
+  .alert { min-height: 26px !important; font-size: 12px; }
+  #alerts { min-width: 0; }
+  #helpBtn { display: none; } /* Hilfe über ☰ → Spielanleitung */
+  #seedLabel { display: none; }
+  #sidePanel { width: min(320px, 46vw); font-size: 13px; }
+  .sideHead { padding: 4px 6px 4px 12px; font-size: 14px; }
+  body.side-open #bottomLeft { left: calc(min(320px, 46vw) + 8px); }
+  #bottomRight { bottom: auto; top: calc(var(--top) + 6px); }
+  #bottomRight .group { flex-direction: column; padding: 3px; gap: 3px; }
+  #bottomRight .group small, #bottomRight .lbl { display: none; }
+  #bottomRight .tools .ico { margin: 0; }
+  #bottomRight button { min-height: 28px; min-width: 38px; padding: 0.15em 0.35em; font-size: 11px; }
+  #bottomLeft { right: calc(92px + env(safe-area-inset-right)); bottom: calc(4px + env(safe-area-inset-bottom)); gap: 4px; }
+  #cmdPanel { padding: 4px 6px 6px; max-height: calc(100vh - var(--top) - 130px); overflow-y: auto; }
+  .cmdHead { margin-bottom: 3px; }
+  .cmdHead #cmdTitle { font-size: 12px; }
+  .cmdRow { gap: 3px; }
+  .cmdRow button { min-height: 28px; font-size: 12px; padding: 0.15em 0.45em; }
+  .cmdRow + .cmdRow { margin-top: 3px; padding-top: 3px; }
+  #divRow { padding: 3px; }
+  .divcard { min-width: 92px; padding: 2px 6px 3px 5px; font-size: 11px; }
+  .divcard.armycard { min-width: 120px; }
+  .divcard .regs { display: none; }
+  #toasts { top: calc(var(--top) + 44px); width: min(56vw, 440px); gap: 4px; }
+  .toast { font-size: 12px; padding: 5px 10px; }
+  #pausedBanner { top: calc(var(--top) + 26px); font-size: 18px; padding: 4px 16px; transform: translateX(-50%); }
+  #pausedBanner small { display: inline; margin-left: 8px; font-size: 11px; }
+  #pickBanner { top: calc(var(--top) + 6px); font-size: 13px; }
+  #frontBanner { top: calc(var(--top) + 6px); font-size: 12px; padding: 3px 3px 3px 10px; }
+  #frontBanner button { min-height: 28px; }
+  #offerBox { top: calc(var(--top) + 6px); font-size: 13px; }
+}
+
+/* Handy hoch: gespielt wird quer, der Hinweis bittet ums Drehen */
+#rotateHint { display: none; }
+@media (orientation: portrait) and (pointer: coarse) and (max-width: 600px) {
+  #rotateHint {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    padding: 24px; text-align: center;
+    background: linear-gradient(rgba(8, 14, 22, 0.7), rgba(8, 14, 22, 0.85)), url('../assets/menu-bg.png') 18% 50% / cover no-repeat, #0b111a;
+    image-rendering: pixelated;
+  }
+  #rotateHint .card {
+    image-rendering: auto;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    max-width: 300px; padding: 22px 22px 18px; transform: rotate(-1.2deg);
+    background: linear-gradient(rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.06)), #e6d9b8; color: #2b2418;
+    border-radius: 3px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65), inset 0 0 50px rgba(120, 90, 40, 0.35);
+    font-family: 'Special Elite', 'Courier New', monospace; font-size: 14px;
+  }
+  #rotateHint b { font-family: 'Black Ops One', system-ui, sans-serif; font-weight: 400; font-size: 22px; letter-spacing: 1px; color: #20190f; }
+  #rotateHint .phone {
+    width: 38px; height: 64px; margin: 6px 0 10px; border: 4px solid #2b2418; border-radius: 8px; position: relative;
+    animation: rotatePhone 2.4s ease-in-out infinite;
+  }
+  #rotateHint .phone::after { content: ''; position: absolute; left: 50%; bottom: 3px; width: 8px; height: 3px; margin-left: -4px; border-radius: 2px; background: #2b2418; }
+}
+@keyframes rotatePhone {
+  0%, 25% { transform: rotate(0deg); }
+  55%, 100% { transform: rotate(-90deg); }
 }

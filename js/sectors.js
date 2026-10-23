@@ -1,5 +1,5 @@
-import { CELL } from './config.js?v=100';
-import { mulberry32 } from './rng.js?v=100';
+import { CELL } from './config.js?v=107';
+import { mulberry32 } from './rng.js?v=107';
 
 // Frontsektoren wie die Provinzen in Hearts of Iron: Die Karte wird beim Start einmal in
 // feste Regionen von etwa km Kantenlänge zerlegt. Jede eigene Region an der Grenze ist ein

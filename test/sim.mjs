@@ -19,13 +19,15 @@ const { REGIMENT, DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, strength, division
 const { formationSlots } = await load('formation');
 const { FrontManager } = await load('fronts');
 const { cycleSelection } = await load('input');
-const { KM } = await load('config');
+const { KM, CELL, CITY_BORDER, UNIT_BORDER, DIPLOMACY } = await load('config');
 
 const STEP = 1 / 30;
-// Sekunden Spielzeit, bis die Partie entschieden sein muss (mit mehr Seiten dauert es länger)
-const maxTime = (np) => (np >= 5 ? 40 : 20) * 60;
+// Sekunden Spielzeit, bis die Partie entschieden sein muss (mit mehr Seiten dauert es länger;
+// gleiche Karte und Seitenzahl streuen je nach Zufall etwa zwischen 11 und 21 Minuten)
+const maxTime = (np) => (np >= 5 ? 45 : 30) * 60;
 // Zufall der Partie, Karte, Zahl der Seiten (alle von der KI gespielt)
-const CASES = [[1, 'balkan', 2], [42, 'mitteleuropa', 3], [777, 'balkan', 5]];
+// QUICK=1 npm test: nur die schnellen Prüfungen, ohne ganze Partien
+const CASES = process.env.QUICK ? [] : [[1, 'balkan', 2], [42, 'mitteleuropa', 3], [777, 'balkan', 5]];
 
 let failed = 0;
 const fail = (msg) => { failed++; console.error('  FEHLER: ' + msg); };
@@ -234,6 +236,103 @@ function checkState(g, label, ais) {
     }
   }
   if (!failed) console.log('ok   Frontsektoren: Aufteilen, Trenner, eigene Division, Erben');
+}
+
+// --- Feindliche Städte holen sich kein Land zurück -----------------------------------
+{
+  // Seite 1 steht vor einer Stadt von Seite 2 und hält das Land ringsum, Seite 2 hat keine
+  // Truppen: das Land hinter den eigenen Truppen darf nicht an die Stadt zurückfallen
+  // (früher färbte jede Stadt ständig 80 Einheiten um sich ein, auch hinter feindlichen Truppen)
+  const g = new Game(realMap('mitteleuropa', 1));
+  g.growTimer = Infinity;
+  const c = g.cities[g.starts[2]];
+  g.units = g.units.filter((u) => u.owner === 1);
+  const { w, h } = g.map;
+  const dist = (i) => Math.hypot((i % w + 0.5) * CELL - c.x, (Math.floor(i / w) + 0.5) * CELL - c.y);
+  for (let i = 0; i < w * h; i++) if (g.map.isLand(i) && dist(i) < 140 && dist(i) > 30) g.territory[i] = 1;
+  g.units.forEach((u, k) => { u.x = c.x + 35; u.y = c.y + (k - (g.units.length - 1) / 2) * 15; u.path = []; }); // Linie vor der Stadt
+  // hinter den Truppen: näher an ihnen als an der Stadt, aber außer Reichweite ihrer eigenen Färbung
+  const near = (i) => Math.min(...g.units.map((u) => Math.hypot((i % w + 0.5) * CELL - u.x, (Math.floor(i / w) + 0.5) * CELL - u.y)));
+  const behind = [];
+  for (let i = 0; i < w * h; i++) if (g.territory[i] === 1 && dist(i) < CITY_BORDER && near(i) < dist(i) && near(i) > UNIT_BORDER + CELL) behind.push(i);
+  for (let s = 0; s < 10 * 30; s++) { g.step(STEP); g.events.length = 0; }
+  const lost = behind.filter((i) => g.territory[i] !== 1).length;
+  if (!behind.length) fail('Stadt ohne Truppen: Testaufbau ohne Land hinter den Truppen');
+  else if (lost) fail(`Stadt ohne Truppen holt sich ${lost} von ${behind.length} Feldern hinter den eigenen Truppen zurück`);
+  else console.log(`ok   Feindliche Stadt ohne Truppen nimmt kein Land (${behind.length} Felder geprüft)`);
+}
+
+// --- Bündnisende: Ankündigung, Waffenruhe, Räumen, dann Krieg -----------------------
+{
+  const g = new Game(realMap('mitteleuropa', 1), { players: 3 });
+  g.growTimer = Infinity;
+  const c2 = g.cities[g.starts[2]];
+  g.units = [];
+  // Land von Seite 1 gleich neben der Stadt von Seite 2
+  let land = null;
+  for (let a = 0; a < 6.28 && !land; a += 0.2) {
+    const x = c2.x + Math.cos(a) * 150, y = c2.y + Math.sin(a) * 150;
+    if ([0.4, 0.7, 1].every((f) => g.map.passableAt(c2.x + (x - c2.x) * f, c2.y + (y - c2.y) * f))) land = { x, y };
+  }
+  g.paint(1, land.x, land.y, 70);
+  const u1 = g.spawnUnit(1, 'light', c2), u2 = g.spawnUnit(2, 'light', c2);
+  u2.x = u1.x + 12; u2.y = u1.y;
+  const seen = new Set();
+  let fought = false; // haben sich die beiden in der Waffenruhe beschossen?
+  const run = (sec) => {
+    for (let s = 0; s < sec * 30; s++) {
+      g.step(STEP);
+      if (g.inTruce(1, 2) && (u1.target === u2 || u2.target === u1)) fought = true;
+      for (const e of g.events) seen.add(e.type);
+      g.events.length = 0;
+    }
+  };
+  g.answerOffer(g.offerAlliance(1, 2).id, true);
+  const key = g.pairKey(1, 2);
+  run(2);
+  g.allySince.set(key, g.time - DIPLOMACY.duration + 30); // noch 30 s
+  run(1);
+  const warned = seen.has('allianceEnding') && g.allied(1, 2);
+  g.allySince.set(key, g.time - DIPLOMACY.duration - 1);
+  run(1);
+  const truce = seen.has('allianceExpired') && !g.allied(1, 2) && g.inTruce(1, 2) && !g.hostile(1, 2);
+  // Seite 2 schickt ihre Kompanie mitten in der Waffenruhe ins Land von Seite 1: zurück
+  run(4);
+  u2.path = g.map.findPath(u2.x, u2.y, land.x, land.y) || [];
+  run(2);
+  const end2 = u2.path.length ? u2.path[u2.path.length - 1] : u2;
+  const sentBack = g.territory[g.map.cellIndex(end2.x, end2.y)] !== 1;
+  run(DIPLOMACY.truce - 10);
+  const left = g.territory[g.map.cellIndex(u1.x, u1.y)] === 1;
+  const noFight = !fought && u1.hp > 0 && u2.hp > 0;
+  run(4);
+  const war = seen.has('truceEnded') && g.hostile(1, 2) && !g.inTruce(1, 2);
+  if (!warned) fail('Bündnisende: Auslaufen nicht angekündigt');
+  else if (!truce) fail('Bündnisende: keine Waffenruhe nach dem Auslaufen');
+  else if (!noFight) fail('Bündnisende: in der Waffenruhe wurde gekämpft');
+  else if (!left) fail('Bündnisende: Kompanie hat das Land des früheren Verbündeten nicht geräumt');
+  else if (!sentBack) fail('Bündnisende: Kompanie darf in der Waffenruhe ins fremde Land marschieren');
+  else if (!war) fail('Bündnisende: nach der Waffenruhe kein Krieg');
+  else console.log('ok   Bündnisende: Ankündigung, Waffenruhe, Räumen, dann Krieg');
+}
+
+// --- Internationaler Verräter: −20 % Verteidigung ----------------------------------
+{
+  const loss = (traitor) => {
+    const g = new Game(realMap('mitteleuropa', 1), { players: 2 });
+    g.units = [];
+    const c = g.cities[g.starts[1]];
+    const a = g.spawnUnit(1, 'light', c, 0), b = g.spawnUnit(2, 'light', c, 0);
+    b.x = a.x + 12; b.y = a.y;
+    if (traitor) g.betrayedAt[1] = g.time;
+    g.step(STEP);
+    return { a: a.maxHp - a.hp, b: b.maxHp - b.hp };
+  };
+  const honest = loss(false), traitor = loss(true);
+  const ratio = traitor.a / honest.a;
+  if (!(honest.a > 0) || Math.abs(ratio - (1 + DIPLOMACY.traitorDefense)) > 1e-6) fail(`Verräter: Schaden ×${ratio.toFixed(3)} statt ×${1 + DIPLOMACY.traitorDefense}`);
+  else if (Math.abs(traitor.b - honest.b) > 1e-9) fail('Verräter: auch der Gegner nimmt mehr Schaden');
+  else console.log(`ok   Verräter nimmt ${Math.round(DIPLOMACY.traitorDefense * 100)} % mehr Schaden`);
 }
 
 // --- Baumenü: Ausbildung, Vorlagen, Abbruch, Ausrüstung ---------------------------------

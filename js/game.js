@@ -2,14 +2,14 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS, DIPLOMACY, GROWTH,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND, FRONT,
-} from './config.js?v=100';
-import { buildSectors } from './sectors.js?v=100';
-import { mulberry32 } from './rng.js?v=100';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=100';
-import { HQManager } from './hq.js?v=100';
-import { SupplyNetwork } from './supply.js?v=100';
-import { Trade } from './trade.js?v=100';
-import { Production } from './production.js?v=100';
+} from './config.js?v=107';
+import { buildSectors } from './sectors.js?v=107';
+import { mulberry32 } from './rng.js?v=107';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=107';
+import { HQManager } from './hq.js?v=107';
+import { SupplyNetwork } from './supply.js?v=107';
+import { Trade } from './trade.js?v=107';
+import { Production } from './production.js?v=107';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -58,6 +58,9 @@ export class Game {
     this.betrayedAt = [];     // Zeitpunkt des letzten Bündnisbruchs je Seite
     this.allySince = new Map(); // Bündnis „a:b“ -> Beginn
     this.allyCooldown = new Map(); // ausgelaufenes Bündnis „a:b“ -> frühestens wieder ab
+    this.allyWarned = new Set();   // Bündnisse, deren Auslaufen schon angekündigt ist
+    this.truces = new Map();       // Waffenruhe nach einem Bündnis „a:b“ -> Ende
+    this.withdrawTimer = 0;
     this.growTimer = GROWTH.every;
     this.allies = new Set();  // Bündnisse als „a:b“ (kleinere Nummer zuerst), siehe setAllied
     this.enmity = new Uint8Array(64); // [a * 8 + b] = 1, wenn a und b verfeindet sind
@@ -139,11 +142,14 @@ export class Game {
     this.updateEnmity();
   }
 
+  // Verfeindet ist, wer weder verbündet ist noch in der Waffenruhe nach einem Bündnis steht
   updateEnmity() {
     this.enmity.fill(0);
     for (const a of this.players) {
       for (const b of this.players) {
-        if (a !== b && !this.allies.has(a < b ? `${a}:${b}` : `${b}:${a}`)) this.enmity[a * 8 + b] = 1;
+        if (a === b) continue;
+        const key = this.pairKey(a, b);
+        if (!this.allies.has(key) && !this.truces.has(key)) this.enmity[a * 8 + b] = 1;
       }
     }
   }
@@ -154,8 +160,14 @@ export class Game {
   // Verbündete kämpfen nicht gegeneinander, nehmen sich kein Land und handeln mit Bonus.
   // Angebote warten auf Antwort (offers); wer ein Bündnis bricht, gilt eine Weile als
   // Verräter (betrayedAt), dann lehnt die KI ab. Gewinnen kann nur eine Seite allein.
+  // Endet ein Bündnis (Auslaufen oder Bruch), folgt eine Waffenruhe (DIPLOMACY.truce): beide
+  // räumen das Land des anderen (withdraw), erst danach herrscht Krieg.
   allied(a, b) {
-    return !!a && !!b && a !== b && !this.hostile(a, b);
+    return !!a && !!b && a !== b && this.allies.has(this.pairKey(a, b));
+  }
+
+  inTruce(a, b) {
+    return !!a && !!b && a !== b && this.truces.has(this.pairKey(a, b));
   }
 
   alliesOf(p) {
@@ -170,7 +182,7 @@ export class Game {
 
   // Nach einem ausgelaufenen Bündnis eine Weile kein neues zwischen denselben Seiten
   canAlly(a, b) {
-    return this.time >= (this.allyCooldown.get(this.pairKey(a, b)) ?? -1);
+    return !this.inTruce(a, b) && this.time >= (this.allyCooldown.get(this.pairKey(a, b)) ?? -1);
   }
 
   offerAlliance(from, to) {
@@ -195,11 +207,73 @@ export class Game {
 
   breakAlliance(by, other) {
     if (!this.allied(by, other)) return;
-    this.allySince.delete(this.pairKey(by, other));
-    this.setAllied(by, other, false);
     this.betrayedAt[by] = this.time;
-    this.trade.prune(); // Kolonnen im Land des früheren Verbündeten sind verloren
+    this.endAlliance(by, other);
     this.events.push({ type: 'allianceBroken', by, other });
+  }
+
+  // Bündnis beenden: Waffenruhe, in der beide das Land des anderen räumen
+  endAlliance(a, b) {
+    const key = this.pairKey(a, b);
+    this.allySince.delete(key);
+    this.allyWarned.delete(key);
+    this.allies.delete(key);
+    this.truces.set(key, this.time + DIPLOMACY.truce);
+    this.updateEnmity();
+    this.withdrawTimer = 0; // sofort mit dem Räumen beginnen
+  }
+
+  // Waffenruhe: Kompanien im Land des früheren Verbündeten (oder auf dem Weg dorthin) ziehen
+  // ins eigene Land ab. Der Befehl hat Vorrang vor Fronten, KI und HQ (hqOrder) bis zum Ende
+  // der Waffenruhe; wer trotzdem hineinläuft, wird erneut zurückgeschickt.
+  withdraw() {
+    const tr = this.territory, map = this.map;
+    let budget = 8; // Wegsuchen je Durchgang
+    for (const [key, until] of this.truces) {
+      const [a, b] = key.split(':').map(Number);
+      for (const u of this.units) {
+        if (budget <= 0) return;
+        if (u.owner !== a && u.owner !== b) continue;
+        const other = u.owner === a ? b : a;
+        const end = u.path.length ? u.path[u.path.length - 1] : u;
+        const endsThere = tr[map.cellIndex(end.x, end.y)] === other;
+        if (!endsThere && (tr[map.cellIndex(u.x, u.y)] !== other || u.path.length)) continue; // ist draußen oder auf dem Weg hinaus
+        if ((u.noWithdraw || 0) > this.time) continue;
+        budget--;
+        const to = this.homeCell(u);
+        const path = to && map.findPath(u.x, u.y, to.x, to.y);
+        if (!path) { u.noWithdraw = this.time + 5; continue; }
+        u.path = path;
+        u.stuck = 0;
+        u.hqOrder = until;
+        u.hqTask = 'abziehen';
+        if (u.ai) u.ai = null;
+      }
+    }
+  }
+
+  // Nächstes Feld im eigenen Land, möglichst nicht direkt an der Grenze (Breitensuche)
+  homeCell(u) {
+    const map = this.map, { w, h } = map, tr = this.territory, p = u.owner;
+    const start = map.cellIndex(u.x, u.y);
+    const seen = new Uint8Array(w * h);
+    const queue = [start];
+    seen[start] = 1;
+    let edge = -1;
+    for (let q = 0; q < queue.length && q < 20000; q++) {
+      const i = queue[q], x = i % w;
+      if (tr[i] === p && map.cellPassable(i)) {
+        const inner = [i - 1, i + 1, i - w, i + w].every((j) => j >= 0 && j < w * h && tr[j] === p);
+        if (inner) return { x: (x + 0.5) * CELL, y: ((i / w | 0) + 0.5) * CELL };
+        if (edge < 0) edge = i;
+      }
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (j < 0 || j >= w * h || seen[j] || !map.cellPassable(j)) continue;
+        seen[j] = 1;
+        queue.push(j);
+      }
+    }
+    return edge >= 0 ? { x: (edge % w + 0.5) * CELL, y: ((edge / w | 0) + 0.5) * CELL } : null;
   }
 
   // Wirtschaftliche Größe einer Stadt: die eigene Hauptstadt zählt immer als Großstadt
@@ -433,10 +507,13 @@ export class Game {
       const lvl = c.owner ? c.buildings.fort : 0;
       if (!lvl) continue;
       const r = CITY_CAPTURE_RADIUS * 1.5;
-      for (const u of U) {
+      for (const u of grid.near(c, 1)) { // Rasterfeld (PAIR_REACH) größer als r
         if (u.owner === c.owner && u.incoming && Math.abs(u.x - c.x) < r && Math.abs(u.y - c.y) < r) u.incoming *= 1 - 0.15 * lvl;
       }
     }
+    // Internationale Verräter (Bündnisbruch): weniger Verteidigung
+    const traitors = this.players.filter((p) => this.isTraitor(p));
+    if (traitors.length) for (const u of U) if (u.incoming && traitors.includes(u.owner)) u.incoming *= 1 + DIPLOMACY.traitorDefense;
 
     // Versorgung und Gesundheit
     this.supply.step(dt);
@@ -492,10 +569,18 @@ export class Game {
     this.terrTimer -= dt;
     if (this.terrTimer <= 0) {
       this.terrTimer = 0.25;
-      for (const c of this.cities) if (c.owner) this.paint(c.owner, c.x, c.y, CITY_BORDER);
+      const grid = this.bucketUnits(PAIR_REACH); // neu einsortiert: ohne Tote, mit neuen Kompanien
+      // Städte färben das Land ringsum, aber nur Felder, die näher an der Stadt liegen als an
+      // feindlichen Truppen (sonst fiele das Land hinter Truppen vor der Stadt an sie zurück)
+      const cityRing = Math.ceil(CITY_BORDER * 2 / PAIR_REACH);
+      for (const c of this.cities) {
+        if (!c.owner) continue;
+        const rivals = grid.near(c, cityRing).filter((o) => this.hostile(o.owner, c.owner) &&
+          Math.abs(o.x - c.x) < CITY_BORDER * 2 && Math.abs(o.y - c.y) < CITY_BORDER * 2);
+        this.paint(c.owner, c.x, c.y, CITY_BORDER, rivals);
+      }
       // Grenze liegt zwischen gegnerischen Truppen, nicht hinter ihnen
       const reach = UNIT_BORDER * 2;
-      const grid = this.bucketUnits(PAIR_REACH);
       const ring = Math.ceil(reach / PAIR_REACH);
       for (const u of this.units) {
         const rivals = grid.near(u, ring).filter((o) => this.hostile(o.owner, u.owner) &&
@@ -512,16 +597,32 @@ export class Game {
     this.visTimer -= dt;
     if (this.visTimer <= 0) { this.visTimer = 0.2; this.updateVision(); }
 
-    // Bündnisse laufen aus
+    // Bündnisse laufen aus: erst angekündigt, dann Waffenruhe, dann Krieg
     for (const [key, since] of this.allySince) {
-      if (this.time - since < DIPLOMACY.duration) continue;
       const [a, b] = key.split(':').map(Number);
-      this.allySince.delete(key);
-      if (!this.allied(a, b)) continue;
-      this.setAllied(a, b, false);
-      this.allyCooldown.set(key, this.time + DIPLOMACY.cooldown);
-      this.trade.prune();
+      const left = DIPLOMACY.duration - (this.time - since);
+      if (left > 0) {
+        if (left <= DIPLOMACY.warn && !this.allyWarned.has(key)) {
+          this.allyWarned.add(key);
+          this.events.push({ type: 'allianceEnding', a, b, left: Math.ceil(left) });
+        }
+        continue;
+      }
+      this.allyCooldown.set(key, this.time + DIPLOMACY.truce + DIPLOMACY.cooldown);
+      this.endAlliance(a, b);
       this.events.push({ type: 'allianceExpired', a, b });
+    }
+    for (const [key, until] of this.truces) {
+      if (this.time < until) continue;
+      const [a, b] = key.split(':').map(Number);
+      this.truces.delete(key);
+      this.updateEnmity();
+      this.trade.prune(); // Kolonnen im Land des früheren Verbündeten sind verloren
+      this.events.push({ type: 'truceEnded', a, b });
+    }
+    if (this.truces.size) {
+      this.withdrawTimer -= dt;
+      if (this.withdrawTimer <= 0) { this.withdrawTimer = 0.5; this.withdraw(); }
     }
     // Unbeantwortete Bündnisangebote verfallen
     for (const o of this.offers) if (this.time - o.time > DIPLOMACY.offerTimeout) this.answerOffer(o.id, false);
@@ -536,6 +637,10 @@ export class Game {
       this.out.add(p);
       // Bündnisse und Angebote enden
       for (const q of this.players) if (this.allied(p, q)) this.setAllied(p, q, false);
+      for (const m of [this.truces, this.allySince]) {
+        for (const key of [...m.keys()]) if (key.split(':').map(Number).includes(p)) m.delete(key);
+      }
+      this.updateEnmity();
       this.offers = this.offers.filter((o) => o.from !== p && o.to !== p);
       // Ihr übriges Land wird neutral
       const tr = this.territory;
@@ -554,7 +659,8 @@ export class Game {
   }
 
   // Kompanien in Rasterfelder der Größe size einsortieren (Index _k = Stelle in units).
-  // near(u, r): alle Kompanien in den Feldern bis r Felder um u (u selbst eingeschlossen)
+  // near(u, r): alle Kompanien in den Feldern bis r Felder um u (u selbst eingeschlossen;
+  // dieselbe Liste bei jedem Aufruf). within(x, y, r): alle im Umkreis r (neue Liste)
   bucketUnits(size) {
     const gw = Math.ceil(this.map.worldW / size) + 1, gh = Math.ceil(this.map.worldH / size) + 1;
     if (!this.buckets || this.buckets.size !== size) this.buckets = { size, cells: Array.from({ length: gw * gh }, () => []) };
@@ -576,6 +682,16 @@ export class Game {
           }
         }
         return out;
+      },
+      within(px, py, r) {
+        const res = [], r2 = r * r, k = Math.ceil(r / size);
+        const cx = at(px, gw), cy = at(py, gh);
+        for (let y = Math.max(0, cy - k); y <= Math.min(gh - 1, cy + k); y++) {
+          for (let x = Math.max(0, cx - k); x <= Math.min(gw - 1, cx + k); x++) {
+            for (const o of cells[y * gw + x]) if ((o.x - px) ** 2 + (o.y - py) ** 2 <= r2) res.push(o);
+          }
+        }
+        return res;
       },
     };
   }
@@ -785,8 +901,9 @@ export class Game {
 
     for (const c of this.cities) {
       const present = slots();
-      for (const u of this.units) {
-        if (Math.abs(u.x - c.x) > CITY_CAPTURE_RADIUS || Math.abs(u.y - c.y) > CITY_CAPTURE_RADIUS) continue;
+      // Raster vom Anfang des Schritts: seitdem bewegt sich keine Kompanie um ein ganzes Feld
+      for (const u of this.unitGrid.near(c, 1)) {
+        if (u.hp <= 0 || Math.abs(u.x - c.x) > CITY_CAPTURE_RADIUS || Math.abs(u.y - c.y) > CITY_CAPTURE_RADIUS) continue;
         if (!u.broken && Math.hypot(u.x - c.x, u.y - c.y) <= CITY_CAPTURE_RADIUS) present[u.owner]++;
       }
       // Erobern kann nur eine einzige Seite, die mit dem Besitzer verfeindet ist (oder jede bei
@@ -801,7 +918,10 @@ export class Game {
           const old = c.owner;
           c.owner = a; c.capOwner = 0; c.capProgress = 0;
           this.stats[a].captured++;
-          this.paint(a, c.x, c.y, CITY_BORDER);
+          // Land ringsum, aber nicht, was näher an feindlichen Truppen liegt
+          const rivals = this.units.filter((u) => this.hostile(u.owner, a) &&
+            Math.abs(u.x - c.x) < CITY_BORDER * 2 && Math.abs(u.y - c.y) < CITY_BORDER * 2);
+          this.paint(a, c.x, c.y, CITY_BORDER, rivals);
           this.production.cityLost(c); // Aufträge der Stadt verfallen sofort
           this.events.push({ type: 'capture', city: c, owner: a, old });
         }
