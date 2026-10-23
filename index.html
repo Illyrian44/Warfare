@@ -10,7 +10,7 @@
   <meta name="description" content="Phase Line: Echtzeit-Strategie mit Fronten, Divisionen und Armeen im Browser, gegen eine KI.">
   <title>Phase Line</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='10' cy='16' r='7' fill='%232f6fe0'/><circle cx='22' cy='16' r='7' fill='%23e0412f'/></svg>">
-  <link rel="stylesheet" href="css/style.css?v=104">
+  <link rel="stylesheet" href="css/style.css?v=105">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -162,7 +162,7 @@
     </div>
     <footer class="menuFoot">
       <button id="menuHelpBtn" class="link">Spielanleitung</button>
-      <small id="version" class="muted">Version 104</small>
+      <small id="version" class="muted">Version 105</small>
     </footer>
   </div>
 
@@ -185,7 +185,7 @@
         <li><b>Baumenü</b> („🏗 Bauen“, Taste B, oder eigene Stadt ohne Auswahl antippen): Wähle die Stadt, in der ausgebildet wird, und bestelle einzelne Kompanien oder ganze Divisionen nach Vorlage (Infanterie-, Gemischte und Panzerdivision – sie wird nach der letzten Kompanie zur Division). Ist eine Division ausgewählt, kannst du sie verstärken (Ausbildung in der nächsten eigenen Stadt, die neue Kompanie stößt dazu), „Auffüllen“ einschalten und ausrüsten: <i>Ausbildung</i> (Organisation +20&nbsp;% je Stufe) und <i>Artillerie</i> (Kampfkraft +15&nbsp;% je Stufe), je zwei Stufen. Bezahlt wird beim Auftrag; ✕ in der Auftragsliste bricht ab und erstattet alles. Fällt die Stadt, sind ihre Aufträge verloren.</li>
         <li><b>Städte ausbauen</b> (im Baumenü unter der gewählten Stadt, je Stadt ein Bau zugleich, bis Stufe 3): 🏠 <i>Wohnviertel</i> +4 Manpower/s · 🏭 <i>Fabrik</i> +0,6 Geld/s, ohne Fabrik bildet die Stadt keine Panzer aus · ⛺ <i>Kaserne</i> +1 Ausbildungsplatz · 📦 <i>Depot</i> +50&nbsp;% Nachschubleistung · 🏰 <i>Festung</i> Verteidiger nehmen 15&nbsp;% weniger Schaden, die Eroberung dauert 50&nbsp;% länger · ⚓ <i>Hafen</i> (nur Küstenstädte) +0,4 Geld/s, Grundlage für den Seehandel – jeweils je Stufe. Jede Stufe kostet mehr und dauert länger; eroberte Städte behalten ihre Gebäude, ein laufender Bau geht verloren. Nah herangezoomt stehen die Gebäude unter dem Stadtnamen.</li>
         <li><b>Handel:</b> Deine Städte schicken von selbst Kolonnen (kleine Lastwagen) über die Straßen zu anderen eigenen Städten – große Städte öfter –, Häfen schicken Schiffe zu anderen Häfen im selben Meer. Bei der Ankunft gibt es Geld, je mehr, je länger der Weg und je größer die Städte bzw. Häfen. Kolonnen fahren nur durch eigenes Gebiet: Kommt ihnen ein Feind nahe oder wird ihr Weg zu Feindgebiet, sind sie verloren. Ein zusammenhängendes, gesichertes Hinterland lohnt sich also. Oben zeigt 💰 das Einkommen samt Handel.</li>
-        <li><b>Bündnisse</b> (🤝 oben): Biete einer KI ein Bündnis an – sie nimmt an, wenn eine dritte Seite stärker ist als ihr beide und sie selbst nicht führt. KIs bieten auch dir Bündnisse an (Annehmen/Ablehnen, 25&nbsp;s Zeit) und verbünden sich untereinander. Verbündete kämpfen nicht gegeneinander, nehmen sich kein Land, ihre Einheiten gehen aneinander vorbei (eckiges Symbol in ihrer Farbe) und Handel zwischen ihnen bringt beiden das 1,5-Fache. Bündnisse laufen nach 8 Minuten aus, eine Minute vorher kommt eine Ankündigung. Endet ein Bündnis (Auslaufen oder Bruch), herrscht 60&nbsp;s Waffenruhe (🕊): Beide Seiten können sich nicht angreifen, und alle Truppen im Land des anderen ziehen von selbst ins eigene Land ab – wer hineinmarschiert, wird zurückgeschickt. Danach ist Krieg; nach dem Auslaufen können sich die beiden 2 Minuten lang nicht erneut verbünden. Wer bricht, gilt 3 Minuten als Verräter – so lange lehnt die KI ab. Die KI bricht selbst, wenn ihr Partner zu mächtig wird (45&nbsp;% Land) oder nur noch zwei Seiten übrig sind. Gewinnen kann nur eine Seite allein.</li>
+        <li><b>Bündnisse</b> (🤝 oben): Biete einer KI ein Bündnis an – sie nimmt an, wenn eine dritte Seite stärker ist als ihr beide und sie selbst nicht führt. KIs bieten auch dir Bündnisse an (Annehmen/Ablehnen, 25&nbsp;s Zeit) und verbünden sich untereinander. Verbündete kämpfen nicht gegeneinander, nehmen sich kein Land, ihre Einheiten gehen aneinander vorbei (eckiges Symbol in ihrer Farbe) und Handel zwischen ihnen bringt beiden das 1,5-Fache. Bündnisse laufen nach 8 Minuten aus, eine Minute vorher kommt eine Ankündigung. Endet ein Bündnis (Auslaufen oder Bruch), herrscht 60&nbsp;s Waffenruhe (🕊): Beide Seiten können sich nicht angreifen, und alle Truppen im Land des anderen ziehen von selbst ins eigene Land ab – wer hineinmarschiert, wird zurückgeschickt. Danach ist Krieg; nach dem Auslaufen können sich die beiden 2 Minuten lang nicht erneut verbünden. Wer bricht, wird nach einer Warnung 3 Minuten internationaler Verräter: −20&nbsp;% Verteidigung (seine Truppen nehmen 20&nbsp;% mehr Schaden), und die KI lehnt Bündnisse ab. Die KI bricht selbst, wenn ihr Partner zu mächtig wird (45&nbsp;% Land) oder nur noch zwei Seiten übrig sind. Gewinnen kann nur eine Seite allein.</li>
         <li>Tasten: Leertaste Pause · A alle · S anhalten · D neue Division · Umschalt+D aus Division · F Front zeichnen und G Grenze (nur mit ausgewählten Divisionen) · V Fronten zeigen · N Nachschub · B Baumenü · Esc abwählen · 1/2/3 Tempo</li>
       </ul>
       <h3>Regeln</h3>
@@ -235,6 +235,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js?v=104"></script>
+  <script type="module" src="js/main.js?v=105"></script>
 </body>
 </html>

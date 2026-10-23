@@ -2,13 +2,13 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS, DIPLOMACY, GROWTH,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=104';
-import { mulberry32 } from './rng.js?v=104';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=104';
-import { HQManager } from './hq.js?v=104';
-import { SupplyNetwork } from './supply.js?v=104';
-import { Trade } from './trade.js?v=104';
-import { Production } from './production.js?v=104';
+} from './config.js?v=105';
+import { mulberry32 } from './rng.js?v=105';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=105';
+import { HQManager } from './hq.js?v=105';
+import { SupplyNetwork } from './supply.js?v=105';
+import { Trade } from './trade.js?v=105';
+import { Production } from './production.js?v=105';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -508,6 +508,9 @@ export class Game {
         if (u.owner === c.owner && u.incoming && Math.abs(u.x - c.x) < r && Math.abs(u.y - c.y) < r) u.incoming *= 1 - 0.15 * lvl;
       }
     }
+    // Internationale Verräter (Bündnisbruch): weniger Verteidigung
+    const traitors = this.players.filter((p) => this.isTraitor(p));
+    if (traitors.length) for (const u of U) if (u.incoming && traitors.includes(u.owner)) u.incoming *= 1 + DIPLOMACY.traitorDefense;
 
     // Versorgung und Gesundheit
     this.supply.step(dt);

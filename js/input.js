@@ -1,5 +1,5 @@
-import { CITY_RADIUS } from './config.js?v=104';
-import { divisionOf, unitsOf } from './orbat.js?v=104';
+import { CITY_RADIUS } from './config.js?v=105';
+import { divisionOf, unitsOf } from './orbat.js?v=105';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 

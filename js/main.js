@@ -1,17 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=104';
-import { Game } from './game.js?v=104';
-import { AI } from './ai.js?v=104';
-import { Renderer, isFrontShown } from './render.js?v=104';
-import { Input } from './input.js?v=104';
-import { formationSlots } from './formation.js?v=104';
-import { FrontManager, chainLength, frontBadge } from './fronts.js?v=104';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=104';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=104';
-import { templateCost } from './production.js?v=104';
+import { loadMap, MAPS } from './map.js?v=105';
+import { Game } from './game.js?v=105';
+import { AI } from './ai.js?v=105';
+import { Renderer, isFrontShown } from './render.js?v=105';
+import { Input } from './input.js?v=105';
+import { formationSlots } from './formation.js?v=105';
+import { FrontManager, chainLength, frontBadge } from './fronts.js?v=105';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=105';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=105';
+import { templateCost } from './production.js?v=105';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '104'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '105'; // für Kartendaten, siehe scripts/bump-version.sh
 
 const app = {
   game: null,
@@ -503,9 +503,16 @@ const app = {
       const pending = g.offers.some((o) => o.from === me && o.to === p);
       let status = out ? 'ausgeschieden' : ally ? `verbündet${since !== undefined ? ` · noch ${mmss(DIPLOMACY.duration - (g.time - since))}` : ''}`
         : truce !== undefined ? `Waffenruhe · Krieg in ${mmss(truce - g.time)}` : 'Krieg';
-      if (!out && g.isTraitor(p)) status += ' · Verräter';
+      if (!out && g.isTraitor(p)) status += ` · Verräter (−${DIPLOMACY.traitorDefense * 100} % Verteidigung)`;
       let btn = '';
-      if (!out && ally) btn = `<button data-act="break" data-p="${p}" title="Bündnis brechen – danach giltst du ${DIPLOMACY.traitorTime / 60} Minuten als Verräter">Brechen</button>`;
+      if (!out && ally && this.confirmBreak === p) {
+        // Warnung vor dem Bruch: erst bestätigen
+        return '<div class="diploRow warn">' +
+          `<span class="who"><b>Bündnis mit ${PLAYER_NAMES[p]} brechen?</b><small>⚠ Du wirst ${DIPLOMACY.traitorTime / 60} Minuten internationaler Verräter: ` +
+          `−${DIPLOMACY.traitorDefense * 100} % Verteidigung, und keine KI verbündet sich mit dir.</small></span>` +
+          `<button data-act="breakYes" data-p="${p}" class="attack">Brechen</button><button data-act="breakNo" data-p="${p}">Abbrechen</button></div>`;
+      }
+      if (!out && ally) btn = `<button data-act="break" data-p="${p}" title="Bündnis brechen – danach giltst du ${DIPLOMACY.traitorTime / 60} Minuten als internationaler Verräter (−${DIPLOMACY.traitorDefense * 100} % Verteidigung)">Brechen</button>`;
       else if (!out && pending) btn = '<button disabled>Angebot läuft …</button>';
       else if (!out) {
         const wait = g.canAlly(me, p) ? 0 : Math.ceil(Math.max(truce ?? 0, g.allyCooldown.get(g.pairKey(me, p)) ?? 0) - g.time);
@@ -514,7 +521,7 @@ const app = {
       return `<div class="diploRow${out ? ' out' : ''}"><span class="dot" style="background:${PLAYER_COLORS[p]}"></span>` +
         `<span class="who"><b>${PLAYER_NAMES[p]}</b><small>${status} · ${g.citiesOf(p).length} Städte · ${Math.round(g.share[p] * 100)} % Land</small></span>${btn}</div>`;
     });
-    const note = `<p class="muted">Verbündete kämpfen nicht gegeneinander, nehmen sich kein Land und handeln mit Bonus. Bündnisse laufen nach ${DIPLOMACY.duration / 60} Minuten aus (angekündigt ${DIPLOMACY.warn} s vorher); wer bricht, gilt ${DIPLOMACY.traitorTime / 60} Minuten als Verräter. Nach jedem Bündnis folgen ${DIPLOMACY.truce} s Waffenruhe, in denen beide das Land des anderen räumen. Gewinnen kann nur eine Seite allein.${g.isTraitor(me) ? ' <b>Du giltst gerade als Verräter – die KI lehnt Bündnisse ab.</b>' : ''}</p>`;
+    const note = `<p class="muted">Verbündete kämpfen nicht gegeneinander, nehmen sich kein Land und handeln mit Bonus. Bündnisse laufen nach ${DIPLOMACY.duration / 60} Minuten aus (angekündigt ${DIPLOMACY.warn} s vorher); wer bricht, ist ${DIPLOMACY.traitorTime / 60} Minuten internationaler Verräter (−${DIPLOMACY.traitorDefense * 100} % Verteidigung, keine neuen Bündnisse mit der KI). Nach jedem Bündnis folgen ${DIPLOMACY.truce} s Waffenruhe, in denen beide das Land des anderen räumen. Gewinnen kann nur eine Seite allein.${g.isTraitor(me) ? ' <b>Du bist gerade internationaler Verräter: −${DIPLOMACY.traitorDefense * 100} % Verteidigung, die KI lehnt Bündnisse ab.</b>' : ''}</p>`;
     const html = rows.join('') + note;
     if (html !== this.diploSig) { this.diploSig = html; $('diploBody').innerHTML = html; }
   },
@@ -523,7 +530,9 @@ const app = {
     const g = this.game, me = this.human, p = +t.dataset.p;
     if (t.dataset.act === 'offer') {
       if (g.offerAlliance(me, p)) this.toast(`Bündnis an ${PLAYER_NAMES[p]} angeboten – die Antwort kommt gleich`);
-    } else if (t.dataset.act === 'break') g.breakAlliance(me, p);
+    } else if (t.dataset.act === 'break') this.confirmBreak = p;
+    else if (t.dataset.act === 'breakNo') this.confirmBreak = 0;
+    else if (t.dataset.act === 'breakYes') { this.confirmBreak = 0; g.breakAlliance(me, p); }
     this.diploSig = null;
     this.updateDiplo();
   },
@@ -744,9 +753,10 @@ const app = {
         this.diploSig = null;
       } else if (ev.type === 'allianceBroken') {
         const truce = `${DIPLOMACY.truce} s Waffenruhe, beide räumen das Land des anderen`;
-        if (ev.by === this.human) this.toast(`Bündnis mit ${PLAYER_NAMES[ev.other]} gebrochen – ${truce}. ${DIPLOMACY.traitorTime / 60} Minuten giltst du als Verräter`, 'bad');
-        else if (ev.other === this.human) this.toast(`⚠ ${PLAYER_NAMES[ev.by]} hat das Bündnis gebrochen! ${truce}`, 'bad');
-        else this.toast(`${PLAYER_NAMES[ev.by]} bricht das Bündnis mit ${PLAYER_NAMES[ev.other]}`);
+        const penalty = `${DIPLOMACY.traitorTime / 60} Minuten −${DIPLOMACY.traitorDefense * 100} % Verteidigung`;
+        if (ev.by === this.human) this.toast(`Bündnis mit ${PLAYER_NAMES[ev.other]} gebrochen – du bist internationaler Verräter: ${penalty}. ${truce}`, 'bad');
+        else if (ev.other === this.human) this.toast(`⚠ ${PLAYER_NAMES[ev.by]} hat das Bündnis gebrochen und ist internationaler Verräter (${penalty})! ${truce}`, 'bad');
+        else this.toast(`${PLAYER_NAMES[ev.by]} bricht das Bündnis mit ${PLAYER_NAMES[ev.other]} – internationaler Verräter (${penalty})`);
         this.diploSig = null;
       } else if (ev.type === 'allianceEnding' && (ev.a === this.human || ev.b === this.human)) {
         this.toast(`⏳ Das Bündnis mit ${PLAYER_NAMES[ev.a === this.human ? ev.b : ev.a]} läuft in ${ev.left} s aus`);

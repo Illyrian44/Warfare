@@ -188,6 +188,11 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 .diploRow .who small { display: block; color: var(--muted); }
 .diploRow button { min-height: 32px; padding: 0 10px; font-size: 13px; }
 .diploRow.out { opacity: 0.45; }
+/* Warnung vor dem Bündnisbruch */
+.diploRow.warn { flex-wrap: wrap; justify-content: flex-end; background: rgba(224, 65, 47, 0.14); border-radius: 8px; padding: 8px; }
+.diploRow.warn .who { flex-basis: 100%; }
+.diploRow.warn small { color: #ffb4a8; }
+.diploRow button.attack { background: #c0392b; border-color: #e0412f; font-weight: 600; }
 #offerBox {
   position: fixed; left: 50%; transform: translateX(-50%); top: calc(118px + env(safe-area-inset-top));
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 94vw;

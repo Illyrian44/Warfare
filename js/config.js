@@ -79,6 +79,7 @@ export const BUILDING_MAX = 3;
 // Bündnisse
 export const DIPLOMACY = {
   traitorTime: 180,   // so lange (s) gilt eine Seite nach einem Bündnisbruch als Verräter
+  traitorDefense: 0.2, // so lange −20 % Verteidigung: ihre Kompanien nehmen 20 % mehr Schaden
   offerTimeout: 25,   // unbeantwortete Angebote an den Spieler verfallen danach
   maxAllies: 1,       // die KI hält höchstens so viele Bündnisse
   breakShare: 0.45,   // hält ein Verbündeter so viel Land, bricht die KI das Bündnis

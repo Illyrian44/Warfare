@@ -273,6 +273,25 @@ function checkState(g, label, ais) {
   else console.log('ok   Bündnisende: Ankündigung, Waffenruhe, Räumen, dann Krieg');
 }
 
+// --- Internationaler Verräter: −20 % Verteidigung ----------------------------------
+{
+  const loss = (traitor) => {
+    const g = new Game(realMap('mitteleuropa', 1), { players: 2 });
+    g.units = [];
+    const c = g.cities[g.starts[1]];
+    const a = g.spawnUnit(1, 'light', c, 0), b = g.spawnUnit(2, 'light', c, 0);
+    b.x = a.x + 12; b.y = a.y;
+    if (traitor) g.betrayedAt[1] = g.time;
+    g.step(STEP);
+    return { a: a.maxHp - a.hp, b: b.maxHp - b.hp };
+  };
+  const honest = loss(false), traitor = loss(true);
+  const ratio = traitor.a / honest.a;
+  if (!(honest.a > 0) || Math.abs(ratio - (1 + DIPLOMACY.traitorDefense)) > 1e-6) fail(`Verräter: Schaden ×${ratio.toFixed(3)} statt ×${1 + DIPLOMACY.traitorDefense}`);
+  else if (Math.abs(traitor.b - honest.b) > 1e-9) fail('Verräter: auch der Gegner nimmt mehr Schaden');
+  else console.log(`ok   Verräter nimmt ${Math.round(DIPLOMACY.traitorDefense * 100)} % mehr Schaden`);
+}
+
 // --- Baumenü: Ausbildung, Vorlagen, Abbruch, Ausrüstung ---------------------------------
 {
   const g = new Game(realMap('balkan', 5), { players: 2 });
