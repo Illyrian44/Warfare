@@ -9,6 +9,10 @@
   --accent: #f2c94c;
   --good: #4cd17a;
   --bad: #ff6b5b;
+  --panel-2: #1c2a3c;
+  --line: rgba(255, 255, 255, 0.12);
+  --r: 6px;
+  --top: 49px; /* Höhe der oberen Leiste (setzt main.js) */
 }
 
 * { box-sizing: border-box; }
@@ -73,40 +77,54 @@ button.primary { background: var(--blue); border-color: var(--blue); font-weight
 button.primary:hover { filter: brightness(1.1); }
 button.link { background: none; border: none; color: var(--muted); text-decoration: underline; }
 
-/* HUD */
-.bar {
+/* HUD: obere Leiste wie in HOI4 */
+#topbar {
   position: fixed;
-  left: 0;
-  right: 0;
+  top: 0; left: 0; right: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 8px max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left));
-  pointer-events: none;
+  padding: calc(6px + env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 6px max(8px, env(safe-area-inset-left));
+  background: linear-gradient(#152233, #101a27);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  z-index: 4;
 }
-.bar > * { pointer-events: auto; }
-.bar.top { top: env(safe-area-inset-top); }
-.bar.bottom { bottom: env(safe-area-inset-bottom); }
-.bar .buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.bar.top .buttons { flex-wrap: nowrap; }
-.bar button { background: var(--panel); min-width: 44px; }
-.bar button.active { background: var(--accent); }
+#topbar button { min-height: 36px; padding: 0.3em 0.7em; border-radius: var(--r); background: var(--panel-2); border-color: var(--line); }
+#topbar button.active { background: var(--panel-2); color: var(--accent); border-color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+#topbar button.plain { min-width: 36px; padding: 0; }
+.tabs { display: flex; gap: 4px; flex: none; }
+.tabs .ico { margin-right: 6px; }
+#alerts { flex: 1; min-width: 0; display: flex; gap: 6px; justify-content: center; overflow: hidden; }
+.alert {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  min-height: 30px !important; padding: 0 10px !important; font-size: 13px;
+  border-radius: var(--r); background: rgba(0, 0, 0, 0.3) !important;
+}
+.alert.bad { border-color: var(--bad) !important; color: #ffb3aa; }
+.alert.warn { border-color: var(--accent) !important; color: #ffe08a; }
 .stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 2px 14px;
   align-items: center;
-  background: var(--panel);
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 15px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
+  flex: none;
 }
+.clock {
+  display: flex; align-items: center; gap: 4px; flex: none;
+  padding: 2px 2px 2px 10px; border: 1px solid var(--line); border-radius: var(--r); background: rgba(0, 0, 0, 0.25);
+  font-variant-numeric: tabular-nums; font-size: 14px;
+}
+.clock #hudTime { min-width: 3.2em; }
+#topbar .clock button { min-height: 30px; min-width: 34px; padding: 0 6px; }
+#pauseBtn.paused { background: var(--accent); color: #1a1a1a; border-color: var(--accent); }
+
 #seedLabel {
   position: fixed;
   right: 12px;
-  top: calc(64px + env(safe-area-inset-top));
+  top: calc(var(--top) + 6px);
   font-size: 12px;
   text-shadow: 0 1px 2px #000;
   pointer-events: none;
@@ -130,7 +148,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 #version { text-align: center; font-size: 11px; }
 #frontBanner {
   position: fixed;
-  bottom: calc(128px + env(safe-area-inset-bottom));
+  top: calc(var(--top) + 10px);
   color: #fff;
   left: 50%;
   transform: translateX(-50%);
@@ -142,9 +160,9 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   background: var(--blue);
   padding: 6px 6px 6px 14px;
   border-radius: 12px;
-  font-weight: 600;
   font-size: 14px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 3;
 }
 #frontBanner button, #pickBanner button { min-height: 34px; background: rgba(0, 0, 0, 0.25); }
 #frontBanner button.active { background: var(--accent); color: #1a1a1a; }
@@ -156,51 +174,46 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   font-weight: 600; font-size: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
-/* Front-Menü */
-#cmdPanel {
+/* Seitenleiste: fester Platz links unter der oberen Leiste */
+#sidePanel {
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(128px + env(safe-area-inset-bottom));
-  width: min(94vw, 520px);
-  background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  padding: 8px 10px 16px;
+  left: 0;
+  top: var(--top);
+  bottom: 0;
+  width: min(100vw, 350px);
+  display: flex;
+  flex-direction: column;
+  background: #131d2a;
+  border-right: 1px solid var(--line);
+  box-shadow: 4px 0 18px rgba(0, 0, 0, 0.4);
+  z-index: 3;
+  font-size: 14px;
 }
-.cmdHead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: move; touch-action: none; user-select: none; -webkit-user-select: none; }
-.cmdHead #cmdTitle, .cmdHead .spacer { flex: 1; }
-/* Baumenü */
-#buildPanel {
-  position: fixed; right: 12px; top: calc(64px + env(safe-area-inset-top));
-  width: min(94vw, 330px); max-height: calc(100vh - 230px); overflow-y: auto;
-  background: var(--panel); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px;
-  padding: 8px 10px 16px; font-size: 14px;
+.sideHead {
+  display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 16px; letter-spacing: 0.04em; text-transform: uppercase;
 }
-#buildPanel.dragging, #diploPanel.dragging { opacity: 0.92; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5); }
-/* Diplomatie */
-#diploPanel {
-  position: fixed; right: 12px; top: calc(64px + env(safe-area-inset-top));
-  width: min(94vw, 320px); max-height: calc(100vh - 230px); overflow-y: auto;
-  background: var(--panel); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px;
-  padding: 8px 10px 16px; font-size: 14px;
-}
-.diploRow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.sideHead b { flex: 1; color: var(--accent); }
+.sideHead button { min-height: 32px; padding: 0 10px; background: none; border: none; }
+.sideBody { flex: 1; overflow-y: auto; padding: 4px 14px calc(16px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+.sideBody h4 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.sideBody select { width: 100%; min-height: 36px; background: rgba(0, 0, 0, 0.3); color: inherit; border: 1px solid var(--line); border-radius: var(--r); padding: 0 6px; }
+.sideBody p.muted { margin: 4px 0; font-size: 13px; line-height: 1.4; }
+.diploRow { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
 .diploRow .who { flex: 1; min-width: 0; }
 .diploRow .who small { display: block; color: var(--muted); }
 .diploRow button { min-height: 32px; padding: 0 10px; font-size: 13px; }
 .diploRow.out { opacity: 0.45; }
 #offerBox {
-  position: fixed; left: 50%; transform: translateX(-50%); top: calc(118px + env(safe-area-inset-top));
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(var(--top) + 14px);
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 94vw;
   background: var(--panel); border: 2px solid var(--good, #4cd17a); border-radius: 12px; padding: 8px 10px;
   font-weight: 600; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 5;
 }
 #offerBox button { min-height: 34px; }
-#buildPanel h4 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-#buildPanel select { width: 100%; min-height: 34px; background: rgba(0, 0, 0, 0.3); color: inherit; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 0 6px; }
 .buildRow { display: flex; flex-wrap: wrap; gap: 6px; }
-.buildRow button { flex: 1 1 140px; text-align: left; font-size: 13px; line-height: 1.25; padding: 6px 8px; }
+.buildRow button { flex: 1 1 140px; text-align: left; font-size: 13px; line-height: 1.25; padding: 6px 8px; border-radius: var(--r); }
 .buildRow button small { display: block; color: var(--muted); font-weight: 400; }
 .buildRow button:disabled { opacity: 0.45; }
 .buildRow button.on { outline: 2px solid var(--good, #4cd17a); }
@@ -210,24 +223,77 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 .queue li .bar { width: 54px; height: 6px; background: rgba(255, 255, 255, 0.12); border-radius: 3px; overflow: hidden; }
 .queue li .bar i { display: block; height: 100%; background: var(--good, #4cd17a); }
 .queue li button { min-height: 26px; padding: 0 8px; background: none; border: none; }
-.cmdHead .grip { color: var(--muted, #8a96a8); font-size: 15px; line-height: 1; }
-#cmdPanel.dragging { opacity: 0.92; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5); }
-/* Griff unten rechts: Befehlsfeld größer oder kleiner ziehen */
-.cmdResize {
-  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
-  cursor: nwse-resize; touch-action: none; border-bottom-right-radius: 12px;
-  background: linear-gradient(135deg, transparent 0 55%, rgba(255, 255, 255, 0.35) 55% 62%, transparent 62% 72%, rgba(255, 255, 255, 0.35) 72% 79%, transparent 79%);
+/* Listen im Reiter Städte und Truppen */
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows li { border-top: 1px solid var(--line); }
+.rows li > button {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 10px; align-items: center;
+  width: 100%; text-align: left; background: none; border: none; border-radius: 0; padding: 7px 4px; min-height: 0; font-size: 13px;
 }
-.cmdHead button { min-height: 32px; padding: 0.2em 0.6em; background: none; border: none; }
-.cmdRow { display: flex; flex-wrap: wrap; gap: 6px; }
-.cmdRow + .cmdRow:not(:empty) { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+.rows li > button:hover { background: rgba(255, 255, 255, 0.06); }
+.rows li > button.sel { box-shadow: inset 3px 0 0 var(--accent); }
+.rows .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rows .sub { grid-column: 2 / span 2; color: var(--muted); font-size: 12px; }
+.rows .sw { width: 10px; height: 10px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+.rows .tag { font-size: 11px; padding: 1px 7px; border-radius: 9px; border: 1px solid currentColor; white-space: nowrap; }
+.tag.good { color: var(--good); } .tag.thin { color: var(--accent); } .tag.weak { color: var(--bad); } .tag.none { color: var(--muted); }
+.rows li.child > button { padding-left: 22px; }
+
+/* Befehle der Auswahl (unten links, über den Armeen) */
+#bottomLeft {
+  position: fixed;
+  left: max(8px, env(safe-area-inset-left));
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  right: 250px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+#bottomLeft > * { pointer-events: auto; max-width: 100%; }
+body.side-open #bottomLeft { left: 358px; }
+#cmdPanel {
+  width: min(100%, 560px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 6px 8px 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.cmdHead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.cmdHead #cmdTitle { flex: 1; font-size: 14px; }
+.cmdHead button { min-height: 28px; padding: 0 8px; background: none; border: none; }
+.cmdRow { display: flex; flex-wrap: wrap; gap: 5px; }
+.cmdRow + .cmdRow { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .cmdRow[hidden] + .cmdRow { margin-top: 0; padding-top: 0; border-top: none; }
-.cmdRow button { flex: 1 1 auto; font-size: 14px; }
+.cmdRow button { flex: 1 1 auto; font-size: 13px; min-height: 34px; padding: 0.3em 0.7em; border-radius: var(--r); }
+.cmdRow button:disabled { opacity: 0.38; cursor: default; }
+.cmdRow button:disabled:hover { background: rgba(255, 255, 255, 0.1); }
+.cmdRow.plan button { font-weight: 600; }
+.cmdRow.plan #moreBtn { flex: 0 0 auto; }
+.cmdRow button.go:not(:disabled) { background: #2f8f4e; border-color: var(--good); }
+.cmdRow button.stop:not(:disabled) { background: #a83a2c; border-color: var(--bad); }
+
+/* Unten rechts: Werkzeuge und Kartenmodi */
+#bottomRight {
+  position: fixed;
+  right: max(8px, env(safe-area-inset-right));
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+#bottomRight .group { display: flex; align-items: center; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+#bottomRight .group small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; padding: 0 4px; }
+#bottomRight button { min-height: 34px; padding: 0.25em 0.7em; font-size: 13px; border-radius: var(--r); }
+#bottomRight .tools .ico { margin-right: 5px; }
 
 /* Meldungen */
 #toasts {
   position: fixed;
-  top: calc(70px + env(safe-area-inset-top));
+  top: calc(var(--top) + 54px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -309,42 +375,20 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 .help ul { padding-left: 1.2em; }
 .help li { margin: 3px 0; }
 
-@media (max-width: 560px) {
-  .stats { font-size: 13px; padding: 6px 10px; gap: 2px 10px; }
-  .bar button { padding: 0.4em 0.55em; min-width: 38px; }
-  .bar.top { gap: 6px; }
-  .bar.top .buttons { gap: 4px; }
-  #seedLabel { display: none; }
-  .bar.bottom { align-items: flex-end; }
-  .bar.bottom button { font-size: 14px; }
-  #cmdPanel { bottom: calc(166px + env(safe-area-inset-bottom)); max-height: 46vh; overflow-y: auto; }
-  #buildPanel, #diploPanel { top: calc(118px + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); max-height: 46vh; }
-  #offerBox { top: calc(150px + env(safe-area-inset-top)); }
-  #pausedBanner { top: 22%; font-size: 24px; }
-  #menu { background-position: 0 0, 18% 50%; } /* Hochformat: der blaue Offizier */
-  #frontBanner { bottom: calc(220px + env(safe-area-inset-bottom)); }
-}
-
 .legend { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 4px; }
 .legend svg { justify-self: center; }
 
-.cmdRow button.attack { background: #c0392b; border-color: #e0412f; font-weight: 600; }
-
-/* Divisionsleiste unten (wie die Armee-Leiste in HOI4) */
-#divBar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: calc(60px + env(safe-area-inset-bottom));
+/* Armeekarten unten, darüber die Divisionen der offenen Armee (wie in HOI4) */
+#divBar, #divRow {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding: 2px max(10px, env(safe-area-inset-left));
+  padding: 2px 1px;
   scrollbar-width: none;
-  pointer-events: auto;
 }
-#divBar::-webkit-scrollbar { display: none; }
-#divBar:empty { display: none; }
+#divBar::-webkit-scrollbar, #divRow::-webkit-scrollbar { display: none; }
+#divBar:empty, #divRow:empty { display: none; }
+#divRow { padding: 5px; background: rgba(12, 20, 30, 0.75); border-radius: var(--r); border: 1px solid var(--line); }
 .divcard {
   flex: 0 0 auto;
   display: grid;
@@ -356,16 +400,19 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   min-height: 0;
   padding: 4px 8px 5px 6px;
   background: var(--panel);
-  border-radius: 10px;
+  border-radius: var(--r);
   font-size: 12px;
   text-align: left;
+  position: relative;
 }
 .divcard.sel { border-color: #fff; box-shadow: 0 0 0 1px #fff inset; }
-.divcard { position: relative; }
 .divcard.can-add { padding-right: 34px; }
-.divcard.armycard { background: #22324a; border-color: #8aa4c8; }
-.divcard.armycard .toggle { font-weight: 400; color: var(--muted); margin-left: 4px; padding: 0 4px; }
-.divcard.inarmy { border-top: 3px solid #8aa4c8; }
+.divcard.armycard { min-width: 150px; padding-left: 12px; background: #1d2c42; border-left-width: 5px; }
+.divcard.armycard.open { border-top-color: var(--accent); border-right-color: var(--accent); border-bottom-color: var(--accent); }
+.divcard.armycard .meta { grid-column: 2; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.divcard.armycard .meta .dot { margin: 0 0 0 4px; width: 0.65em; height: 0.65em; }
+.divcard.reserve { background: #232a33; }
+.divcard.newarmy { min-width: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; border-style: dashed; color: var(--muted); }
 .divcard.refill { border-left: 4px solid var(--good); } /* Auffüllen eingeschaltet */
 .divcard .add {
   position: absolute;
@@ -373,7 +420,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   right: 3px;
   width: 26px;
   height: 26px;
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--accent);
   color: #1a1a1a;
   display: flex;
@@ -386,12 +433,11 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   flex: 0 0 auto;
   min-height: 0;
   padding: 4px 10px;
-  background: var(--panel);
-  border-radius: 10px;
-  font-size: 13px;
+  background: var(--panel-2);
+  border-radius: var(--r);
+  font-size: 12px;
   white-space: nowrap;
 }
-.divtool.active { background: var(--good); border-color: var(--good); color: #10241a; }
 .divcard .sym { grid-row: 1 / span 4; }
 .divcard .name { font-weight: 700; white-space: nowrap; }
 .divcard .fr { font-weight: 400; color: var(--accent); }
@@ -405,6 +451,38 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 .divcard .regs { grid-column: 1 / span 2; display: flex; gap: 2px; margin-top: 3px; }
 .divcard .regs svg { display: block; }
 
+/* Mittlere Breite: Reiter nur als Symbol */
+@media (max-width: 1180px) {
+  .tabs .lbl { display: none; }
+  .tabs .ico { margin: 0; }
+}
+@media (max-width: 860px) {
+  #hudUnits, .side small { display: none; }
+  #seedLabel { display: none; }
+}
+
+/* Handy: zwei Zeilen oben, Seitenleiste als Ebene von unten, Werkzeuge als Leiste rechts */
 @media (max-width: 560px) {
-  #divBar { bottom: calc(104px + env(safe-area-inset-bottom)); }
+  #topbar { flex-wrap: wrap; row-gap: 4px; }
+  #alerts { order: 5; flex-basis: 100%; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  #alerts:empty { display: none; }
+  .stats { order: 4; flex: 1 1 100%; font-size: 13px; gap: 2px 10px; }
+  .tabs { flex: 1; }
+  .tabs button { flex: 1; padding: 0; }
+  #topbar button { min-height: 34px; }
+  #helpBtn { display: none; } /* Hilfe über ☰ → Spielanleitung */
+  .clock { padding-left: 6px; }
+  body.side-open #bottomLeft { left: max(8px, env(safe-area-inset-left)); }
+  #sidePanel { top: auto; width: 100vw; height: 58vh; border-right: none; border-top: 1px solid var(--line); border-radius: 12px 12px 0 0; z-index: 6; }
+  #bottomLeft { right: max(8px, env(safe-area-inset-right)); bottom: calc(6px + env(safe-area-inset-bottom)); }
+  #cmdPanel { width: 100%; max-height: 38vh; overflow-y: auto; }
+  #bottomRight { bottom: auto; top: calc(var(--top) + 8px); }
+  #bottomRight .group { flex-direction: column; }
+  #bottomRight .group small { display: none; }
+  #bottomRight .lbl { display: none; }
+  #bottomRight .tools .ico { margin: 0; }
+  #bottomRight button { min-width: 40px; min-height: 32px; padding: 0.2em 0.4em; font-size: 12px; }
+  #pausedBanner { top: 26%; font-size: 24px; }
+  #menu { background-position: 0 0, 18% 50%; } /* Hochformat: der blaue Offizier */
+  #toasts { width: calc(100vw - 80px); }
 }

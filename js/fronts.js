@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=98';
-import { DIVISION, ARMY, formationOf, unitsOf, centerOf } from './orbat.js?v=98';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=99';
+import { DIVISION, ARMY, formationOf, unitsOf, centerOf } from './orbat.js?v=99';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
@@ -461,6 +461,12 @@ export class FrontManager {
       this.afterAssign([A, B]);
     }
     return { x: seq[j].at.x, y: seq[j].at.y };
+  }
+
+  // Frontsektoren ohne besetzten Auftrag (Lücken)
+  openSectors() {
+    const manned = new Set(this.holds.filter((hd) => this.members(hd).length));
+    return [...this.sectorInfo().regions.keys()].filter((r) => !manned.has(this.assign.get(r)));
   }
 
   // Besetzung eines Auftrags: einsatzbereite Kompanien je Frontsektor

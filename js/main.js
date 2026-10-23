@@ -1,17 +1,20 @@
-import { loadMap, MAPS } from './map.js?v=98';
-import { Game } from './game.js?v=98';
-import { AI } from './ai.js?v=98';
-import { Renderer } from './render.js?v=98';
-import { Input } from './input.js?v=98';
-import { formationSlots } from './formation.js?v=98';
-import { FrontManager, chainLength } from './fronts.js?v=98';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=98';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY, FRONT } from './config.js?v=98';
-import { templateCost } from './production.js?v=98';
+import { loadMap, MAPS } from './map.js?v=99';
+import { Game } from './game.js?v=99';
+import { AI } from './ai.js?v=99';
+import { Renderer } from './render.js?v=99';
+import { Input } from './input.js?v=99';
+import { formationSlots } from './formation.js?v=99';
+import { FrontManager, chainLength } from './fronts.js?v=99';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=99';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY, FRONT } from './config.js?v=99';
+import { templateCost } from './production.js?v=99';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '98'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '99'; // für Kartendaten, siehe scripts/bump-version.sh
+// Reiter der oberen Leiste: Inhalt in der Seitenleiste
+const TAB_BODIES = { build: 'buildBody', city: 'cityBody', diplo: 'diploBody', troops: 'troopBody' };
+const TAB_TITLES = { build: 'Produktion', city: 'Städte', diplo: 'Diplomatie', troops: 'Truppen' };
 
 const app = {
   game: null,
@@ -19,7 +22,7 @@ const app = {
   renderer: null,
   human: 1,
   cam: { x: 0, y: 0, zoom: 1, min: 0.2, max: 6 },
-  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null, showFronts: true, showSupply: false, armyClosed: new Set(), hover: null },
+  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null, showFronts: true, showSupply: false, openGroup: null, tab: null, more: false, hover: null },
   paused: false,
   speed: 1,
   settings: loadSettings(),
@@ -66,6 +69,8 @@ const app = {
     $('end').hidden = true;
     $('hud').hidden = false;
     $('pauseBtn').textContent = '▶';
+    $('pauseBtn').classList.add('paused');
+    this.setTab(null);
     $('pausedBanner').hidden = preview;
     $('pickBanner').hidden = !preview;
     $('offerBox').hidden = true;
@@ -148,6 +153,7 @@ const app = {
     if (!this.game || this.game.winner || this.picking) return;
     this.paused = !this.paused;
     $('pauseBtn').textContent = this.paused ? '▶' : '❚❚';
+    $('pauseBtn').classList.toggle('paused', this.paused);
     $('pausedBanner').hidden = !this.paused;
   },
 
@@ -415,20 +421,39 @@ const app = {
     return divs.length === 1 ? divs[0].name : `${divs.length} Divisionen`;
   },
 
-  // Befehlsfeld: erscheint nur mit Auswahl und bietet nur passende Befehle an.
-  // Kompanien: Halt, Gliederung. Divisionen zusätzlich: Front, Grenze, Armee.
-  // Mit Front: Angriff, Rotation, Auflösen – für alle Fronten der Auswahl (z. B. eine Armee).
+  // Befehlsfeld unten links (erscheint mit einer Auswahl). Die Schlachtplan-Knöpfe stehen
+  // immer an derselben Stelle und sind ausgegraut, wenn sie nicht passen; Seltenes liegt
+  // unter „⋯“. Die Gliederung (Division, Armee) zeigt nur passende Befehle.
   updateCommands() {
     if (this.ui.front && !this.fronts.fronts.includes(this.ui.front)) this.ui.front = null;
     const sel = this.ownSelection();
     $('cmdPanel').hidden = !sel.length || !!this.ui.frontMode;
     if ($('cmdPanel').hidden) return;
     const show = (id, on) => { $(id).hidden = !on; };
+    const enable = (id, on) => { $(id).disabled = !on; };
     const divs = this.selectedDivisions();
     const single = this.selectedDivision();
     const fs = this.panelFronts();
     $('cmdTitle').textContent = this.describeSelection(sel);
-    // Ganze Divisionen ausgewählt: keine neue Division daraus, „Aus Division“ löst sie auf
+    // Schlachtplan
+    show('cmdFront', divs.length > 0);
+    const planned = fs.some((f) => f.plan), attacking = fs.some((f) => f.attack);
+    enable('planBtn', fs.length > 0);
+    $('planBtn').textContent = attacking ? '➜ Neues Ziel' : '➜ Angriff';
+    enable('attackBtn', planned);
+    enable('stopAttackBtn', attacking);
+    $('stopAttackBtn').classList.toggle('stop', attacking);
+    $('moreBtn').classList.toggle('active', this.ui.more);
+    show('cmdMore', divs.length > 0 && this.ui.more);
+    enable('rotateBtn', fs.length > 0);
+    $('rotateBtn').classList.toggle('active', fs.length > 0 && fs.every((f) => f.rotate));
+    const off = fs.reduce((s, f) => s + this.fronts.detached(f), 0);
+    enable('rejoinBtn', off > 0);
+    $('rejoinBtn').textContent = off ? `↺ ${off} zurück an die Front` : '↺ zurück an die Front';
+    enable('cancelPlanBtn', planned);
+    enable('disbandBtn', fs.length > 0);
+    // Gliederung: ganze Divisionen ausgewählt -> keine neue Division daraus, „Aus Division“
+    // löst sie auf
     const whole = divs.length > 0 && sel.every((u) => u.regiment) &&
       divs.every((d) => unitsOf(d).every((u) => this.ui.selection.has(u)));
     show('newDivBtn', !whole);
@@ -438,19 +463,6 @@ const app = {
     if (single) $('refillBtn').classList.toggle('active', !!single.refill);
     show('newArmyBtn', divs.length > 0);
     show('unArmyBtn', divs.some((d) => armyOf(d)));
-    show('cmdFront', divs.length > 0);
-    const planned = fs.some((f) => f.plan), attacking = fs.some((f) => f.attack);
-    show('planBtn', fs.length && !planned);
-    $('planBtn').textContent = attacking ? '➜ Neues Ziel' : '➜ Angriff planen';
-    show('attackBtn', planned);
-    show('stopAttackBtn', attacking);
-    show('cancelPlanBtn', planned);
-    show('rotateBtn', fs.length > 0);
-    $('rotateBtn').classList.toggle('active', fs.length > 0 && fs.every((f) => f.rotate));
-    const off = fs.reduce((s, f) => s + this.fronts.detached(f), 0);
-    show('rejoinBtn', off > 0);
-    $('rejoinBtn').textContent = `↺ ${off} zurück an die Front`;
-    show('disbandBtn', fs.length > 0);
   },
 
   // Eigene, lebende Einheiten der Auswahl
@@ -539,12 +551,6 @@ const app = {
     this.toast(`${divs.length} Division${divs.length > 1 ? 'en' : ''} ohne Armee`);
   },
 
-  toggleArmyOpen(id) {
-    if (this.ui.armyClosed.has(id)) this.ui.armyClosed.delete(id); else this.ui.armyClosed.add(id);
-    this.divBarSig = null;
-    this.updateDivBar();
-  },
-
   selectArmy(id, focus = true) {
     const army = this.game.orbat[this.human].all(ARMY).find((a) => a.id === id);
     if (!army) return;
@@ -574,11 +580,34 @@ const app = {
 
   // --- Diplomatie -------------------------------------------------------------------
 
-  toggleDiplo(open = $('diploPanel').hidden) {
-    $('diploPanel').hidden = !open;
-    $('diploBtn').classList.toggle('active', open);
-    this.diploSig = null;
-    if (open) this.updateDiplo();
+  // --- Reiter (Seitenleiste) ---------------------------------------------------------
+
+  // Einen Reiter öffnen (null: Seitenleiste schließen); derselbe Reiter noch einmal schließt
+  setTab(tab) {
+    this.ui.tab = tab;
+    $('sidePanel').hidden = !tab;
+    document.body.classList.toggle('side-open', !!tab);
+    for (const b of document.querySelectorAll('#topbar .tabs button')) b.classList.toggle('active', b.dataset.tab === tab);
+    for (const [t, id] of Object.entries(TAB_BODIES)) $(id).hidden = t !== tab;
+    if (!tab) return;
+    $('sideTitle').textContent = TAB_TITLES[tab];
+    this.buildSig = this.diploSig = this.troopSig = null;
+    this.updateTab();
+  },
+
+  toggleTab(tab) {
+    this.setTab(this.ui.tab === tab ? null : tab);
+  },
+
+  updateTab() {
+    if (!this.game) return;
+    if (this.ui.tab === 'build' || this.ui.tab === 'city') this.updateBuildPanel();
+    else if (this.ui.tab === 'troops') this.updateTroops();
+    this.updateDiplo();
+  },
+
+  toggleDiplo(open = this.ui.tab !== 'diplo') {
+    this.setTab(open ? 'diplo' : null);
   },
 
   updateDiplo() {
@@ -592,7 +621,7 @@ const app = {
       $('offerText').innerHTML = `<span class="dot" style="background:${PLAYER_COLORS[offer.from]}"></span> ${PLAYER_NAMES[offer.from]} bietet dir ein Bündnis an <small class="muted">(${left} s)</small>`;
       this.offerId = offer.id;
     }
-    if ($('diploPanel').hidden) return;
+    if (this.ui.tab !== 'diplo') return;
     const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
     const rows = g.players.filter((p) => p !== me).map((p) => {
       const ally = g.allied(me, p), out = !g.alive(p);
@@ -615,6 +644,96 @@ const app = {
     if (html !== this.diploSig) { this.diploSig = html; $('diploBody').innerHTML = html; }
   },
 
+  // --- Truppen ----------------------------------------------------------------------
+
+  // Überblick wie die Armeeübersicht in HOI4: Armeen mit Divisionen und Front, Reserve,
+  // Lücken an der Grenze. Antippen wählt den Verband und zeigt ihn
+  updateTroops() {
+    if (!this.game || this.ui.tab !== 'troops') return;
+    const g = this.game, ob = g.orbat[this.human];
+    const pct = (v) => `${Math.round(v * 100)} %`;
+    const LEVEL = { good: ['gut besetzt', 'good'], thin: ['dünn', 'thin'], weak: ['zu dünn', 'weak'], none: ['ohne Sektoren', 'none'] };
+    const frontOf = (f) => {
+      const hd = this.fronts.holdOf(f);
+      if (!hd) return { text: 'ohne Front', tag: '' };
+      const st = this.fronts.holdStatus(hd);
+      if (hd.kind === 'line') return { text: 'Verteidigungslinie', tag: '' };
+      const [name, cls] = LEVEL[st.level];
+      return { text: `${st.sectors} Sektoren, ${st.units} Kp.`, tag: `<span class="tag ${cls}">${name}</span>` };
+    };
+    const divRow = (d, child) => {
+      const units = unitsOf(d);
+      if (!units.length) return '';
+      const org = units.reduce((s, u) => s + u.org, 0) / units.reduce((s, u) => s + u.maxOrg, 0);
+      const sup = units.reduce((s, u) => s + u.supply, 0) / units.length;
+      const own = this.fronts.holdOf(d) ? ` · eigene Front: ${frontOf(d).text}` : d.front ? '' : ' · ohne Front';
+      const chosen = units.some((u) => this.ui.selection.has(u)) ? 'sel' : '';
+      return `<li class="${child ? 'child' : ''}"><button data-act="seldiv" data-id="${d.id}" class="${chosen}"><span class="sw" style="background:${divisionColor(d)}"></span>` +
+        `<span class="nm">${d.name}</span><span class="muted">${strength(d)}/${DIVISION_MAX}</span>` +
+        `<span class="sub">Organisation ${pct(org)} · Nachschub ${pct(sup)}${own}</span></button></li>`;
+    };
+    let h = '<h4>Armeen</h4>';
+    const armies = ob.all(ARMY).filter((a) => unitsOf(a).length);
+    if (!armies.length) h += '<p class="muted">Noch keine Armee. Divisionen auswählen und „＋ Armee“ tippen – eine Armee hält ihre Front als Ganzes.</p>';
+    h += '<ul class="rows">' + armies.map((a) => {
+      const fr = frontOf(a);
+      const chosen = unitsOf(a).every((u) => this.ui.selection.has(u)) ? 'sel' : '';
+      return `<li><button data-act="selarmy" data-id="${a.id}" class="${chosen}"><span class="sw" style="background:${armyColor(a)}"></span>` +
+        `<span class="nm">${a.name}</span>${fr.tag}<span class="sub">${a.children.length} Divisionen · ${unitsOf(a).length} Kompanien · ${fr.text}</span></button></li>` +
+        a.children.map((d) => divRow(d, true)).join('');
+    }).join('') + '</ul>';
+    const reserve = ob.all(DIVISION).filter((d) => !armyOf(d));
+    const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
+    h += '<h4>Reserve</h4>';
+    if (reserve.length) h += '<ul class="rows">' + reserve.map((d) => divRow(d, false)).join('') + '</ul>';
+    h += loose
+      ? `<p class="muted">${loose} Kompanien ohne Division – frei verfügbar, aber ohne HQ und Front.</p><div class="buildRow"><button data-act="auto">Auto-Gliederung<small>nach ihrer Lage zu Divisionen zusammenfassen</small></button></div>`
+      : reserve.length ? '' : '<p class="muted">Keine Reserve.</p>';
+    const all = this.fronts.sectorInfo().regions.size, gaps = this.fronts.openSectors().length;
+    h += `<h4>Grenze</h4><p class="muted">${all} Frontsektoren${gaps ? `, davon <b>${gaps} ohne Front</b>` : ', alle mit Front'}.</p>`;
+    if (gaps) h += '<div class="buildRow"><button data-act="gap">Lücke zeigen<small>springt zum ersten Sektor ohne Front</small></button></div>';
+    if (h !== this.troopSig) { this.troopSig = h; $('troopBody').innerHTML = h; }
+  },
+
+  troopAction(t) {
+    const act = t.dataset.act, id = +t.dataset.id;
+    if (act === 'selarmy') this.selectArmy(id);
+    else if (act === 'seldiv') this.selectDivision(id);
+    else if (act === 'auto') this.autoOrganize();
+    else if (act === 'gap') this.showGap();
+    this.troopSig = null;
+    this.updateTroops();
+  },
+
+  // Kamera zum ersten Grenzstück ohne Front
+  showGap() {
+    const part = this.fronts.uncovered()[0];
+    if (!part) { this.toast('Alle Frontsektoren haben eine Front'); return; }
+    if (!this.ui.showFronts) this.toggleShowFronts();
+    this.focusOn([part[Math.floor(part.length / 2)]]);
+  },
+
+  // Meldungen in der oberen Leiste: Lücken an der Front, Nachschubmangel, Kompanien ohne
+  // Division. Antippen springt hin bzw. öffnet die passende Ansicht
+  updateAlerts() {
+    const g = this.game;
+    const list = [];
+    const gaps = this.fronts.openSectors().length;
+    if (gaps && this.game.orbat[this.human].all(DIVISION).length) list.push(['gap', 'bad', `⚠ ${gaps} Sektor${gaps > 1 ? 'en' : ''} ohne Front`, 'Zur ersten Lücke springen']);
+    const hungry = g.units.filter((u) => u.owner === this.human && u.supply < 0.2).length;
+    if (hungry) list.push(['supply', 'warn', `⛟ ${hungry} Kp. ohne Nachschub`, 'Kartenebene Nachschub zeigen']);
+    const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
+    if (loose) list.push(['loose', '', `${loose} Kp. ohne Division`, 'Reserve öffnen']);
+    const html = list.map(([k, cls, text, title]) => `<button class="alert ${cls}" data-alert="${k}" title="${title}">${text}</button>`).join('');
+    if (html !== this.alertSig) { this.alertSig = html; $('alerts').innerHTML = html; }
+  },
+
+  alertAction(k) {
+    if (k === 'gap') this.showGap();
+    else if (k === 'supply') { if (!this.ui.showSupply) this.toggleSupply(); }
+    else if (k === 'loose') { this.ui.openGroup = 'reserve'; this.divBarSig = null; this.updateDivBar(); }
+  },
+
   diploAction(t) {
     const g = this.game, me = this.human, p = +t.dataset.p;
     if (t.dataset.act === 'offer') {
@@ -626,17 +745,14 @@ const app = {
 
   // --- Baumenü ---------------------------------------------------------------------
 
-  toggleBuild(open = $('buildPanel').hidden) {
-    $('buildPanel').hidden = !open;
-    $('buildBtn').classList.toggle('active', open);
-    this.buildSig = null;
-    if (open) this.updateBuildPanel();
+  toggleBuild(open = this.ui.tab !== 'build') {
+    this.setTab(open ? 'build' : null);
   },
 
-  // Eigene Stadt antippen: dort ausbilden
+  // Eigene Stadt antippen: Reiter Städte für diese Stadt (oder Produktion, wenn er offen ist)
   openBuildFor(city) {
     this.ui.buildCity = city.id;
-    this.toggleBuild(true);
+    this.setTab(this.ui.tab === 'build' ? 'build' : 'city');
   },
 
   // Stadt für die Ausbildung: die gewählte, sonst die Hauptstadt, sonst die größte eigene
@@ -650,7 +766,9 @@ const app = {
   },
 
   updateBuildPanel() {
-    if (!this.game || $('buildPanel').hidden) return;
+    const tab = this.ui.tab;
+    if (!this.game || (tab !== 'build' && tab !== 'city')) return;
+    const body = $(TAB_BODIES[tab]);
     const g = this.game, p = this.human, e = g.eco[p], prod = g.production;
     const city = this.buildCity();
     const div = this.selectedDivision();
@@ -660,7 +778,7 @@ const app = {
     const costs = [unitCost('light'), unitCost('heavy'), ...TEMPLATES.map(templateCost),
       ...Object.values(UPGRADES).flatMap((u) => u.cost.map((m) => ({ money: m, manpower: 0 })))];
     const pend = div ? prod.pendingFor(div) : 0;
-    const sig = [city && city.id, g.citiesOf(p).map((c) => c.id + ':' + g.citySize(c)).join(','),
+    const sig = [tab, city && city.id, g.citiesOf(p).map((c) => c.id + ':' + g.citySize(c) + (tab === 'city' ? Object.values(c.buildings).join('') + (c.construction ? c.construction.key : '') : '')).join(','),
       city ? Object.values(city.buildings).join('') + (city.construction ? city.construction.key : '-') : '',
       div ? `${div.id}:${strength(div)}:${pend}:${div.refill}:${div.equip.training}:${div.equip.artillery}` : '-',
       orders.map((o) => o.id).join(','), costs.map((c) => (can(c) ? 1 : 0)).join('')].join('|');
@@ -671,26 +789,37 @@ const app = {
       let h = '';
       if (!city) h += '<p class="muted">Ohne eigene Stadt ist keine Ausbildung möglich.</p>';
       else {
-        h += '<h4>Stadt</h4><select data-act="city">' + g.citiesOf(p)
+        h += `<h4>${tab === 'build' ? 'Ausbildung in' : 'Stadt'}</h4><select data-act="city">` + g.citiesOf(p)
           .sort((a, b) => g.citySize(b) - g.citySize(a) || a.name.localeCompare(b.name))
           .map((c) => `<option value="${c.id}"${c === city ? ' selected' : ''}>${c.name}${c.capitalOf === p ? ' ★' : ''} – ${sizeName[g.citySize(c)]}, ${prod.citySlots(c)} gleichzeitig</option>`).join('') + '</select>';
         const tanks = prod.canTrain(city, 'heavy');
-        h += '<h4>Kompanien</h4><div class="buildRow">' + ['light', 'heavy'].map((t) =>
+        if (tab === 'build') h += '<h4>Kompanien</h4><div class="buildRow">' + ['light', 'heavy'].map((t) =>
           `<button data-act="unit" data-type="${t}"${can(unitCost(t)) && prod.canTrain(city, t) ? '' : ' disabled'}>${t === 'light' ? '＋ Infanterie' : '＋ Panzer'}<small>${prod.canTrain(city, t) ? price(unitCost(t), UNIT_TYPES[t].buildTime) : 'braucht eine Fabrik in der Stadt'}</small></button>`).join('') + '</div>';
-        h += '<h4>Divisionen</h4><div class="buildRow">' + TEMPLATES.map((t) =>
+        if (tab === 'build') h += '<h4>Divisionen</h4><div class="buildRow">' + TEMPLATES.map((t) =>
           `<button data-act="template" data-id="${t.id}"${can(templateCost(t)) && (tanks || !t.heavy) ? '' : ' disabled'}>${t.name}<small>${t.light} Inf. + ${t.heavy} Pz. · ${price(templateCost(t))}</small></button>`).join('') + '</div>';
         // Stadt ausbauen: je Gebäude Stufe, Wirkung und nächste Stufe
         const k = city.construction;
-        h += `<h4>${city.name} ausbauen</h4>`;
-        if (k) h += `<ul class="queue"><li data-build="${city.id}"><span class="what">${BUILDINGS[k.key].icon} ${BUILDINGS[k.key].name} Stufe ${city.buildings[k.key] + 1} im Bau</span><span class="bar"><i></i></span><button data-act="unbuild" title="Bau abbrechen (Kosten zurück)">✕</button></li></ul>`;
-        h += '<div class="buildRow">' + Object.entries(BUILDINGS).filter(([, b]) => !b.coastal || city.coastal).map(([key, b]) => {
+        if (tab === 'city') h += `<h4>${city.name} ausbauen</h4>`;
+        if (tab === 'city' && k) h += `<ul class="queue"><li data-build="${city.id}"><span class="what">${BUILDINGS[k.key].icon} ${BUILDINGS[k.key].name} Stufe ${city.buildings[k.key] + 1} im Bau</span><span class="bar"><i></i></span><button data-act="unbuild" title="Bau abbrechen (Kosten zurück)">✕</button></li></ul>`;
+        if (tab === 'city') h += '<div class="buildRow">' + Object.entries(BUILDINGS).filter(([, b]) => !b.coastal || city.coastal).map(([key, b]) => {
           const lvl = city.buildings[key], next = prod.nextBuilding(city, key);
           const label = `${b.icon} ${b.name}${lvl ? ` ${lvl}/${BUILDING_MAX}` : ''}`;
           if (!next) return `<button disabled>${label}<small>${b.effect} je Stufe · voll ausgebaut</small></button>`;
           return `<button data-act="build" data-key="${key}"${!k && can(next.cost) ? '' : ' disabled'}>${label}<small>${b.effect} je Stufe · ${next.cost.money}💰 · ${Math.round(next.time)} s</small></button>`;
         }).join('') + '</div>';
       }
-      if (div) {
+      if (tab === 'city') {
+        // Alle eigenen Städte mit Gebäuden; Antippen wählt die Stadt und zeigt sie
+        h += '<h4>Deine Städte</h4><ul class="rows">' + g.citiesOf(p)
+          .sort((a, b) => g.citySize(b) - g.citySize(a) || a.name.localeCompare(b.name))
+          .map((c) => {
+            const blds = Object.entries(BUILDINGS).filter(([key]) => c.buildings[key]).map(([key, b]) => `${b.icon}${c.buildings[key]}`).join(' ');
+            const busy = c.construction ? ` · baut ${BUILDINGS[c.construction.key].icon}` : '';
+            return `<li><button data-act="pickcity" data-id="${c.id}" class="${c === city ? 'sel' : ''}"><span class="sw" style="background:${PLAYER_COLORS[p]}"></span>` +
+              `<span class="nm">${c.name}${c.capitalOf === p ? ' ★' : ''}</span><span class="muted">${sizeName[g.citySize(c)]}</span>` +
+              `<span class="sub">${blds || 'keine Gebäude'}${busy} · ${prod.citySlots(c)} Ausbildungsplatz${prod.citySlots(c) > 1 ? 'e' : ''}</span></button></li>`;
+          }).join('') + '</ul>';
+      } else if (div) {
         const room = DIVISION_MAX - strength(div) - pend;
         h += `<h4>${div.name} ausbauen (${strength(div)}${pend ? ` +${pend}` : ''}/${DIVISION_MAX})</h4><div class="buildRow">` +
           ['light', 'heavy'].map((t) => `<button data-act="reinforce" data-type="${t}"${room > 0 && can(unitCost(t)) ? '' : ' disabled'}>＋ ${t === 'light' ? 'Infanterie' : 'Panzer'}<small>${price(unitCost(t))} · nächste Stadt</small></button>`).join('') +
@@ -704,16 +833,16 @@ const app = {
         h += '<h4>Division ausbauen</h4><p class="muted">Eine Division auswählen, um sie zu verstärken oder auszurüsten.</p>';
       }
       const typeName = (t) => (t === 'heavy' ? 'Panzer' : 'Infanterie');
-      h += `<h4>Aufträge (${orders.length})</h4>` + (orders.length ? '<ul class="queue">' + orders.slice(0, 14).map((o) =>
+      if (tab === 'build') h += `<h4>Aufträge (${orders.length})</h4>` + (orders.length ? '<ul class="queue">' + orders.slice(0, 14).map((o) =>
         `<li data-order="${o.id}"><span class="what">${typeName(o.type)} · ${g.cities[o.city].name}${o.division ? ' → ' + o.division.name : o.group ? ' → neue Division' : ''}</span>` +
         `<span class="bar"><i></i></span><button data-act="cancel" data-id="${o.id}" title="Abbrechen (Kosten zurück)">✕</button></li>`).join('') + '</ul>' +
         (orders.length > 14 ? `<p class="muted">… und ${orders.length - 14} weitere</p>` : '') : '<p class="muted">Keine Aufträge.</p>');
-      $('buildBody').innerHTML = h;
+      body.innerHTML = h;
     }
     // Fortschritt der Aufträge und des Baus
-    const bl = $('buildBody').querySelector('li[data-build]');
+    const bl = body.querySelector('li[data-build]');
     if (bl && city && city.construction) bl.querySelector('i').style.width = `${Math.min(100, city.construction.timer / city.construction.time * 100)}%`;
-    for (const li of $('buildBody').querySelectorAll('li[data-order]')) {
+    for (const li of body.querySelectorAll('li[data-order]')) {
       const o = orders.find((x) => x.id === +li.dataset.order);
       if (o) li.querySelector('i').style.width = `${Math.min(100, o.timer / UNIT_TYPES[o.type].buildTime * 100)}%`;
     }
@@ -740,6 +869,11 @@ const app = {
       if (prod.construct(p, city.id, t.dataset.key)) this.toast(`${city.name}: ${BUILDINGS[t.dataset.key].name} wird gebaut`);
       else poor();
     } else if (act === 'unbuild' && city) prod.cancelConstruction(city.id);
+    else if (act === 'pickcity') {
+      const c = g.cities[+t.dataset.id];
+      this.ui.buildCity = c.id;
+      this.focusOn([c]);
+    }
     this.buildSig = null;
     this.updateHud();
   },
@@ -892,20 +1026,31 @@ const app = {
     $('end').hidden = false;
   },
 
-  // Divisionsleiste: Werkzeuge zur Gliederung, dann je eigene Division eine Karte mit
-  // Symbol, Name, Stärke und Regimentern
+  // Armeeleiste wie in HOI4: unten je Armee eine Karte (Farbe, Name, Divisionen, Front mit
+  // Ampel), dazu die Reserve (Divisionen ohne Armee, Kompanien ohne Division) und „＋ Armee“.
+  // Darüber die Divisionen der offenen Armee bzw. der Reserve. Offen ist, wozu die Auswahl
+  // gehört, sonst die zuletzt angetippte Karte
   updateDivBar() {
     const g = this.game;
-    const bar = $('divBar');
     const ob = g.orbat[this.human];
     const divs = ob.all(DIVISION).map((f) => ({ f, units: unitsOf(f) })).filter((d) => d.units.length);
     const armies = ob.all(ARMY).map((a) => ({ a, units: unitsOf(a), divs: divs.filter((d) => armyOf(d.f) === a) }))
       .filter((x) => x.units.length);
+    const reserve = divs.filter((d) => !armyOf(d.f));
     const sel = this.ownSelection();
     const selDivs = new Set(sel.map(divisionOf));
-    const single = selDivs.size === 1 ? [...selDivs][0] : null; // ganze Auswahl in einer Division
     const pickedDivs = [...selDivs].filter(Boolean);
     const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
+    // Offene Gruppe folgt der Auswahl (nur wenn sie sich ändert, sonst gilt die angetippte Karte)
+    const selKey = sel.length + ':' + pickedDivs.map((d) => d.id + (armyOf(d) ? '>' + armyOf(d).id : '')).join(',');
+    if (selKey !== this.ui.selKey) {
+      this.ui.selKey = selKey;
+      const selArmies = new Set(pickedDivs.map(armyOf));
+      if (pickedDivs.length && selArmies.size === 1) this.ui.openGroup = [...selArmies][0] ? [...selArmies][0].id : 'reserve';
+      else if (sel.length && !pickedDivs.length) this.ui.openGroup = 'reserve';
+    }
+    if (this.ui.openGroup !== 'reserve' && !armies.some((x) => x.a.id === this.ui.openGroup)) this.ui.openGroup = null;
+    const open = this.ui.openGroup;
     // „＋“ auf einer Division verschiebt Kompanien; nicht anbieten, wenn ganze Verbände
     // (mehrere Divisionen, z. B. eine Armee) ausgewählt sind
     const wholeDivs = pickedDivs.length > 1 && sel.every((u) => u.regiment);
@@ -914,10 +1059,15 @@ const app = {
     const supplyOf = (units) => units.reduce((s, u) => s + u.supply, 0) / units.length;
     const orgOf = (units) => units.reduce((s, u) => s + u.org, 0) / units.reduce((s, u) => s + u.maxOrg, 0);
     const stats = (units) => Math.round(strengthOf(units) * 20) + ':' + Math.round(supplyOf(units) * 20) + ':' + Math.round(orgOf(units) * 20);
+    const holdInfo = (f) => {
+      const hd = this.fronts.holdOf(f);
+      return hd ? { hd, st: this.fronts.holdStatus(hd) } : null;
+    };
+    const holdSig = (f) => { const h = holdInfo(f); return h ? `${h.st.sectors}${h.st.level}` : '-'; };
     const sig = divs.map((d) => d.f.id + ':' + d.units.length + ':' + stats(d.units) + ':' + (armyOf(d.f) ? armyOf(d.f).id : '-') + ':' +
-      (d.units.some((u) => this.ui.selection.has(u)) ? 1 : 0) + (canAdd(d) ? 1 : 0) + (d.f.refill ? 1 : 0) + (d.f.front ? 1 : 0)).join('|') +
-      '#' + armies.map((x) => x.a.id + ':' + stats(x.units) + (this.ui.armyClosed.has(x.a.id) ? 'c' : 'o') + (canAddArmy(x) ? 1 : 0) + (this.fronts.holdOf(x.a) ? 'f' : '')).join('|') +
-      `#${sel.length}:${loose}:${single ? single.id : '-'}:${sel.some((u) => u.regiment) ? 1 : 0}:${pickedDivs.some((d) => armyOf(d)) ? 1 : 0}`;
+      (d.units.some((u) => this.ui.selection.has(u)) ? 1 : 0) + (canAdd(d) ? 1 : 0) + (d.f.refill ? 1 : 0) + (d.f.front ? 1 : 0) + holdSig(d.f)).join('|') +
+      '#' + armies.map((x) => x.a.id + ':' + stats(x.units) + (canAddArmy(x) ? 1 : 0) + holdSig(x.a) + (x.units.every((u) => this.ui.selection.has(u)) ? 's' : '')).join('|') +
+      `#${sel.length}:${loose}:${open}:${pickedDivs.length}`;
     if (sig === this.divBarSig) return;
     this.divBarSig = sig;
     const bars = (units) => {
@@ -926,7 +1076,7 @@ const app = {
         `<span class="org" title="Organisation ${Math.round(org * 100)} %"><i style="width:${Math.round(org * 100)}%"></i></span>` +
         `<span class="sup${sup < SUPPLY.warnBelow ? ' low' : ''}" title="Nachschub ${Math.round(sup * 100)} %"><i style="width:${Math.round(sup * 100)}%"></i></span>`;
     };
-    const divCard = (d, inArmy) => {
+    const divCard = (d) => {
       const heavy = d.units.filter((u) => u.type === 'heavy').length / d.units.length;
       const regs = d.f.children.map((reg) => {
         const alive = reg.units.filter((u) => u.hp > 0).length;
@@ -934,23 +1084,42 @@ const app = {
       });
       const chosen = d.units.some((u) => this.ui.selection.has(u)) ? ' sel' : '';
       const add = canAdd(d) ? `<span class="add" data-act="add" data-id="${d.f.id}" title="Auswahl zur ${d.f.name} hinzufügen">＋</span>` : '';
-      const tag = inArmy ? ` style="border-top-color:${armyColor(armyOf(d.f))}"` : '';
-      return `<button class="divcard${chosen}${d.f.refill ? ' refill' : ''}${add ? ' can-add' : ''}${inArmy ? ' inarmy' : ''}" data-id="${d.f.id}"${tag} title="${d.f.name}: ${d.units.length} Kompanien">${add}` +
+      const own = holdInfo(d.f) ? ' · eigene Front' : '';
+      return `<button class="divcard${chosen}${d.f.refill ? ' refill' : ''}${add ? ' can-add' : ''}" data-id="${d.f.id}" title="${d.f.name}: ${d.units.length} Kompanien${own}">${add}` +
         `<span class="sym">${natoIcon(heavy, 26, 18, 1, 'XX', divisionColor(d.f))}</span>` +
         `<span class="name">${d.f.name}${d.f.front ? ' <span class="fr" title="hält eine Front">〰</span>' : ''}</span>` +
         bars(d.units) + `<span class="regs">${regs.join('')}</span></button>`;
     };
+    const LEVEL_NAMES = { good: 'gut besetzt', thin: 'dünn besetzt', weak: 'zu dünn besetzt', none: 'ohne Sektoren' };
+    const LEVEL_COLORS = { good: 'var(--good)', thin: 'var(--accent)', weak: 'var(--bad)', none: 'var(--grey)' };
     const armyCard = (x) => {
       const heavy = x.units.filter((u) => u.type === 'heavy').length / x.units.length;
-      const open = !this.ui.armyClosed.has(x.a.id);
       const chosen = x.units.every((u) => this.ui.selection.has(u)) ? ' sel' : '';
       const add = canAddArmy(x) ? `<span class="add" data-act="armyadd" data-id="${x.a.id}" title="Ausgewählte Divisionen zur ${x.a.name}">＋</span>` : '';
-      return `<button class="divcard armycard${chosen}${add ? ' can-add' : ''}" data-army="${x.a.id}" style="border-color:${armyColor(x.a)}" title="${x.a.name}: ${x.divs.length} Divisionen, ${x.units.length} Kompanien">${add}` +
+      const h = holdInfo(x.a);
+      const front = !h ? 'ohne Front' : h.hd.kind === 'line' ? 'Linie' : `${h.st.sectors} Sek<span class="dot" style="background:${LEVEL_COLORS[h.st.level]}" title="${LEVEL_NAMES[h.st.level]}"></span>`;
+      return `<button class="divcard armycard${chosen}${open === x.a.id ? ' open' : ''}${add ? ' can-add' : ''}" data-army="${x.a.id}" style="border-left-color:${armyColor(x.a)}" title="${x.a.name}: ${x.divs.length} Divisionen, ${x.units.length} Kompanien">${add}` +
         `<span class="sym">${natoIcon(heavy, 30, 18, 1, 'XXXX', armyColor(x.a))}</span>` +
-        `<span class="name">${x.a.name}${this.fronts.holdOf(x.a) ? ' <span class="fr" title="hält eine Front">〰</span>' : ''} <span class="toggle" data-act="armyopen" data-id="${x.a.id}" title="Divisionen ein-/ausklappen">${open ? '▾' : '▸'} ${x.divs.length}</span></span>` +
-        bars(x.units) + '</button>' + (open ? x.divs.map((d) => divCard(d, true)).join('') : '');
+        `<span class="name">${x.a.name}</span><span class="meta">${x.divs.length} Div · ${front}</span>` +
+        bars(x.units) + '</button>';
     };
-    bar.innerHTML = armies.map(armyCard).join('') + divs.filter((d) => !armyOf(d.f)).map((d) => divCard(d, false)).join('');
+    let bar = armies.map(armyCard).join('');
+    if (reserve.length || loose) {
+      bar += `<button class="divcard armycard reserve${open === 'reserve' ? ' open' : ''}" data-reserve="1" style="border-left-color:var(--grey)" title="Divisionen ohne Armee und Kompanien ohne Division">` +
+        `<span class="sym">${natoIcon(0, 30, 18, 1, '', '#c9d2dc')}</span><span class="name">Reserve</span>` +
+        `<span class="meta">${reserve.length} Div${loose ? ` · ${loose} Kp.` : ''}</span></button>`;
+    }
+    if (pickedDivs.length) bar += '<button class="divcard newarmy" data-act="newarmy" title="Neue Armee aus den ausgewählten Divisionen">＋ Armee</button>';
+    $('divBar').innerHTML = bar;
+    let row = '';
+    if (open === 'reserve') {
+      row = reserve.map(divCard).join('');
+      if (loose) row += `<button class="divtool" data-act="auto" title="Kompanien ohne Division nach ihrer Lage zu Divisionen zusammenfassen">Auto-Gliederung (${loose} Kp.)</button>`;
+    } else if (open) {
+      const x = armies.find((y) => y.a.id === open);
+      if (x) row = x.divs.map(divCard).join('');
+    }
+    $('divRow').innerHTML = row;
   },
 
   selectDivision(id, focus = true) {
@@ -988,11 +1157,11 @@ const app = {
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     $('hudTime').textContent = `${m}:${String(s).padStart(2, '0')}`;
     this.updateCommands();
-    this.updateBuildPanel();
-    this.updateDiplo();
-    const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
-    $('autoBtn').hidden = !loose;
-    $('autoBtn').textContent = `Auto-Gliederung (${loose})`;
+    this.updateTab();
+    this.updateAlerts();
+    // Höhe der oberen Leiste (bricht auf dem Handy um) für die Lage der übrigen Teile
+    const top = $('topbar').offsetHeight;
+    if (top !== this.topHeight) { this.topHeight = top; document.documentElement.style.setProperty('--top', `${top}px`); }
   },
 };
 
@@ -1079,39 +1248,56 @@ $('menuBtn').onclick = () => {
 };
 $('resumeBtn').onclick = () => { $('menu').hidden = true; if (app.paused) app.togglePause(); };
 $('selectBtn').onclick = () => app.setSelectMode(!app.ui.selectMode);
-$('buildBtn').onclick = () => app.toggleBuild();
-$('diploBtn').onclick = () => app.toggleDiplo();
-$('diploClose').onclick = () => app.toggleDiplo(false);
+for (const b of document.querySelectorAll('#topbar .tabs button')) b.onclick = () => app.toggleTab(b.dataset.tab);
+$('sideClose').onclick = () => app.setTab(null);
+$('alerts').onclick = (e) => { const t = e.target.closest('[data-alert]'); if (t && app.game) app.alertAction(t.dataset.alert); };
+$('troopBody').addEventListener('click', (e) => {
+  const t = e.target.closest('button[data-act]');
+  if (t && app.game) app.troopAction(t);
+});
+$('moreBtn').onclick = () => { app.ui.more = !app.ui.more; app.updateCommands(); };
 $('diploBody').addEventListener('click', (e) => {
   const t = e.target.closest('button[data-act]');
   if (t && !t.disabled && app.game) app.diploAction(t);
 });
 $('offerYes').onclick = () => { if (app.game) { app.game.answerOffer(app.offerId, true); app.updateDiplo(); } };
 $('offerNo').onclick = () => { if (app.game) { app.game.answerOffer(app.offerId, false); app.updateDiplo(); } };
-$('buildClose').onclick = () => app.toggleBuild(false);
-$('buildBody').addEventListener('click', (e) => {
-  const t = e.target.closest('button[data-act]');
-  if (t && !t.disabled && app.game) app.buildAction(t);
-});
-$('buildBody').addEventListener('change', (e) => {
-  if (e.target.dataset.act === 'city') { app.ui.buildCity = +e.target.value; app.buildSig = null; app.updateBuildPanel(); }
-});
+for (const id of ['buildBody', 'cityBody']) {
+  $(id).addEventListener('click', (e) => {
+    const t = e.target.closest('button[data-act]');
+    if (t && !t.disabled && app.game) app.buildAction(t);
+  });
+  $(id).addEventListener('change', (e) => {
+    if (e.target.dataset.act === 'city') { app.ui.buildCity = +e.target.value; app.buildSig = null; app.updateBuildPanel(); }
+  });
+}
 $('allBtn').onclick = () => app.selectAll();
-$('divBar').onclick = (e) => {
+// Armeeleiste und Divisionsreihe
+function onBarClick(e) {
+  if (!app.game) return;
   const tool = e.target.closest('[data-act]');
   if (tool) {
     const id = +tool.dataset.id;
     const act = tool.dataset.act;
     if (act === 'add') app.addToDivision(id);
     else if (act === 'armyadd') app.addToArmy(id);
-    else if (act === 'armyopen') app.toggleArmyOpen(id);
+    else if (act === 'newarmy') app.newArmy();
+    else if (act === 'auto') app.autoOrganize();
     return;
   }
   const army = e.target.closest('[data-army]');
-  if (army) { app.selectArmy(+army.dataset.army); return; }
+  if (army) { app.ui.openGroup = +army.dataset.army; app.selectArmy(+army.dataset.army); return; }
+  if (e.target.closest('[data-reserve]')) {
+    app.ui.openGroup = app.ui.openGroup === 'reserve' ? null : 'reserve';
+    app.divBarSig = null;
+    app.updateDivBar();
+    return;
+  }
   const card = e.target.closest('.divcard');
   if (card) app.selectDivision(+card.dataset.id);
-};
+}
+$('divBar').onclick = onBarClick;
+$('divRow').onclick = onBarClick;
 $('frontBtn').onclick = () => app.toggleFrontMode();
 $('showFrontsBtn').onclick = () => app.toggleShowFronts();
 $('supplyBtn').onclick = () => app.toggleSupply();
@@ -1145,108 +1331,10 @@ $('unDivBtn').onclick = () => app.removeFromDivision();
 $('refillBtn').onclick = () => { const d = app.selectedDivision(); if (d) app.toggleRefill(d.id); };
 $('newArmyBtn').onclick = () => app.newArmy();
 $('unArmyBtn').onclick = () => app.removeFromArmy();
-$('autoBtn').onclick = () => app.autoOrganize();
 $('centerBtn').onclick = () => app.fitCamera();
 $('againBtn').onclick = () => app.start(app.current.seed, app.current.map, app.current.difficulty, app.current.opponents, null, app.current.sectorKm);
 $('newBtn').onclick = () => app.start(randomSeed(), app.current.map, app.current.difficulty, app.current.opponents, null, app.current.sectorKm);
 $('endMenuBtn').onclick = () => { $('end').hidden = true; $('menu').hidden = false; $('resumeBtn').hidden = true; };
-
-// Fenster (Befehlsfeld, Baumenü) verschieben (Titelzeile ziehen) und größer oder kleiner
-// machen (Griff unten rechts); Doppelklick bzw. Doppeltippen auf die Titelzeile setzt beides
-// zurück. Lage und Größe bleiben gespeichert, das Fenster bleibt immer ganz im Bild.
-// base/origin: Verschiebung und Bezugspunkt der Grundstellung aus dem CSS
-const PANEL_SCALE = [0.6, 1.6];
-function makeMovable(panel, key, base, origin) {
-  const head = panel.querySelector('.cmdHead');
-  const grip = panel.querySelector('.cmdResize');
-  let pos = (() => { try { return JSON.parse(localStorage.getItem(key)) || {}; } catch { return {}; } })();
-  const save = () => { try { localStorage.setItem(key, JSON.stringify(pos)); } catch { /* egal */ } };
-
-  function place() {
-    const st = panel.style;
-    const s = pos.scale || 1;
-    if (pos.x === undefined) {
-      st.left = st.top = st.bottom = st.right = '';
-      st.transformOrigin = origin;
-      st.transform = s === 1 ? '' : `${base}scale(${s})`;
-      return;
-    }
-    st.transformOrigin = '0 0';
-    st.transform = `scale(${s})`;
-    st.bottom = st.right = 'auto';
-    st.left = pos.x + 'px';
-    st.top = pos.y + 'px';
-    if (panel.hidden) return;
-    const r = panel.getBoundingClientRect();
-    const x = Math.max(0, Math.min(pos.x, window.innerWidth - r.width));
-    const y = Math.max(0, Math.min(pos.y, window.innerHeight - r.height));
-    if (x !== pos.x || y !== pos.y) {
-      pos.x = x; pos.y = y;
-      st.left = x + 'px'; st.top = y + 'px';
-    }
-  }
-
-  // Ab dem ersten Verschieben oder Skalieren gilt eine feste Lage (linke obere Ecke)
-  function pin() {
-    if (pos.x !== undefined) return;
-    const r = panel.getBoundingClientRect();
-    pos.x = r.left; pos.y = r.top;
-    place();
-  }
-
-  function drag(handle, onMove) {
-    handle.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button, select') || e.button > 0) return;
-      e.preventDefault();
-      pin();
-      handle.setPointerCapture(e.pointerId);
-      const start = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y, s: pos.scale || 1, r: panel.getBoundingClientRect() };
-      panel.classList.add('dragging');
-      const move = (ev) => { onMove(ev, start); place(); };
-      const up = () => {
-        panel.classList.remove('dragging');
-        handle.removeEventListener('pointermove', move);
-        handle.removeEventListener('pointerup', up);
-        handle.removeEventListener('pointercancel', up);
-        save();
-      };
-      handle.addEventListener('pointermove', move);
-      handle.addEventListener('pointerup', up);
-      handle.addEventListener('pointercancel', up);
-    });
-  }
-
-  // Doppelklick/Doppeltippen (vor dem Ziehen geprüft, damit es kein Ziehen startet)
-  let lastTap = 0;
-  head.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('button, select')) return;
-    const now = performance.now();
-    if (now - lastTap < 350) {
-      lastTap = 0;
-      pos = {};
-      place();
-      save();
-      e.stopImmediatePropagation();
-      return;
-    }
-    lastTap = now;
-  });
-  drag(head, (ev, st) => {
-    pos.x = st.x + ev.clientX - st.px;
-    pos.y = st.y + ev.clientY - st.py;
-  });
-  drag(grip, (ev, st) => {
-    // Neue Breite bis zum Zeiger, Höhe wächst im gleichen Verhältnis mit
-    const k = Math.max((ev.clientX - st.r.left) / st.r.width, (ev.clientY - st.r.top) / st.r.height);
-    pos.scale = Math.max(PANEL_SCALE[0], Math.min(PANEL_SCALE[1], Math.round(st.s * k * 100) / 100));
-  });
-  new ResizeObserver(() => place()).observe(panel);
-  window.addEventListener('resize', place);
-  place();
-}
-makeMovable($('cmdPanel'), 'wod-cmdpanel', 'translateX(-50%) ', '50% 100%');
-makeMovable($('buildPanel'), 'wod-buildpanel', '', '100% 0');
-makeMovable($('diploPanel'), 'wod-diplopanel', '', '100% 0');
 
 function loadSettings() {
   try { return JSON.parse(localStorage.getItem('wod-settings')) || {}; } catch { return {}; }

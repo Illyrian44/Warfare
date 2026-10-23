@@ -1,4 +1,4 @@
-import { CELL, T, TRADE } from './config.js?v=98';
+import { CELL, T, TRADE } from './config.js?v=99';
 
 // Handel wie bei OpenFront: Städte schicken regelmäßig Kolonnen über Land zu anderen Städten
 // derselben Seite (später auch zu Verbündeten), Häfen schicken Schiffe zu anderen Häfen im

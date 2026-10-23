@@ -1,5 +1,5 @@
-import { CITY_RADIUS } from './config.js?v=98';
-import { divisionOf, unitsOf } from './orbat.js?v=98';
+import { CITY_RADIUS } from './config.js?v=99';
+import { divisionOf, unitsOf } from './orbat.js?v=99';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -252,8 +252,10 @@ export class Input {
     const k = e.key.toLowerCase();
     if (k === ' ' || k === 'p') { e.preventDefault(); app.togglePause(); }
     else if (k === 'escape') {
-      this.ui.selection.clear();
-      app.setFrontMode(null);
+      // Schritt für Schritt: erst Malen bzw. Zielen beenden, dann Auswahl, dann Seitenleiste
+      if (this.ui.frontMode) app.setFrontMode(null);
+      else if (this.ui.selection.size) this.ui.selection.clear();
+      else app.setTab(null);
       app.selectFront(null);
       app.updateSelectionInfo();
     } else if (k === 'f') {
@@ -264,7 +266,10 @@ export class Input {
     }
     else if (k === 'v') app.toggleShowFronts();
     else if (k === 'n') app.toggleSupply();
-    else if (k === 'b') app.toggleBuild();
+    else if (k === 'b') app.toggleTab('build');
+    else if (k === 'c') app.toggleTab('city');
+    else if (k === 'k') app.toggleTab('diplo');
+    else if (k === 't') app.toggleTab('troops');
     else if (k === 'd') {
       if (e.shiftKey) app.removeFromDivision();
       else app.newDivision();
