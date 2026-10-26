@@ -1,17 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=111';
-import { Game, menOf } from './game.js?v=111';
-import { AI } from './ai.js?v=111';
-import { Renderer } from './render.js?v=111';
-import { Input } from './input.js?v=111';
-import { formationSlots } from './formation.js?v=111';
-import { FrontManager, chainLength } from './fronts.js?v=111';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=111';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=111';
-import { templateCost } from './production.js?v=111';
+import { loadMap, MAPS } from './map.js?v=112';
+import { Game, menOf } from './game.js?v=112';
+import { AI } from './ai.js?v=112';
+import { Renderer } from './render.js?v=112';
+import { Input } from './input.js?v=112';
+import { formationSlots } from './formation.js?v=112';
+import { FrontManager, chainLength } from './fronts.js?v=112';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=112';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=112';
+import { templateCost } from './production.js?v=112';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '111'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '112'; // für Kartendaten, siehe scripts/bump-version.sh
 // Reiter der oberen Leiste: Inhalt in der Seitenleiste
 const TAB_BODIES = { build: 'buildBody', city: 'cityBody', diplo: 'diploBody', logistics: 'logiBody', troops: 'troopBody' };
 const TAB_TITLES = { build: 'Produktion', city: 'Städte', diplo: 'Diplomatie', logistics: 'Logistik', troops: 'Truppen' };

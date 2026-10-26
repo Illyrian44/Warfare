@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX, UNIT_TYPES } from './config.js?v=111';
-import { unitStrength } from './game.js?v=111';
-import { mulberry32 } from './rng.js?v=111';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=111';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=111';
+import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX, UNIT_TYPES } from './config.js?v=112';
+import { unitStrength } from './game.js?v=112';
+import { mulberry32 } from './rng.js?v=112';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=112';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=112';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -56,12 +56,17 @@ export class AI {
     let upkeep = e.upkeep + orders.reduce((s, o) => s + UNIT_TYPES[o.type].upkeep, 0);
     const net = e.income + e.tradeRate;
     const cities = myCities.slice().sort((a, b) => g.citySize(b) - g.citySize(a));
+    this.atLimit = false; // Unterhalt oder Manpower erlauben keine weitere Kompanie
     for (const c of cities) {
       while (total < this.armyCap() && prod.orders.filter((o) => o.city === c.id).length < prod.citySlots(c)) {
         const type = this.rng() < this.cfg.heavyRatio && prod.canTrain(c, 'heavy') ? 'heavy' : 'light';
         const ut = UNIT_TYPES[type];
-        if (upkeep + ut.upkeep > net * UPKEEP_SHARE) { this.construct(cities); this.equip(); return; }
-        if (e.manpower - ut.cost.manpower < MP_RESERVE) { this.construct(cities); this.equip(); return; }
+        if (upkeep + ut.upkeep > net * UPKEEP_SHARE || e.manpower - ut.cost.manpower < MP_RESERVE) {
+          this.atLimit = true;
+          this.construct(cities);
+          this.equip();
+          return;
+        }
         if (!prod.order(this.me, c.id, type)) return;
         upkeep += ut.upkeep;
         total++;
@@ -469,9 +474,10 @@ export class AI {
     const defenders = new Set(enemies.filter((e) => Math.hypot(e.x - target.x, e.y - target.y) < TARGET_RADIUS ||
       units.some((u) => Math.hypot(u.x - e.x, u.y - e.y) < 180)));
     // An der Obergrenze der Truppenzahl hilft Warten nicht mehr: dann genügt knappe
-    // Überlegenheit (haltende Fronten nehmen kein Land ein, nur Angriffe bewegen die Grenze)
-    // Ebenso, wenn diese Seite deutlich stärker ist als jede feindliche (Endphase entscheiden)
-    const maxed = g.units.filter((u) => u.owner === this.me).length >= this.armyCap() - 1;
+    // Überlegenheit (haltende Fronten nehmen kein Land ein, nur Angriffe bewegen die Grenze).
+    // Die Obergrenze ist auch erreicht, wenn Unterhalt oder Manpower keine weitere Kompanie
+    // erlauben. Ebenso, wenn diese Seite deutlich stärker ist als jede feindliche (Endphase)
+    const maxed = this.atLimit || g.units.filter((u) => u.owner === this.me).length >= this.armyCap() - 1;
     const foes = g.players.filter((q) => g.alive(q) && g.hostile(this.me, q));
     const superior = foes.length > 0 && this.power(this.me) > 1.3 * Math.max(...foes.map((q) => this.power(q)));
     const push = maxed || superior ? Math.min(this.cfg.frontPush, 1.1) : this.cfg.frontPush;
