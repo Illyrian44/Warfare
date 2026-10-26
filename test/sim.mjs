@@ -111,14 +111,12 @@ function checkState(g, label, ais) {
   // einem bestehenden Auftrag, die Teile eines Auftrags überlappen sich nicht
   for (const ai of ais) {
     const fm = ai.fronts;
-    for (const hd of fm.holds) {
-      const parts = fm.fronts.filter((f) => f.hold === hd).map((f) => hd.parts.get(f.division));
-      if (parts.some((p) => !p)) fail(`${label}: Division ohne Anteil am Auftrag ${hd.formation.name}`);
-      parts.filter(Boolean).sort((a, b) => a[0] - b[0]).forEach((p, i, l) => {
-        if (i && p[0] < l[i - 1][1] - 1e-9) fail(`${label}: Teile im Auftrag ${hd.formation.name} überlappen`);
-      });
+    // Jedes Grenzfeld gehört höchstens einer Division
+    const seen = new Set();
+    for (const f of fm.fronts) for (const e of f.cells) {
+      if (seen.has(e)) fail(`${label}: Grenzfeld ${e.i} in zwei Divisionsabschnitten`);
+      seen.add(e);
     }
-    for (const [r, hd] of fm.assign) if (hd && !fm.holds.includes(hd)) fail(`${label}: Sektor ${r} gehört zu einem aufgelösten Auftrag`);
     const divs = new Set();
     for (const f of fm.fronts) {
       if (!f.division || f.division.dissolved) fail(`${label}: Front ${f.id} ohne bestehende Division`);
@@ -193,7 +191,7 @@ function checkState(g, label, ais) {
   else console.log('ok   Haltende Grenzfront bleibt stehen');
 }
 
-// --- Frontsektoren: Aufteilen, Trenner, eigene Division, Erben ------------------------
+// --- Fronten: Aufteilen, Trenner, eigene Division, Mitwandern, keine Lücken ----------
 {
   const g = new Game(realMap('balkan', 3), { players: 2 });
   const home = g.cities[g.starts[1]];
@@ -201,41 +199,51 @@ function checkState(g, label, ais) {
   const ob = g.orbat[1];
   const fm = new FrontManager(g, 1);
   const divs = ob.autoOrganize(g.units.filter((u) => u.owner === 1));
-  const all = [...fm.sectorInfo().regions.keys()];
-  if (divs.length < 3) fail(`Sektortest: nur ${divs.length} Divisionen`);
-  else if (all.length < 4) fail(`Sektortest: nur ${all.length} Frontsektoren`);
+  const all = fm.frontInfo().list;
+  if (divs.length < 3) fail(`Fronttest: nur ${divs.length} Divisionen`);
+  else if (all.length < 10) fail(`Fronttest: nur ${all.length} Grenzfelder`);
   else {
     const A = ob.createArmy([divs[0]]), B = ob.createArmy(divs.slice(1));
-    fm.paintSplit([A, B], all);
+    fm.assignSplit([A, B], all);
     const ha = fm.holdOf(A), hb = fm.holdOf(B);
-    const count = (hd) => all.filter((r) => fm.assign.get(r) === hd).length;
-    if (!ha || !hb) fail('Sektortest: Aufteilen auf zwei Armeen ergibt nicht zwei Aufträge');
+    const count = (hd) => fm.holdEntries(hd).length;
+    if (!ha || !hb) fail('Fronttest: Aufteilen auf zwei Armeen ergibt nicht zwei Aufträge');
     else {
-      if (count(ha) + count(hb) !== all.length) fail('Sektortest: nicht jeder Sektor gehört genau einer Armee');
-      for (const d of [...A.children, ...B.children]) if (!fm.fronts.includes(d.front)) fail(`Sektortest: ${d.name} hat keine Front`);
-      // Trenner zur Mitte des anderen Auftrags ziehen: Sektoren wechseln, beide behalten welche
+      if (fm.openEntries().length) fail(`Fronttest: ${fm.openEntries().length} Grenzfelder ohne Front nach „Ganze Grenze“`);
+      for (const d of [...A.children, ...B.children]) if (!fm.fronts.includes(d.front)) fail(`Fronttest: ${d.name} hat keine Front`);
+      // Jede Kompanie hat einen Platz, und die Plätze einer Division liegen auf ihren Grenzfeldern
+      fm.syncAll();
+      for (const f of fm.fronts) {
+        const act = f.units.filter((u) => !u.rotating && !u.broken);
+        if (f.cells.length && act.some((u) => !f.slots.get(u))) fail(`Fronttest: Kompanie von ${f.division.name} ohne Platz`);
+      }
+      // Trenner zur Mitte des anderen Auftrags ziehen: Grenzfelder wechseln, beide behalten welche
       const bnd = fm.boundaries().find((b) => (b.a === ha && b.b === hb) || (b.a === hb && b.b === ha));
-      if (!bnd) fail('Sektortest: kein Trenner zwischen den Armeen');
+      if (!bnd) fail('Fronttest: kein Trenner zwischen den Armeen');
       else {
         const before = count(ha);
-        const theirs = all.filter((r) => fm.assign.get(r) === hb);
-        const R = g.sectors.regions[theirs[Math.floor(theirs.length / 2)]];
-        fm.moveBoundary(ha, hb, bnd, R);
-        if (count(ha) === before && theirs.length > 1) fail('Sektortest: Trenner verschiebt nichts');
-        if (!count(ha) || !count(hb)) fail('Sektortest: Trenner nimmt einer Armee alle Sektoren');
+        const theirs = fm.holdEntries(hb);
+        const target = theirs[Math.floor(theirs.length / 2)];
+        fm.moveBoundary(ha, hb, bnd, { x: target.cx, y: target.cy });
+        if (count(ha) === before) fail('Fronttest: Trenner verschiebt nichts');
+        if (!count(ha) || !count(hb)) fail('Fronttest: Trenner nimmt einer Armee alle Grenzfelder');
       }
-      // Eine Division der Armee B bekommt einen eigenen Sektor und verlässt den Auftrag der Armee
-      const d = B.children[0], r = all.find((x) => fm.assign.get(x) === hb);
-      fm.paint(d, [r]);
-      if (fm.holdOf(d) !== d.front.hold || fm.members(fm.holdOf(B) || { formation: B }).includes(d)) fail('Sektortest: eigene Front einer Division greift nicht');
-      // Die Grenze wächst ins neutrale Land: neue Grenzsektoren übernehmen ihre Front
+      // Eine Division der Armee B malt sich ein eigenes Stück und verlässt den Auftrag der Armee
+      const d = B.children[0], e = fm.holdEntries(hb)[0];
+      fm.paintStroke(d, { x: e.cx, y: e.cy }, { x: e.cx + 1, y: e.cy });
+      if (!fm.holdOf(d) || fm.holdOf(d) !== d.front.hold || fm.members(fm.holdOf(B) || { formation: B }).includes(d)) fail('Fronttest: eigene Front einer Division greift nicht');
+      // Die Grenze wächst ins neutrale Land: neue Grenzfelder übernehmen ihre Front
+      const open0 = fm.openEntries().length;
       for (let s = 0; s < 90 * 30; s++) { fm.update(STEP); g.step(STEP); g.events.length = 0; }
-      const now = [...fm.sectorInfo().regions.keys()];
-      const open = now.filter((x) => !fm.assign.get(x)).length;
-      if (open > now.length * 0.1) fail(`Sektortest: ${open} von ${now.length} Grenzsektoren ohne Front nach 90 s`);
+      const now = fm.frontInfo().list;
+      const open = fm.openEntries().length;
+      if (open > Math.max(open0, now.length * 0.05)) fail(`Fronttest: ${open} von ${now.length} Grenzfeldern ohne Front nach 90 s`);
+      // Darstellung: jede Grenzkante gehört zu genau einer Linie
+      const edges = fm.edges().reduce((s, l) => s + l.teeth.length, 0);
+      if (!fm.edges().length || !edges) fail('Fronttest: keine Frontlinien zum Zeichnen');
     }
   }
-  if (!failed) console.log('ok   Frontsektoren: Aufteilen, Trenner, eigene Division, Erben');
+  if (!failed) console.log('ok   Fronten: Aufteilen, Trenner, eigene Division, Mitwandern, keine Lücken');
 }
 
 // --- Feindliche Städte holen sich kein Land zurück -----------------------------------

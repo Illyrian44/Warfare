@@ -1,7 +1,7 @@
-import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=107';
-import { classify } from './map.js?v=107';
-import { frontBadge, chainLength } from './fronts.js?v=107';
-import { LEVELS, REGIMENT, DIVISION, ARMY, formationOf, divisionColor, armyColor, unitsOf, divisionOf } from './orbat.js?v=107';
+import { CELL, T, UNIT_TYPES, PLAYER_COLORS, PLAYER_RGB, CITY_RADIUS, SUPPLY, BUILDINGS } from './config.js?v=108';
+import { classify } from './map.js?v=108';
+import { frontBadge } from './fronts.js?v=108';
+import { LEVELS, REGIMENT, DIVISION, ARMY, formationOf, divisionColor, armyColor, unitsOf, divisionOf } from './orbat.js?v=108';
 
 const TERRAIN_RGB = {
   [T.DEEP]: [38, 92, 150],
@@ -278,15 +278,12 @@ export class Renderer {
     const me = this.human;
     const visible = (u) => u.owner === me || ui.revealAll || game.isVisible(me, u.x, u.y);
 
-    // Feindliche Fronten bleiben verborgen. Eigene: Bänder je Armee bzw. Division mit
-    // eigenem Auftrag, ungedeckte Grenzstücke, Einzelheiten der ausgewählten Divisionen
-    if (fronts && ui.showFronts) {
-      this.drawUncovered(fronts.uncovered(), px);
-      this.drawHolds(fronts, px);
-    }
+    // Feindliche Fronten bleiben verborgen. Eigene: die Grenze selbst in der Farbe der
+    // zuständigen Armee (rot gestrichelt: keine Front), Einzelheiten der ausgewählten Divisionen
+    if (fronts && ui.showFronts) this.drawFrontLines(fronts, px);
     if (fronts) {
       for (const f of fronts.fronts) {
-        if (isFrontShown(f, ui)) this.drawFront(f, px, f === ui.front);
+        if (isFrontShown(f, ui)) this.drawFront(fronts, f, px, f === ui.front);
         else if (ui.showFronts && (f.plan || f.attack)) this.drawOrders(f, px);
       }
     }
@@ -420,81 +417,80 @@ export class Renderer {
     }
   }
 
-  // Grenzstücke ohne Front: rot gestrichelt
-  drawUncovered(parts, px) {
+  // Fronten wie in Hearts of Iron: die Grenze selbst als Linie in der Farbe der zuständigen
+  // Armee (bzw. Division mit eigener Front), darunter ein breites Band, Zacken Richtung Feind.
+  // Grenzstücke ohne Front rot gestrichelt. Die Linien folgen den Feldkanten und sind nur
+  // geglättet: sie können nicht reißen
+  drawFrontLines(fronts, px) {
     const { ctx } = this;
+    const lines = fronts.edges();
+    const path = (pts) => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (const p of pts) ctx.lineTo(p.x, p.y);
+    };
+    ctx.lineJoin = 'round';
+    // ohne Front
     ctx.setLineDash([7 * px, 5 * px]);
     ctx.lineCap = 'butt';
-    ctx.strokeStyle = 'rgba(255,80,60,0.9)';
+    ctx.strokeStyle = 'rgba(255,80,60,0.95)';
     ctx.lineWidth = 4 * px;
-    for (const c of parts) {
-      ctx.beginPath();
-      ctx.moveTo(c[0].x, c[0].y);
-      for (const p of c) ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-    }
+    for (const l of lines) if (!l.key) { path(l.pts); ctx.stroke(); }
     ctx.setLineDash([]);
-  }
-
-  // Fronten der Armeen (bzw. Divisionen mit eigenem Auftrag) wie in Hearts of Iron: breites
-  // Band in ihrer Farbe hinter der Linie, darauf die Frontlinie mit Zacken Richtung Feind,
-  // kurze Querstriche an den Sektorgrenzen
-  drawHolds(fronts, px) {
-    const { ctx } = this;
-    ctx.lineJoin = 'round';
-    for (const hd of fronts.holds) {
+    // Bänder, dann Linien mit Zacken
+    for (const l of lines) {
+      const hd = l.key && fronts.holdIds.get(l.key);
+      if (!hd) continue;
+      path(l.pts);
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = holdColor(hd);
+      ctx.lineWidth = 15 * px;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    for (const l of lines) {
+      const hd = l.key && fronts.holdIds.get(l.key);
+      if (!hd) continue;
       const color = holdColor(hd);
-      if (hd.fallback && !hd.falling) drawFallback(ctx, hd.fallback.line, px, color, hd.formation.name);
-      for (const c of fronts.holdChains(hd)) {
-        if (c.length < 2) continue;
-        ctx.beginPath();
-        ctx.moveTo(c[0].x, c[0].y);
-        for (const p of c) ctx.lineTo(p.x, p.y);
-        ctx.lineCap = 'butt';
-        ctx.globalAlpha = 0.4;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 16 * px;
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-        ctx.lineWidth = 5.5 * px;
-        ctx.stroke();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 3 * px;
-        ctx.stroke();
-        drawTeeth(ctx, c, px, color);
-        // Sektorgrenzen
-        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-        ctx.lineWidth = 1.5 * px;
-        ctx.beginPath();
-        for (let k = 1; k < c.length; k++) {
-          if (c[k].r === c[k - 1].r) continue;
-          const x = (c[k].x + c[k - 1].x) / 2, y = (c[k].y + c[k - 1].y) / 2;
-          const nx = c[k].nx || 0, ny = c[k].ny || 0;
-          ctx.moveTo(x - nx * 9 * px, y - ny * 9 * px);
-          ctx.lineTo(x + nx * 4 * px, y + ny * 4 * px);
-        }
-        ctx.stroke();
+      path(l.pts);
+      ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+      ctx.lineWidth = 5.5 * px;
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3 * px;
+      ctx.stroke();
+      // Zacken in Mindestabständen auf dem Bildschirm
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      let last = null;
+      for (const t of l.teeth) {
+        if (last && Math.hypot(t.x - last.x, t.y - last.y) < 15 * px) continue;
+        last = t;
+        const tx = -t.ny, ty = t.nx; // entlang der Linie
+        ctx.moveTo(t.x - tx * 4.5 * px, t.y - ty * 4.5 * px);
+        ctx.lineTo(t.x + t.nx * 7 * px, t.y + t.ny * 7 * px);
+        ctx.lineTo(t.x + tx * 4.5 * px, t.y + ty * 4.5 * px);
       }
+      ctx.fill();
+    }
+    for (const hd of fronts.holds) {
+      if (hd.fallback && !hd.falling) drawFallback(ctx, hd.fallback.line, px, holdColor(hd), hd.formation.name);
     }
   }
 
-  // Abzeichen je Armeefront an ihrem längsten Stück: NATO-Symbol, Name, Divisionen und
-  // Sektoren, Ampel für die Besetzung (Kompanien je Sektor). Antippen wählt den Verband.
+  // Abzeichen je Armeefront nahe der Mitte ihres Abschnitts: Name, Divisionen und Frontlänge,
+  // Ampel für die Besetzung (Kompanien je Grenzfeld). Antippen wählt den Verband.
   drawHoldBadges(fronts, px, ui) {
     const { ctx } = this;
     const selDivs = new Set([...ui.selection].map(divisionOf).filter(Boolean));
     for (const hd of fronts.holds) {
-      const chains = fronts.holdChains(hd);
-      let best = null;
-      for (const c of chains) if (!best || chainLength(c) > chainLength(best)) best = c;
-      if (!best || best.length < 2) continue;
-      const p = best[Math.floor(best.length / 2)];
+      const p = hd.falling && hd.fallback ? polylineMid(hd.fallback.line) : fronts.holdBadge(hd);
+      if (!p) continue;
       const st = fronts.holdStatus(hd);
       const color = holdColor(hd);
       const name = hd.formation.name;
-      const sub = hd.falling ? `${st.divs} Div · Auffanglinie` : hd.kind === 'line' ? `${st.divs} Div · Linie` : `${st.divs} Div · ${st.sectors} Sek`;
+      const sub = hd.falling ? `${st.divs} Div · Auffanglinie` : `${st.divs} Div · ${st.km} km`;
       ctx.font = `600 ${11 * px}px system-ui, sans-serif`;
       const tw = Math.max(ctx.measureText(name).width, ctx.measureText(sub).width);
       const hw = (tw + 34 * px) / 2, hh = 15 * px;
@@ -548,40 +544,24 @@ export class Renderer {
     }
   }
 
-  // Einzelheiten einer Divisionsfront: ihr Abschnitt in der Farbe der Division, Zahl der
-  // Kompanien, dazu Angriffsziel und -achse
-  drawFront(f, px, selected) {
+  // Einzelheiten einer Divisionsfront: ihr Abschnitt der Grenze in der Farbe der Division,
+  // Zahl der Kompanien, dazu Angriffsziel und -achse
+  drawFront(fronts, f, px, selected) {
     const { ctx } = this;
     const color = divisionColor(f.division);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    for (const c of f.chains) {
-      if (c.length < 2) continue;
+    const lines = f.hold.falling ? [] : fronts.edgesOf(f);
+    for (const l of lines) {
       ctx.beginPath();
-      ctx.moveTo(c[0].x, c[0].y);
-      for (const p of c) ctx.lineTo(p.x, p.y);
+      ctx.moveTo(l.pts[0].x, l.pts[0].y);
+      for (const p of l.pts) ctx.lineTo(p.x, p.y);
       ctx.strokeStyle = selected ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.6)';
       ctx.lineWidth = (selected ? 8 : 7) * px;
       ctx.stroke();
       ctx.strokeStyle = color;
       ctx.lineWidth = 4 * px;
       ctx.stroke();
-    }
-    // Enden des Abschnitts: Querstrich wie an Divisionsgrenzen
-    const chains = f.chains.filter((c) => c.length >= 2);
-    if (chains.length) {
-      const first = chains[0], last = chains[chains.length - 1];
-      for (const p of [first[0], last[last.length - 1]]) {
-        ctx.beginPath();
-        ctx.moveTo(p.x - (p.nx || 0) * 15 * px, p.y - (p.ny || 0) * 15 * px);
-        ctx.lineTo(p.x + (p.nx || 0) * 11 * px, p.y + (p.ny || 0) * 11 * px);
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 3.5 * px;
-        ctx.stroke();
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1.6 * px;
-        ctx.stroke();
-      }
     }
     this.drawOrders(f, px);
 
@@ -872,34 +852,6 @@ const STATUS_COLORS = { good: '#4cd17a', thin: '#f2c94c', weak: '#ff6b5b', none:
 
 export function holdColor(hd) {
   return hd.formation.level === ARMY ? armyColor(hd.formation) : divisionColor(hd.formation);
-}
-
-// Zacken entlang einer Frontlinie in festen Bildschirmabständen, zur Feindseite
-function drawTeeth(ctx, c, px, color) {
-  const step = 16 * px, tooth = 7 * px, half = 4.5 * px;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  let carry = step / 2;
-  for (let i = 1; i < c.length; i++) {
-    const a = c[i - 1], b = c[i];
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const seg = Math.hypot(dx, dy);
-    if (!seg) continue;
-    const tx = dx / seg, ty = dy / seg;
-    let nx = -ty, ny = tx;
-    const fx = (a.nx || 0) + (b.nx || 0), fy = (a.ny || 0) + (b.ny || 0);
-    if (nx * fx + ny * fy < 0) { nx = -nx; ny = -ny; }
-    let d = carry;
-    while (d < seg) {
-      const x = a.x + tx * d, y = a.y + ty * d;
-      ctx.moveTo(x - tx * half, y - ty * half);
-      ctx.lineTo(x + nx * tooth, y + ny * tooth);
-      ctx.lineTo(x + tx * half, y + ty * half);
-      d += step;
-    }
-    carry = d - seg;
-  }
-  ctx.fill();
 }
 
 // Auffanglinie (geplant): gestrichelt in der Farbe des Verbands, Winkel zeigen zurück auf die

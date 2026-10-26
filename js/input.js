@@ -1,5 +1,5 @@
-import { CITY_RADIUS } from './config.js?v=107';
-import { divisionOf, unitsOf } from './orbat.js?v=107';
+import { CITY_RADIUS } from './config.js?v=108';
+import { divisionOf, unitsOf } from './orbat.js?v=108';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -106,8 +106,8 @@ export class Input {
       return;
     }
     if (this.ui.frontMode) {
-      // Front malen (Sektoren, Klick auf Gegner, Verteidigungslinie) oder Angriffsziel ziehen
-      this.gesture = { kind: 'front', moved: false, start: w, last: null, stroke: new Set() };
+      // Front malen (Pinsel über die Grenze, Klick auf einen Gegner) oder eine Linie ziehen
+      this.gesture = { kind: 'front', moved: false, start: w, last: null, stroke: new Map() };
       this.ui.drawPath = [w];
       return;
     }
@@ -190,7 +190,7 @@ export class Input {
     if (g.kind === 'front') {
       const path = g.path || [g.start];
       this.ui.drawPath = null;
-      if (this.ui.frontMode && this.ui.frontMode.forms) this.app.frontStrokeEnd(g, path);
+      if (this.ui.frontMode && this.ui.frontMode.forms) this.app.frontStrokeEnd(g);
       else if (g.moved && path.length >= 2) this.app.finishFront(path);
     } else if (g.kind === 'divider') {
       this.app.afterFrontChange();
@@ -259,10 +259,8 @@ export class Input {
       app.selectFront(null);
       app.updateSelectionInfo();
     } else if (k === 'f') {
-      // Front und Grenze nur, wenn sie angeboten werden (Divisionen ausgewählt)
+      // Front-Werkzeug nur mit ausgewählten Divisionen
       if (this.ui.frontMode || app.selectedDivisions().length) app.toggleFrontMode();
-    } else if (k === 'g') {
-      if (app.selectedDivisions().length) app.borderFront();
     }
     else if (k === 'v') app.toggleShowFronts();
     else if (k === 'n') app.toggleSupply();

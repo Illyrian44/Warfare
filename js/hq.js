@@ -1,6 +1,5 @@
-import { unitStrength } from './game.js?v=107';
-import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=107';
-import { pointAt } from './fronts.js?v=107';
+import { unitStrength } from './game.js?v=108';
+import { DIVISION, REGIMENT, unitsOf } from './orbat.js?v=108';
 
 const HQ_BEHIND = 90;        // so weit hinter der Division steht das HQ
 const PRESSURE_RADIUS = 140; // Feinde in diesem Umkreis zählen als Druck auf eine Kompanie
@@ -120,17 +119,17 @@ export class HQManager {
     const g = this.game;
     // Über die Divisionen suchen: auch ein ganz verlassener Abschnitt bittet um Hilfe
     const fronts = g.orbat[p].all(DIVISION).map((d) => d.front)
-      .filter((f) => f && f.chains.length && !f.attack && f.neighbors && f.neighbors.length);
+      .filter((f) => f && f.points.length && !f.attack && f.neighbors && f.neighbors.length);
     for (const f of fronts) {
       const div = f.division;
       // Rückt die Division selbst noch ein, ist die Lücke kein Notfall
       if (f.units.length >= 2 && f.units.filter((u) => u.path.length).length >= f.units.length * 0.5) continue;
       const gaps = [];
       let total = 0;
-      for (let t = 15; t < f.length; t += 30) {
+      // Stichproben entlang des Abschnitts (etwa alle drei Grenzfelder)
+      for (let k = 1; k < f.points.length; k += 3) {
         total++;
-        const pt = pointAt(f.chains, t);
-        if (!pt) continue;
+        const pt = f.points[k];
         if (!this.ownNear(p, pt.x, pt.y, GAP_COVER).some((u) => !u.rotating)) gaps.push(pt);
       }
       if (!total || gaps.length / total < 0.5) continue; // Abschnitt ausreichend besetzt

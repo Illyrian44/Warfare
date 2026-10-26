@@ -57,9 +57,6 @@ export const CITY_CAPTURE_RADIUS = 20;
 export const CAPTURE_TIME = 4;         // Sekunden
 export const UNITS_PER_CITY = 10;  // Richtwert für die KI und die Nachschubleistung je Stadt
 
-// Fronten: Die Grenze besteht aus festen Sektoren dieser Kantenlänge (siehe js/sectors.js).
-// sectorChoices: Auswahl im Menü, um verschiedene Größen im Spiel zu vergleichen
-export const FRONT = { sectorKm: 30, sectorChoices: [20, 30, 45] };
 
 // Baumenü: Divisionsvorlagen (Zahl der Infanterie- und Panzerkompanien) und Ausrüstung je
 // Division (Stufen mit Preis in Geld; Wirkung je Stufe)
