@@ -1,5 +1,5 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=108';
-import { DIVISION, ARMY, unitsOf, centerOf } from './orbat.js?v=108';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=110';
+import { DIVISION, ARMY, unitsOf, centerOf } from './orbat.js?v=110';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
 const HOLD_IN = 15;         // haltende Kompanien stehen so weit hinter der Grenze

@@ -1,5 +1,5 @@
-import { CITY_RADIUS } from './config.js?v=108';
-import { divisionOf, unitsOf } from './orbat.js?v=108';
+import { CITY_RADIUS } from './config.js?v=110';
+import { divisionOf, unitsOf } from './orbat.js?v=110';
 
 const TAP_SLOP = 8; // Pixel, bis eine Berührung als Ziehen gilt
 
@@ -258,9 +258,11 @@ export class Input {
       else app.setTab(null);
       app.selectFront(null);
       app.updateSelectionInfo();
-    } else if (k === 'f') {
-      // Front-Werkzeug nur mit ausgewählten Divisionen
-      if (this.ui.frontMode || app.selectedDivisions().length) app.toggleFrontMode();
+    } else if (k === 'f' || k === 'g' || k === 'r') {
+      // Schlachtplan-Werkzeuge nur mit ausgewählten Divisionen
+      if (app.selectedDivisions().length) app.toggleTool(k === 'f' ? 'front' : k === 'g' ? 'attack' : 'fallback');
+    } else if (k === 'enter') {
+      if (app.selectedDivisions().length) { e.preventDefault(); app.execute(); }
     }
     else if (k === 'v') app.toggleShowFronts();
     else if (k === 'n') app.toggleSupply();

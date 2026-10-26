@@ -146,33 +146,6 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 #pausedBanner small { display: block; margin-top: 2px; font-size: 13px; font-weight: 500; letter-spacing: 0; color: var(--muted, #8a96a8); }
 
 #version { text-align: center; font-size: 11px; }
-#frontBanner {
-  position: fixed;
-  top: calc(var(--top) + 10px);
-  color: #fff;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: max-content;
-  max-width: 94vw;
-  background: var(--blue);
-  padding: 6px 6px 6px 14px;
-  border-radius: 12px;
-  font-size: 14px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 3;
-}
-#frontBanner button, #pickBanner button { min-height: 34px; background: rgba(0, 0, 0, 0.25); }
-#frontBanner button.active { background: var(--accent); color: #1a1a1a; }
-#frontBanner > span { font-weight: 500; line-height: 1.3; }
-#frontBanner { flex-wrap: wrap; justify-content: center; }
-#frontBanner .quick { display: flex; flex-wrap: wrap; gap: 6px; }
-#frontBanner .quick:empty { display: none; }
-#frontBanner .quick button { background: rgba(255, 255, 255, 0.92); color: #10203a; border-color: transparent; font-weight: 600; }
-#frontBanner .quick button:hover { background: #fff; }
-#frontBanner .quick .dot { margin-left: 0; }
 #pickBanner {
   position: fixed; top: calc(70px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px; width: max-content; max-width: 94vw;
@@ -269,7 +242,7 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 #bottomLeft > * { pointer-events: auto; max-width: 100%; }
 body.side-open #bottomLeft { left: 358px; }
 #cmdPanel {
-  width: min(100%, 660px);
+  width: min(100%, 620px);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r);
@@ -277,18 +250,59 @@ body.side-open #bottomLeft { left: 358px; }
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 .cmdHead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.cmdHead #cmdTitle { flex: 1; font-size: 14px; }
+.cmdName { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.cmdName b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmdName small { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .cmdHead button { min-height: 28px; padding: 0 8px; background: none; border: none; }
+.state { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 8px; border-radius: 99px; color: var(--muted); background: rgba(255, 255, 255, 0.08); white-space: nowrap; }
+.state.hold { color: #cfe0ff; background: rgba(47, 111, 224, 0.35); }
+.state.plan { color: #1a1a1a; background: var(--accent); }
+.state.go { color: #0d2a17; background: var(--good); }
+.state.bad { color: #fff; background: #a83a2c; }
+
+/* Schlachtplan: drei Werkzeuge | Ausführen | Haltung */
+#planBar { display: flex; align-items: stretch; gap: 6px; }
+#planBar .tools { display: flex; gap: 4px; flex: 1 1 auto; }
+#planBar button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 52px; padding: 4px 6px; border-radius: var(--r); font-size: 12px; font-weight: 600; background: var(--panel-2); border-color: var(--line); }
+#planBar .tools button { flex: 1 1 0; min-width: 0; }
+#planBar button i { font-style: normal; font-size: 19px; line-height: 1; }
+#planBar button span { white-space: nowrap; }
+#planBar kbd { position: absolute; top: 3px; right: 4px; font: 600 9px/1 inherit; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 3px; }
+#planBar .tools button.active { background: var(--accent); color: #1a1a1a; border-color: var(--accent); }
+#planBar .tools button.active kbd { color: #1a1a1a; border-color: rgba(0, 0, 0, 0.3); }
+#planBar button:disabled { opacity: 0.38; cursor: default; }
+#planBar .exec { flex: 0 0 auto; min-width: 104px; padding: 4px 12px; }
+#planBar .exec.go { background: #2f8f4e; border-color: var(--good); }
+#planBar .exec.stop { background: #a83a2c; border-color: var(--bad); }
+#planBar .exec.warn { background: #9a6a12; border-color: var(--accent); }
+#planBar .stance { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
+#planBar .stance button { flex: 1; flex-direction: row; gap: 5px; min-height: 0; padding: 2px 10px; font-size: 12px; }
+#planBar .stance button i { font-size: 13px; }
+#rotateBtn.active { background: rgba(76, 209, 122, 0.22); color: var(--good); border-color: var(--good); }
+
+/* Leiste des offenen Werkzeugs: Hinweis, Optionen, Fertig */
+#toolDrawer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 6px; padding: 5px 5px 5px 10px; border-radius: var(--r); background: rgba(242, 201, 76, 0.1); border: 1px solid rgba(242, 201, 76, 0.45); }
+#toolDrawer[hidden] { display: none; }
+#toolDrawer .hint { flex: 1 1 100%; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+#toolDrawer .hint b { white-space: nowrap; }
+#toolHint { flex: 1; min-width: 0; line-height: 1.3; }
+#toolDrawer .hint b { color: var(--accent); font-size: 13px; }
+#toolOpts { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 5px; }
+#toolOpts:empty { display: none; }
+#toolOpts .sep { flex: 1 1 auto; }
+#toolDrawer button { min-height: 30px; padding: 0.2em 0.7em; font-size: 12px; border-radius: var(--r); }
+#toolOpts .chip { background: rgba(255, 255, 255, 0.92); color: #10203a; border-color: transparent; font-weight: 600; }
+#toolOpts .chip:hover { background: #fff; }
+#toolOpts .chip .dot { margin-left: 0; }
+#toolOpts .danger { color: #ffb3aa; border-color: rgba(255, 107, 91, 0.5); }
+#toolOpts .warn { background: #9a6a12; border-color: var(--accent); }
+#toolDone { margin-left: auto; background: var(--accent); color: #1a1a1a; border-color: var(--accent); font-weight: 700; }
+
+/* Gliederung */
 .cmdRow { display: flex; flex-wrap: wrap; gap: 5px; }
-.cmdRow + .cmdRow { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
-.cmdRow[hidden] + .cmdRow { margin-top: 0; padding-top: 0; border-top: none; }
-.cmdRow button { flex: 1 1 auto; font-size: 13px; min-height: 34px; padding: 0.3em 0.7em; border-radius: var(--r); }
+#planBar:not([hidden]) ~ .cmdRow, #toolDrawer:not([hidden]) ~ .cmdRow { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.cmdRow button { flex: 1 1 auto; font-size: 12px; min-height: 30px; padding: 0.25em 0.6em; border-radius: var(--r); }
 .cmdRow button:disabled { opacity: 0.38; cursor: default; }
-.cmdRow button:disabled:hover { background: rgba(255, 255, 255, 0.1); }
-.cmdRow.plan button { font-weight: 600; }
-.cmdRow.plan #moreBtn { flex: 0 0 auto; }
-.cmdRow button.go:not(:disabled) { background: #2f8f4e; border-color: var(--good); }
-.cmdRow button.stop:not(:disabled) { background: #a83a2c; border-color: var(--bad); }
 
 /* Unten rechts: Werkzeuge und Kartenmodi */
 #bottomRight {
@@ -681,10 +695,21 @@ body.side-open #bottomLeft { left: 358px; }
   #bottomLeft { right: calc(92px + env(safe-area-inset-right)); bottom: calc(4px + env(safe-area-inset-bottom)); gap: 4px; }
   #cmdPanel { padding: 4px 6px 6px; max-height: calc(100vh - var(--top) - 130px); overflow-y: auto; }
   .cmdHead { margin-bottom: 3px; }
-  .cmdHead #cmdTitle { font-size: 12px; }
+  .cmdName b { font-size: 12px; }
+  .cmdName small { font-size: 11px; }
+  .state { font-size: 9px; padding: 2px 6px; }
+  #planBar { gap: 3px; }
+  #planBar button { min-height: 36px; padding: 2px 4px; font-size: 11px; }
+  #planBar button i { font-size: 15px; }
+  #planBar kbd { display: none; }
+  #planBar .exec { min-width: 84px; }
+  #planBar .stance button span { display: none; }
+  #planBar .stance button span#rejoinN { display: inline; }
+  #toolDrawer { margin-top: 3px; padding: 3px 3px 3px 8px; gap: 3px 6px; }
+  #toolDrawer button { min-height: 26px; font-size: 11px; }
   .cmdRow { gap: 3px; }
-  .cmdRow button { min-height: 28px; font-size: 12px; padding: 0.15em 0.45em; }
-  .cmdRow + .cmdRow { margin-top: 3px; padding-top: 3px; }
+  .cmdRow button { min-height: 26px; font-size: 11px; padding: 0.15em 0.45em; }
+  #planBar:not([hidden]) ~ .cmdRow, #toolDrawer:not([hidden]) ~ .cmdRow { margin-top: 3px; padding-top: 3px; }
   #divRow { padding: 3px; }
   .divcard { min-width: 92px; padding: 2px 6px 3px 5px; font-size: 11px; }
   .divcard.armycard { min-width: 120px; }
@@ -694,8 +719,6 @@ body.side-open #bottomLeft { left: 358px; }
   #pausedBanner { top: calc(var(--top) + 26px); font-size: 18px; padding: 4px 16px; transform: translateX(-50%); }
   #pausedBanner small { display: inline; margin-left: 8px; font-size: 11px; }
   #pickBanner { top: calc(var(--top) + 6px); font-size: 13px; }
-  #frontBanner { top: calc(var(--top) + 6px); font-size: 12px; padding: 3px 3px 3px 10px; }
-  #frontBanner button { min-height: 28px; }
   #offerBox { top: calc(var(--top) + 6px); font-size: 13px; }
 }
 

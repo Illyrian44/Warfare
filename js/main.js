@@ -1,17 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=108';
-import { Game } from './game.js?v=108';
-import { AI } from './ai.js?v=108';
-import { Renderer } from './render.js?v=108';
-import { Input } from './input.js?v=108';
-import { formationSlots } from './formation.js?v=108';
-import { FrontManager, chainLength } from './fronts.js?v=108';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=108';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=108';
-import { templateCost } from './production.js?v=108';
+import { loadMap, MAPS } from './map.js?v=110';
+import { Game } from './game.js?v=110';
+import { AI } from './ai.js?v=110';
+import { Renderer } from './render.js?v=110';
+import { Input } from './input.js?v=110';
+import { formationSlots } from './formation.js?v=110';
+import { FrontManager, chainLength } from './fronts.js?v=110';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=110';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=110';
+import { templateCost } from './production.js?v=110';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '108'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '110'; // für Kartendaten, siehe scripts/bump-version.sh
 // Reiter der oberen Leiste: Inhalt in der Seitenleiste
 const TAB_BODIES = { build: 'buildBody', city: 'cityBody', diplo: 'diploBody', logistics: 'logiBody', troops: 'troopBody' };
 const TAB_TITLES = { build: 'Produktion', city: 'Städte', diplo: 'Diplomatie', logistics: 'Logistik', troops: 'Truppen' };
@@ -22,7 +22,7 @@ const app = {
   renderer: null,
   human: 1,
   cam: { x: 0, y: 0, zoom: 1, min: 0.2, max: 6 },
-  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null, showFronts: true, showSupply: false, openGroup: null, tab: null, more: false, hover: null },
+  ui: { selection: new Set(), drawPath: null, box: null, revealAll: false, selectMode: false, frontMode: null, front: null, showFronts: true, showSupply: false, openGroup: null, tab: null, hover: null, intent: null },
   paused: false,
   speed: 1,
   settings: loadSettings(),
@@ -180,38 +180,64 @@ const app = {
     if (u.front) { this.fronts.release(u); this.updateCommands(); }
   },
 
-  // mode: { forms } = Front für Armeen bzw. Divisionen (Pinsel, erase: Front entziehen),
-  // { plan: fronts } = Angriffsziel ziehen
+  // Werkzeug des Schlachtplans: { forms } = Frontlinie malen (erase: entziehen),
+  // { plan: fronts } = Vorstoß (Ziellinie ziehen), { fallback: holds } = Auffanglinie ziehen.
+  // Das Werkzeug bleibt an, bis „Fertig“, Esc oder ein anderer Verband gewählt wird
   setFrontMode(mode) {
+    if (mode) mode.sig = this.selectionSig();
     this.ui.frontMode = mode;
-    $('frontBtn').classList.toggle('active', !!(mode && mode.forms));
-    $('frontBanner').hidden = !mode;
-    $('frontErase').hidden = !(mode && mode.forms);
-    this.updateCommands(); // Befehlsfeld weicht, solange gemalt bzw. gezogen wird
-    $('frontQuick').innerHTML = mode && mode.forms && !mode.erase ? this.frontQuickHtml() : '';
-    if (!mode) return;
-    $('frontErase').classList.toggle('active', !!mode.erase);
-    $('frontCancel').textContent = mode.forms ? 'Fertig' : 'Abbrechen';
-    $('frontBanner').firstElementChild.textContent = mode.fallback
-      ? 'Auffanglinie: Linie hinter der Front ziehen'
-      : !mode.forms ? 'Angriffsziel: Linie ziehen, bis wohin die Front vorstoßen soll'
-      : mode.erase
-        ? 'Front entziehen: über die Grenze ziehen'
-        : `Front für ${this.formsName(mode.forms)}: über die Grenze ziehen oder wählen:`;
+    if (!mode) this.ui.drawPath = null;
+    this.toolSig = null;
+    this.updateCommands();
   },
 
-  // Schnellwahl im Front-Werkzeug: ganze Grenze und je Gegner seine Grenze (mit Länge)
+  toolOf(mode) {
+    return !mode ? null : mode.forms ? 'front' : mode.plan ? 'attack' : 'fallback';
+  },
+
+  // Divisionen der Auswahl als Kennung (wechselt sie, endet das Werkzeug)
+  selectionSig() {
+    return [...new Set(this.ownSelection().map(divisionOf).filter(Boolean))].map((d) => d.id).sort((a, b) => a - b).join();
+  },
+
+  // Werkzeug-Knopf (oder Taste F/G/R): einschalten bzw. wieder aus
+  toggleTool(tool) {
+    if (this.toolOf(this.ui.frontMode) === tool) { this.setFrontMode(null); return; }
+    if (tool === 'front') {
+      const forms = this.frontTargets();
+      if (forms) this.setFrontMode({ forms });
+    } else if (tool === 'attack') {
+      const fs = this.panelFronts();
+      if (fs.length) this.setFrontMode({ plan: fs });
+      else this.toast('Erst eine Frontlinie zuweisen – von ihr aus wird vorgestoßen');
+    } else if (tool === 'fallback') {
+      const holds = this.panelHolds();
+      if (holds.length) this.setFrontMode({ fallback: holds });
+      else this.toast('Erst eine Frontlinie zuweisen – die Auffanglinie liegt dahinter');
+    }
+  },
+
+  toggleFrontMode() {
+    this.toggleTool('front');
+  },
+
+  toggleFrontErase() {
+    const mode = this.ui.frontMode;
+    if (mode && mode.forms) this.setFrontMode({ ...mode, erase: !mode.erase });
+  },
+
+  // Schnellwahl im Werkzeug Frontlinie: ganze Grenze und je Gegner seine Grenze (mit Länge)
   frontQuickHtml() {
     const list = this.fronts.frontInfo().list;
-    if (!list.length) return '';
+    if (!list.length) return '<span class="muted">Keine Grenze zu einem Gegner</span>';
     const km = (n) => Math.round(n * (this.game.map.kmPerCell || 1));
     const foes = new Map();
     for (const e of list) foes.set(e.foe, (foes.get(e.foe) || 0) + 1);
-    let h = `<button data-foe="all" title="Grenze zu allen Gegnern">Ganze Grenze · ${km(list.length)} km</button>`;
+    let h = `<button class="chip" data-opt="quick" data-foe="all" title="Grenze zu allen Gegnern">Ganze Grenze · ${km(list.length)} km</button>`;
     if (foes.size > 1) { // bei nur einem Gegner ist seine Grenze die ganze Grenze
       for (const [p, n] of [...foes].sort((a, b) => b[1] - a[1])) {
         if (!p) continue;
-        h += `<button data-foe="${p}" title="Grenze zu ${PLAYER_NAMES[p]}"><span class="dot" style="background:${PLAYER_COLORS[p]}"></span>${PLAYER_NAMES[p]} · ${km(n)} km</button>`;
+        h += `<button class="chip" data-opt="quick" data-foe="${p}" title="Grenze zu ${PLAYER_NAMES[p]}"><span class="dot" style="background:${PLAYER_COLORS[p]}"></span>${PLAYER_NAMES[p]} · ${km(n)} km</button>`;
       }
     }
     return h;
@@ -225,21 +251,91 @@ const app = {
     const entries = foe === 'all' ? this.fronts.frontInfo().list : this.fronts.foeEntries(+foe);
     if (!forms.length || !entries.length) return;
     this.fronts.assignSplit(forms, entries);
-    this.setFrontMode(null);
     this.afterFrontChange();
     const km = Math.round(entries.length * (this.game.map.kmPerCell || 1));
     this.toast(`${this.formsName(forms)} hält ${foe === 'all' ? 'die ganze Grenze' : `die Grenze zu ${PLAYER_NAMES[+foe]}`} (${km} km)`);
   },
 
-  toggleFrontMode() {
-    if (this.ui.frontMode) { this.setFrontMode(null); return; }
-    const forms = this.frontTargets();
-    if (forms) this.setFrontMode({ forms });
+  // Knopf in der Werkzeugleiste
+  toolOption(opt, el) {
+    if (opt === 'quick') this.frontQuick(el.dataset.foe);
+    else if (opt === 'erase') this.toggleFrontErase();
+    else if (opt === 'disband') this.disbandFronts();
+    else if (opt === 'cancelPlan') { for (const f of this.panelFronts()) this.fronts.cancelPlan(f); this.updateCommands(); }
+    else if (opt === 'fallNow') this.fallbackAction();
+    else if (opt === 'clearFallback') { for (const hd of this.panelHolds()) this.fronts.clearFallback(hd); this.updateCommands(); }
   },
 
-  toggleFrontErase() {
+  // Inhalt der Werkzeugleiste: Überschrift, Hinweis, Optionen
+  toolDrawer(tool, st) {
     const mode = this.ui.frontMode;
-    if (mode && mode.forms) this.setFrontMode({ ...mode, erase: !mode.erase });
+    if (tool === 'front') {
+      const own = this.panelHolds().length > 0;
+      return {
+        title: mode.erase ? 'Frontlinie entziehen' : `Frontlinie · ${this.formsName(mode.forms)}`,
+        hint: mode.erase ? 'Über die Grenze ziehen, um sie freizugeben' : 'Grenze übermalen · ins Feindgebiet tippen = ganze Grenze zu ihm',
+        opts: (mode.erase ? '' : this.frontQuickHtml()) +
+          '<span class="sep"></span>' +
+          `<button data-opt="erase" class="${mode.erase ? 'active' : ''}" title="Statt zu malen: der Grenze unter dem Pinsel die Front entziehen">⌫ Entziehen</button>` +
+          (own ? '<button data-opt="disband" class="danger" title="Front der Auswahl auflösen – die Verbände bleiben bestehen">✕ Auflösen</button>' : ''),
+      };
+    }
+    if (tool === 'attack') {
+      return {
+        title: st.attacking ? 'Vorstoß · neues Ziel' : 'Vorstoß',
+        hint: 'Ziellinie ziehen, bis wohin die Front angreifen soll – dann ▶ Angriff starten',
+        opts: st.planned ? '<button data-opt="cancelPlan" class="danger">✕ Plan verwerfen</button>' : '',
+      };
+    }
+    return {
+      title: 'Auffanglinie',
+      hint: st.lined ? 'Neue Linie ziehen ersetzt die alte' : 'Linie hinter der Front ziehen',
+      opts: st.lined
+        ? `<button data-opt="fallNow" class="${st.falling ? '' : 'warn'}">${st.falling ? '↥ Front wieder halten' : '⤶ Jetzt zurückfallen'}</button>` +
+          '<button data-opt="clearFallback" class="danger">✕ Linie löschen</button>'
+        : '',
+    };
+  },
+
+  // Lage des Schlachtplans der Auswahl
+  planState() {
+    const fs = this.panelFronts(), holds = this.panelHolds();
+    const lined = holds.filter((hd) => hd.fallback);
+    return {
+      fs, holds,
+      attacking: fs.some((f) => f.attack),
+      planned: fs.some((f) => f.plan),
+      lined: lined.length > 0,
+      falling: lined.some((hd) => hd.falling),
+      // zuletzt gezogene Linie entscheidet, was „Ausführen“ zuerst anbietet
+      next: this.ui.intent && this.ui.intent.sig === this.selectionSig() ? this.ui.intent.kind : null,
+    };
+  },
+
+  // „Ausführen“ (Enter): was gerade ansteht – Angriff stoppen, Front wieder halten,
+  // geplanten Angriff starten oder auf die Auffanglinie zurückfallen
+  execute() {
+    const st = this.planState();
+    this.ui.intent = null;
+    if (st.lined && !st.falling && st.next === 'fallback') {
+      this.fallbackAction();
+      return;
+    }
+    if (st.attacking) {
+      for (const f of st.fs) this.fronts.stopAttack(f);
+      this.toast('Angriff gestoppt – die Divisionen halten ihre Abschnitte');
+    } else if (st.falling) {
+      this.fallbackAction();
+      return;
+    } else if (st.planned) {
+      for (const f of st.fs) this.fronts.startAttack(f);
+      this.toast('Angriff läuft!', 'good');
+      if (this.toolOf(this.ui.frontMode) === 'attack') this.setFrontMode(null);
+    } else if (st.lined) {
+      this.fallbackAction();
+      return;
+    } else return;
+    this.updateCommands();
   },
 
   // Die ganze Auswahl gehört zu genau einer Division (sonst null)
@@ -305,7 +401,6 @@ const app = {
         const entries = this.fronts.foeEntries(owner);
         if (!entries.length) { this.toast(`Keine gemeinsame Grenze mit ${PLAYER_NAMES[owner]}`); return; }
         this.fronts.assignSplit(forms, entries);
-        this.setFrontMode(null);
         this.afterFrontChange();
         this.toast(`${name} hält die Grenze zu ${PLAYER_NAMES[owner]} (${km(entries.length)} km)`);
       } else if (this.fronts.entryAt(g.start)) {
@@ -320,7 +415,6 @@ const app = {
   // Angriffsziel bzw. Auffanglinie gezogen
   finishFront(line) {
     const mode = this.ui.frontMode;
-    this.setFrontMode(null);
     if (!mode || !(mode.plan || mode.fallback)) return;
     if (chainLength(line) < 30) {
       this.toast('Linie zu kurz – nochmal versuchen');
@@ -330,16 +424,20 @@ const app = {
       const holds = mode.fallback.filter((hd) => this.fronts.holds.includes(hd));
       if (!holds.length) return;
       this.fronts.setFallback(holds, line);
+      this.ui.intent = { kind: 'fallback', sig: this.selectionSig() };
       this.updateCommands();
       this.toast('Auffanglinie gezogen – „⤶ Zurückfallen“ zieht die Front dorthin zurück');
+      this.setFrontMode(null);
       return;
     }
     const fronts = mode.plan.filter((f) => this.fronts.fronts.includes(f));
     if (!fronts.length) return;
     this.fronts.planAttackGroup(fronts, line);
+    this.ui.intent = { kind: 'attack', sig: this.selectionSig() };
     this.updateCommands();
     this.toast(fronts.length > 1 ? `Angriff für ${fronts.length} Divisionen geplant – „▶ Angriff starten“ drücken`
       : 'Angriff geplant – „▶ Angriff starten“ drücken');
+    this.setFrontMode(null);
   },
 
   // Front auflösen: Aufträge der ausgewählten Verbände; eine Division im Auftrag ihrer Armee
@@ -438,6 +536,7 @@ const app = {
     if (!holds.length) return;
     const lined = holds.filter((hd) => hd.fallback);
     if (!lined.length) { this.setFrontMode({ fallback: holds }); return; }
+    if (this.toolOf(this.ui.frontMode) === 'fallback') this.ui.frontMode = null;
     const back = lined.some((hd) => hd.falling);
     for (const hd of lined) this.fronts.fallBack(hd, !back);
     this.updateCommands();
@@ -452,42 +551,81 @@ const app = {
     return divs.length === 1 ? divs[0].name : `${divs.length} Divisionen`;
   },
 
-  // Befehlsfeld unten links (erscheint mit einer Auswahl). Die Schlachtplan-Knöpfe stehen
-  // immer an derselben Stelle und sind ausgegraut, wenn sie nicht passen; Seltenes liegt
-  // unter „⋯“. Die Gliederung (Division, Armee) zeigt nur passende Befehle.
+  // Befehlsfeld unten links (erscheint mit einer Auswahl): Kopf mit Name, Stärke, Frontlänge
+  // und Lage; darunter der Schlachtplan (Werkzeuge Frontlinie, Vorstoß, Auffanglinie, ein
+  // „Ausführen“, Rotation) mit der Leiste des offenen Werkzeugs; zuletzt die Gliederung
   updateCommands() {
     if (this.ui.front && !this.fronts.fronts.includes(this.ui.front)) this.ui.front = null;
     const sel = this.ownSelection();
-    $('cmdPanel').hidden = !sel.length || !!this.ui.frontMode;
+    // Werkzeug endet, wenn die Auswahl wechselt
+    if (this.ui.frontMode && (!sel.length || this.ui.frontMode.sig !== this.selectionSig())) {
+      this.ui.frontMode = null;
+      this.ui.drawPath = null;
+    }
+    $('cmdPanel').hidden = !sel.length;
     if ($('cmdPanel').hidden) return;
     const show = (id, on) => { $(id).hidden = !on; };
     const enable = (id, on) => { $(id).disabled = !on; };
     const divs = this.selectedDivisions();
     const single = this.selectedDivision();
-    const fs = this.panelFronts();
-    $('cmdTitle').textContent = this.describeSelection(sel);
+    const st = this.planState(), fs = st.fs;
+    // Kopf
+    $('cmdTitle').textContent = this.selectionTitle(sel, divs);
+    // Frontlänge: die der Aufträge; eine einzelne Division im Auftrag ihrer Armee nennt ihren Abschnitt
+    const kmPer = this.game.map.kmPerCell || 1;
+    const army = armyOf(divs[0]);
+    const wholeArmy = !!army && divs.length === army.children.length && divs.every((d) => armyOf(d) === army);
+    const own = !!single && !wholeArmy && !!single.front && st.holds.length === 1 && st.holds[0].formation !== single;
+    const km = own ? Math.round(single.front.cells.length * kmPer)
+      : st.holds.reduce((s, hd) => s + this.fronts.holdStatus(hd).km, 0);
+    const parts = [];
+    if (divs.length > 1) parts.push(`${divs.length} Div.`);
+    parts.push(`${sel.length} Kp.`);
+    if (divs.length) parts.push(!st.holds.length ? 'ohne Front' : own ? `Abschnitt ${km} km` : `Front ${km} km`);
+    $('cmdSub').textContent = parts.join(' · ');
+    const [stTxt, stCls] = !divs.length ? ['', '']
+      : st.attacking ? ['Angriff läuft', 'go']
+      : st.falling ? ['Rückzug', 'bad']
+      : st.planned ? ['Angriff geplant', 'plan']
+      : st.holds.length ? ['Hält die Front', 'hold'] : ['Reserve', ''];
+    $('cmdState').textContent = stTxt;
+    $('cmdState').className = 'state ' + stCls;
+    $('cmdState').hidden = !stTxt;
     // Schlachtplan
-    show('cmdFront', divs.length > 0);
-    const planned = fs.some((f) => f.plan), attacking = fs.some((f) => f.attack);
-    enable('planBtn', fs.length > 0);
-    $('planBtn').textContent = attacking ? '➜ Neues Ziel' : '➜ Angriff';
-    enable('attackBtn', planned);
-    const holds = this.panelHolds(), lined = holds.filter((hd) => hd.fallback), falling = lined.some((hd) => hd.falling);
-    enable('fallbackBtn', holds.length > 0);
-    $('fallbackBtn').textContent = !lined.length ? '⤶ Auffanglinie' : falling ? '↥ Front halten' : '⤶ Zurückfallen';
-    $('fallbackBtn').classList.toggle('stop', lined.length > 0 && !falling);
-    enable('clearFallbackBtn', lined.length > 0);
-    enable('stopAttackBtn', attacking);
-    $('stopAttackBtn').classList.toggle('stop', attacking);
-    $('moreBtn').classList.toggle('active', this.ui.more);
-    show('cmdMore', divs.length > 0 && this.ui.more);
+    show('planBar', divs.length > 0);
+    const tool = this.toolOf(this.ui.frontMode);
+    for (const b of $('planBar').querySelectorAll('[data-tool]')) {
+      b.classList.toggle('active', b.dataset.tool === tool);
+      b.disabled = b.dataset.tool !== 'front' && !fs.length;
+    }
+    const [icon, label, cls, tip] = st.lined && !st.falling && st.next === 'fallback' ? ['⤶', 'Zurückfallen', 'warn', 'Auf die Auffanglinie zurückziehen und sie halten']
+      : st.attacking ? ['■', 'Angriff stoppen', 'stop', 'Laufenden Angriff beenden – die Divisionen halten wieder ihre Abschnitte']
+      : st.falling ? ['↥', 'Front halten', 'go', 'Von der Auffanglinie zurück an die Grenze']
+      : st.planned ? ['▶', 'Angriff starten', 'go', 'Geplanten Vorstoß ausführen']
+      : st.lined ? ['⤶', 'Zurückfallen', 'warn', 'Auf die Auffanglinie zurückziehen und sie halten']
+      : ['▶', 'Ausführen', '', 'Erst einen Vorstoß oder eine Auffanglinie planen'];
+    const exec = $('execBtn');
+    exec.className = 'exec ' + cls;
+    exec.disabled = !cls;
+    exec.title = tip + ' (Enter)';
+    if (exec.dataset.sig !== label) { exec.dataset.sig = label; exec.innerHTML = `<i>${icon}</i><span>${label}</span>`; }
     enable('rotateBtn', fs.length > 0);
     $('rotateBtn').classList.toggle('active', fs.length > 0 && fs.every((f) => f.rotate));
     const off = fs.reduce((s, f) => s + this.fronts.detached(f), 0);
-    enable('rejoinBtn', off > 0);
-    $('rejoinBtn').textContent = off ? `↺ ${off} zurück an die Front` : '↺ zurück an die Front';
-    enable('cancelPlanBtn', planned);
-    enable('disbandBtn', fs.length > 0);
+    show('rejoinBtn', off > 0);
+    $('rejoinN').textContent = off ? `${off} zurück` : '';
+    // Leiste des offenen Werkzeugs (nur bei Änderung neu, damit Klicks nicht verloren gehen)
+    show('toolDrawer', !!tool);
+    if (tool) {
+      const d = this.toolDrawer(tool, st);
+      const sig = d.title + d.hint + d.opts;
+      if (sig !== this.toolSig) {
+        this.toolSig = sig;
+        $('toolTitle').textContent = d.title;
+        $('toolHint').textContent = d.hint;
+        $('toolOpts').innerHTML = d.opts;
+      }
+    }
     // Gliederung: ganze Divisionen ausgewählt -> keine neue Division daraus, „Aus Division“
     // löst sie auf
     const whole = divs.length > 0 && sel.every((u) => u.regiment) &&
@@ -1076,14 +1214,12 @@ const app = {
   },
 
   // Name der Auswahl für den Titel des Befehlsfelds
-  describeSelection(sel) {
-    const divs = new Set(sel.map(divisionOf));
-    const army = armyOf([...divs][0]);
-    let name = '';
-    if (army && divs.size === army.children.length && [...divs].every((d) => armyOf(d) === army)) name = army.name;
-    else if (divs.size === 1) name = [...divs][0] ? [...divs][0].name : 'ohne Division';
-    else if (!divs.has(null) || divs.size > 2) name = `${[...divs].filter(Boolean).length} Divisionen`;
-    return `${sel.length} Kompanie${sel.length === 1 ? '' : 'n'}${name ? ' · ' + name : ''}`;
+  selectionTitle(sel, divs) {
+    const army = armyOf(divs[0]);
+    if (army && divs.length === army.children.length && divs.every((d) => armyOf(d) === army)) return army.name;
+    if (divs.length === 1) return divs[0].name;
+    if (divs.length > 1) return `${divs.length} Divisionen`;
+    return `${sel.length} Kompanie${sel.length === 1 ? '' : 'n'} ohne Division`;
   },
 
 
@@ -1426,7 +1562,6 @@ $('troopBody').addEventListener('click', (e) => {
   const t = e.target.closest('button[data-act]');
   if (t && app.game) app.troopAction(t);
 });
-$('moreBtn').onclick = () => { app.ui.more = !app.ui.more; app.updateCommands(); };
 $('diploBody').addEventListener('click', (e) => {
   const t = e.target.closest('button[data-act]');
   if (t && !t.disabled && app.game) app.diploAction(t);
@@ -1518,34 +1653,19 @@ const endDrag = (e, drop) => {
 };
 window.addEventListener('pointerup', (e) => endDrag(e, true));
 window.addEventListener('pointercancel', (e) => endDrag(e, false));
-$('frontBtn').onclick = () => app.toggleFrontMode();
 $('showFrontsBtn').onclick = () => app.toggleShowFronts();
 $('supplyBtn').onclick = () => app.toggleSupply();
-$('planBtn').onclick = () => app.setFrontMode({ plan: app.panelFronts() });
-$('attackBtn').onclick = () => {
-  for (const f of app.panelFronts()) app.fronts.startAttack(f);
-  app.toast('Angriff läuft!', 'good');
-  app.updateCommands();
-};
-$('stopAttackBtn').onclick = () => {
-  for (const f of app.panelFronts()) app.fronts.stopAttack(f);
-  app.toast('Angriff gestoppt – die Divisionen halten ihre Frontabschnitte');
-  app.updateCommands();
-};
-$('cancelPlanBtn').onclick = () => { for (const f of app.panelFronts()) app.fronts.cancelPlan(f); app.updateCommands(); };
+$('planBar').querySelector('.tools').onclick = (e) => { const t = e.target.closest('[data-tool]'); if (t && !t.disabled) app.toggleTool(t.dataset.tool); };
+$('execBtn').onclick = () => app.execute();
 $('rotateBtn').onclick = () => {
   const fs = app.panelFronts(), on = !fs.every((f) => f.rotate);
   for (const f of fs) { f.rotate = on; f.hold.rotate = on; }
   app.updateCommands();
 };
 $('rejoinBtn').onclick = () => { for (const f of app.panelFronts()) app.fronts.rejoin(f); app.updateCommands(); };
-$('disbandBtn').onclick = () => app.disbandFronts();
-$('fallbackBtn').onclick = () => app.fallbackAction();
-$('clearFallbackBtn').onclick = () => { for (const hd of app.panelHolds()) app.fronts.clearFallback(hd); app.updateCommands(); };
 $('pickRandom').onclick = () => app.pickStart(null);
-$('frontCancel').onclick = () => app.setFrontMode(null);
-$('frontErase').onclick = () => app.toggleFrontErase();
-$('frontQuick').onclick = (e) => { const t = e.target.closest('[data-foe]'); if (t) app.frontQuick(t.dataset.foe); };
+$('toolDone').onclick = () => app.setFrontMode(null);
+$('toolOpts').onclick = (e) => { const t = e.target.closest('[data-opt]'); if (t && app.game) app.toolOption(t.dataset.opt, t); };
 $('cmdClose').onclick = () => { app.ui.selection.clear(); app.selectFront(null); app.updateSelectionInfo(); };
 $('haltBtn').onclick = () => app.stopSelection();
 $('newDivBtn').onclick = () => app.newDivision();
