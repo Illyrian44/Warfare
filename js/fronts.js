@@ -1,37 +1,46 @@
-import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=107';
-import { DIVISION, ARMY, formationOf, unitsOf, centerOf } from './orbat.js?v=107';
+import { TERRAIN_INFO, CELL, UNIT_TYPES } from './config.js?v=108';
+import { DIVISION, ARMY, unitsOf, centerOf } from './orbat.js?v=108';
 
 const REFRESH = 1.5;        // Sekunden zwischen Neuberechnungen
-const HOLD_OFFSET = 20;     // Grenzfront: so weit hinter der Grenze stehen
+const HOLD_IN = 15;         // haltende Kompanien stehen so weit hinter der Grenze
 const ROTATE_AT = 0.35;     // Verwundete ziehen sich darunter zurück
 const ROTATE_AT_ATTACK = 0.2; // während eines Angriffs erst später
 const RETURN_AT = 0.9;      // und kehren ab hier zurück
 const CODENAMES = ['ADLER', 'FALKE', 'WOLF', 'LUCHS', 'BÄR', 'HABICHT', 'KRANICH', 'ELCH', 'DACHS', 'MARDER', 'BUSSARD', 'STIER'];
 const PATH_BUDGET = 2;      // A*-Suchen je Durchgang, für alle Fronten einer Seite zusammen
 const DANGER_RADIUS = 45;   // so viel Abstand halten Verschiebungen zu Feinden
-const NEIGHBOR_DIST = 70;   // Fronten, deren Enden so nah beieinander liegen, sind Nachbarn
-const INHERIT_HOPS = 3;     // so weit (in Regionen) sucht ein neuer Grenzsektor nach einer Front
-const PICK_DIST = 30;       // so nah an der Grenze trifft ein Pinselstrich noch einen Sektor
+const BRUSH = 4;            // Pinsel: Halbmesser in Feldern
+const BAND = 3;             // Zuteilung per Klick: so viele Felder um jedes Grenzfeld
+const INHERIT = 7;          // so weit (Felder) sucht ein neues Grenzfeld nach seiner Front
+const GAP_FILL = 6;         // Lücken bis zu so vielen Feldern zwischen zwei Teilen schließen sich
+const LINK = 2;             // Grenzfelder bis zu diesem Abstand (Felder) gehören zu einer Linie
 const ATTACK_STALL = 90;    // Sekunden ohne Fortschritt, nach denen ein Angriff endet
+const THREAT_R = 70;        // Feinde in diesem Umkreis machen ein Grenzfeld wichtiger
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
-// Fronten wie in Hearts of Iron, in zwei Stufen:
-// 1. Aufträge (this.holds): Eine Armee oder eine einzelne Division hält Frontsektoren
-//    (feste Regionen an der Grenze, siehe js/sectors.js) oder eine frei gezeichnete Linie.
-//    Jeder Sektor gehört höchstens einem Auftrag (this.assign); Überlappen ist unmöglich.
-// 2. Divisionsfronten (this.fronts): Jede Division eines Auftrags bekommt davon einen
-//    zusammenhängenden Teil nach ihrer Stärke (hold.parts). Ihre Kompanien verteilen sich
-//    darauf und halten ihn selbstständig; Angriffe, Rotation und HQs arbeiten je Division.
-// Eine Division mit eigenem Auftrag gehört nicht zum Auftrag ihrer Armee. Rückt die Grenze
-// vor, übernehmen neue Grenzsektoren den Auftrag ihres nächsten Nachbarsektors; sonst
-// ändern sich Aufträge nur durch den Spieler bzw. die KI.
+// Fronten wie in Hearts of Iron, ohne feste Provinzen:
+// - Die Front ist die Grenze selbst: jedes eigene Feld mit feindlichem Nachbarn ist ein
+//   Grenzfeld (ohne Kontakt: das Feld am Rand zum fremden Land in Richtung Feind).
+// - Zuständigkeit (this.resp): je Feld der Auftrag (Armee oder Division), der dort die
+//   Front hält; 0 = niemand, -1 = bewusst ohne Front. Der Spieler malt sie mit dem Pinsel
+//   über die Grenze, klickt einen Gegner an (ganze Grenze zu ihm) oder nimmt die ganze
+//   Grenze. Neue Grenzfelder (die Grenze hat sich bewegt) übernehmen die Zuständigkeit der
+//   Felder in ihrer Nähe; sonst ändert sich nichts von selbst.
+// - Verteilung: Die Grenzfelder eines Auftrags werden entlang der Grenze geordnet und
+//   zusammenhängend nach Stärke auf seine Divisionen aufgeteilt, darin gleichmäßig auf die
+//   Kompanien (Felder mit Feinden in der Nähe zählen mehr). Je Division eine Front
+//   (this.fronts); Angriffe, Rotation und HQs arbeiten je Division.
 export class FrontManager {
   constructor(game, owner) {
     this.game = game;
     this.owner = owner;
     this.fronts = [];
     this.holds = [];
-    this.assign = new Map(); // Region -> Auftrag (null: bewusst ohne Front)
-    this.version = 0;        // zählt jede Änderung an assign (für Zwischenspeicher)
+    this.holdIds = new Map();
+    const { w, h } = game.map;
+    this.resp = new Int32Array(w * h);
+    this.wasFront = new Uint8Array(w * h);
+    this.version = 0;        // zählt jede Änderung an resp (für Zwischenspeicher)
     this.timer = REFRESH * ((owner - 1) % 4) / 4; // Seiten versetzt rechnen
     this.pathBudget = PATH_BUDGET;
     this.nextId = 1;
@@ -53,25 +62,23 @@ export class FrontManager {
     return this.holds.find((h) => h.formation === formation) || null;
   }
 
-  // Auftrag eines Verbands anlegen; wechselt die Art (Sektoren bzw. freie Linie), beginnt
-  // er neu
-  makeHold(formation, kind, line = null) {
+  makeHold(formation) {
     let hd = this.holdOf(formation);
-    if (hd && hd.kind !== kind) { this.dropHold(hd); hd = null; }
     if (!hd) {
-      hd = { id: this.nextId++, formation, kind, line: null, parts: new Map(), sig: null, rotate: true, chains: [], length: 0, slot: -1, ver: -1 };
+      hd = { id: this.nextId++, formation, seeds: new Map(), rotate: true, fallback: null, falling: false };
       this.holds.push(hd);
+      this.holdIds.set(hd.id, hd);
     }
-    hd.line = line;
-    hd.ver = -1;
     return hd;
   }
 
-  // Auftrag aufheben: seine Sektoren sind danach ohne Front, die Divisionen bleiben bestehen
+  // Auftrag aufheben: seine Felder sind danach bewusst ohne Front, die Divisionen bleiben
   dropHold(hd) {
-    for (const [r, h] of this.assign) if (h === hd) this.assign.set(r, null);
+    const r = this.resp;
+    for (let i = 0; i < r.length; i++) if (r[i] === hd.id) r[i] = -1;
     this.version++;
     this.holds = this.holds.filter((h) => h !== hd);
+    this.holdIds.delete(hd.id);
     for (const f of [...this.fronts]) if (f.hold === hd) this.remove(f);
   }
 
@@ -92,142 +99,136 @@ export class FrontManager {
   syncHolds() {
     for (const hd of [...this.holds]) if (!this.holdAlive(hd)) this.dropHold(hd);
     const want = new Map(); // Division -> Auftrag
-    for (const hd of this.holds) {
-      const divs = this.members(hd);
-      const sig = divs.map((d) => d.id).join(',');
-      if (sig !== hd.sig) { hd.sig = sig; this.layout(hd); }
-      for (const d of divs) want.set(d, hd);
-    }
+    for (const hd of this.holds) for (const d of this.members(hd)) want.set(d, hd);
     for (const f of [...this.fronts]) if (want.get(f.division) !== f.hold) this.remove(f);
     for (const [d, hd] of want) {
       if (this.fronts.includes(d.front) && d.front.hold === hd) continue;
-      const f = { id: this.nextId++, owner: this.owner, division: d, hold: hd, kind: hd.kind, units: [], chains: [],
-        length: 0, rotate: hd.rotate, neighbors: [], attack: null, plan: null };
+      const f = { id: this.nextId++, owner: this.owner, division: d, hold: hd, kind: 'border', units: [], cells: [],
+        points: [], slots: new Map(), rotate: hd.rotate, neighbors: [], attack: null, plan: null };
       d.front = f;
       this.fronts.push(f);
-      this.prepare(f);
+      this.sync(f);
+      this.schedule(f);
     }
   }
 
-  // Den Auftrag auf seine Divisionen verteilen: zusammenhängende Teile, Länge nach Stärke.
-  // Bekannte Divisionen behalten ihre Reihenfolge, neue reihen sich nach ihrer Lage ein;
-  // reset ordnet alle nach ihrer Lage (nach einer neuen Zuteilung)
-  layout(hd, reset = false) {
-    const divs = this.members(hd);
-    const chains = this.holdChains(hd);
-    const L = hd.length;
-    const old = reset ? new Map() : hd.parts;
-    const order = divs.map((d) => {
-      const p = old.get(d);
-      const c = centerOf(d);
-      const t = p ? (p[0] + p[1]) / 2 : c && L > 0 ? projectOnChains(chains, c) / L : 0.5;
-      return { d, t, s: Math.max(0.1, divStrength(d)) };
-    }).sort((a, b) => a.t - b.t);
-    const sum = order.reduce((s, o) => s + o.s, 0) || 1;
-    hd.parts = new Map();
-    let acc = 0;
-    for (const o of order) {
-      const a = acc;
-      acc += o.s / sum;
-      hd.parts.set(o.d, [a, Math.min(1, acc)]);
-    }
-    hd.sig = divs.map((d) => d.id).join(',');
-    for (const f of this.fronts) if (f.hold === hd) this.prepare(f);
-  }
-
-  // Nach jeder Zuteilung: Aufträge ohne Frontsektor lösen sich auf, die geänderten werden
-  // neu auf ihre Divisionen verteilt
+  // Nach jeder Zuteilung: Aufträge ohne Grenzfeld lösen sich auf (außer beim Rückzug auf
+  // die Auffanglinie), die geänderten verteilen ihre Divisionen neu nach deren Lage
   afterAssign(touched) {
-    const used = new Set([...this.sectorInfo().regions.keys()].map((r) => this.assign.get(r)));
-    for (const hd of [...this.holds]) if (hd.kind === 'sectors' && !used.has(hd)) this.dropHold(hd);
+    const used = new Set(this.frontInfo().list.map((e) => this.resp[e.i]));
+    for (const hd of [...this.holds]) if (!hd.falling && !used.has(hd.id)) this.dropHold(hd);
     this.syncHolds();
-    for (const hd of touched) if (this.holds.includes(hd)) this.layout(hd, true);
-    this.updateNeighbors();
+    for (const hd of touched) {
+      if (!this.holds.includes(hd)) continue;
+      hd.seeds.clear();
+      this.layoutHold(hd);
+    }
   }
 
-  // Sektoren einem Verband (Armee oder Division) zuteilen
-  paint(formation, regions) {
-    const hd = this.makeHold(formation, 'sectors');
-    for (const r of regions) this.assign.set(r, hd);
-    this.version++;
-    this.afterAssign([hd]);
-    return this.holds.includes(hd) ? hd : null;
-  }
-
-  // Sektoren die Front entziehen
-  erase(regions) {
-    for (const r of regions) if (this.assign.get(r)) this.assign.set(r, null);
-    this.version++;
-    this.afterAssign([]);
-  }
-
-  // Mehrere Verbände teilen sich Sektoren: zusammenhängend entlang der Grenze, Anteil nach
-  // Stärke, Reihenfolge nach ihrer Lage
-  paintSplit(forms, regions) {
-    if (forms.length === 1) return [this.paint(forms[0], regions)].filter(Boolean);
-    const S = this.game.sectors;
-    const pos = this.regionOrder();
-    const list = [...new Set(regions)].filter((r) => pos.has(r)).sort((a, b) => pos.get(a) - pos.get(b));
-    if (!list.length) return [];
-    const near = (c) => {
-      let best = 0, bd = Infinity;
-      list.forEach((r, k) => { const d = Math.hypot(S.regions[r].x - c.x, S.regions[r].y - c.y); if (d < bd) { bd = d; best = k; } });
-      return best;
-    };
-    const order = forms.map((f) => ({ f, k: centerOf(f) ? near(centerOf(f)) : 0, s: Math.max(0.1, formStrength(f)) }))
-      .sort((a, b) => a.k - b.k);
-    const sum = order.reduce((s, o) => s + o.s, 0);
-    let acc = 0, from = 0;
-    const made = [];
-    order.forEach((o, i) => {
-      acc += o.s / sum;
-      // jeder bekommt mindestens einen Sektor, solange es reicht
-      let to = i === order.length - 1 ? list.length : Math.round(acc * list.length);
-      to = Math.max(Math.min(from + 1, list.length), Math.min(to, list.length - (order.length - 1 - i)));
-      const part = list.slice(from, to);
-      from = to;
-      if (part.length) {
-        const hd = this.makeHold(o.f, 'sectors');
-        for (const r of part) this.assign.set(r, hd);
-        made.push(hd);
+  // Felder um einen Weltpunkt (Halbmesser rad in Feldern) zuteilen; only: nur Felder, die
+  // bisher diesen Wert haben
+  paintDisc(v, x, y, rad, only) {
+    const { w, h } = this.game.map, r = this.resp;
+    const cx = x / CELL, cy = y / CELL;
+    for (let yy = Math.max(0, Math.floor(cy - rad)); yy <= Math.min(h - 1, Math.floor(cy + rad)); yy++) {
+      for (let xx = Math.max(0, Math.floor(cx - rad)); xx <= Math.min(w - 1, Math.floor(cx + rad)); xx++) {
+        if ((xx + 0.5 - cx) ** 2 + (yy + 0.5 - cy) ** 2 > rad * rad) continue;
+        const i = yy * w + xx;
+        if (only === undefined || r[i] === only) r[i] = v;
       }
-    });
-    this.version++;
-    this.afterAssign(made);
-    return made.filter((hd) => this.holds.includes(hd));
+    }
   }
 
-  // Alle Sektoren an der Grenze zu einem Gegner (Klick ins Feindgebiet wie in HOI4)
-  foeSectors(foe) {
-    return [...this.sectorInfo().regions.values()].filter((e) => e.foes.has(foe)).map((e) => e.r);
+  // Pinselstrich von a nach b für einen Verband (null: Front entziehen). Liefert die
+  // getroffenen Grenzfelder. quick: während des Ziehens nur malen, verteilt wird erst mit
+  // commit() am Ende des Strichs
+  paintStroke(formation, a, b, quick = false) {
+    const fi = this.frontInfo();
+    const v = formation ? this.makeHold(formation).id : -1;
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (CELL / 2)));
+    for (let k = 0; k <= n; k++) this.paintDisc(v, a.x + (b.x - a.x) * k / n, a.y + (b.y - a.y) * k / n, BRUSH);
+    this.version++;
+    const hit = fi.list.filter((e) => this.resp[e.i] === v && segDist(e.cx, e.cy, a, b) <= (BRUSH + 0.5) * CELL);
+    if (!quick) this.commit(formation ? [formation] : []);
+    return hit;
+  }
+
+  // Malen abschließen: Lücken der gemalten Fronten schließen, neu verteilen
+  commit(forms) {
+    const holds = forms.map((f) => this.holdOf(f)).filter(Boolean);
+    for (const hd of holds) this.fillGaps(hd.id);
+    this.afterAssign(holds);
+  }
+
+  // Grenzfelder einem Verband zuteilen (mit einem Streifen beiderseits der Grenze)
+  assignEntries(v, entries) {
+    for (const e of entries) this.paintDisc(v, e.cx, e.cy, BAND);
+    this.version++;
+  }
+
+  // Mehrere Verbände teilen sich Grenzfelder: zusammenhängend entlang der Grenze, Anteil
+  // nach Stärke, Reihenfolge nach ihrer Lage
+  assignSplit(forms, entries) {
+    if (!entries.length || !forms.length) return [];
+    const holds = forms.map((f) => this.makeHold(f));
+    const parts = splitAlong(entries, forms.map((f) => centerOf(f) || entries[0]), forms.map((f) => Math.max(0.1, formStrength(f))), () => 1);
+    holds.forEach((hd, k) => this.assignEntries(hd.id, parts[k]));
+    for (const hd of holds) this.fillGaps(hd.id);
+    this.afterAssign(holds);
+    return holds.filter((hd) => this.holds.includes(hd));
   }
 
   // Ganze Grenze für einen Verband
   assignAll(formation) {
-    const regions = [...this.sectorInfo().regions.keys()];
-    return regions.length ? this.paint(formation, regions) : null;
+    const list = this.frontInfo().list;
+    if (!list.length) return null;
+    return this.assignSplit([formation], list)[0] || null;
   }
 
-  // Frei gezeichnete Linie (z. B. Verteidigungslinie im Hinterland); mehrere Verbände
-  // teilen sie sich nach Lage und Stärke
-  drawLine(forms, line) {
-    const total = chainLength(line);
-    const order = forms.map((f) => {
-      const c = centerOf(f);
-      return { f, t: c ? projectOnChains([line], c) : 0, s: Math.max(0.1, formStrength(f)) };
-    }).sort((a, b) => a.t - b.t);
-    const sum = order.reduce((s, o) => s + o.s, 0);
-    let acc = 0;
-    const made = order.map((o) => {
-      const from = acc;
-      acc += total * o.s / sum;
-      const part = forms.length > 1 ? sliceChains([line], from, acc)[0] || line : line;
-      return this.makeHold(o.f, 'line', part.map((q) => ({ x: q.x, y: q.y })));
-    });
-    this.version++;
-    this.afterAssign(made);
-    return made;
+  // Grenzfelder zu einem Gegner (Klick ins Feindgebiet wie in HOI4)
+  foeEntries(foe) {
+    return this.frontInfo().list.filter((e) => e.foe === foe);
   }
+
+  // Kleine Lücken in der Front eines Auftrags schließen: freie Grenzfelder, die zwischen
+  // zwei seiner Felder liegen (nicht weiter als GAP_FILL entfernt, auf verschiedenen Seiten)
+  fillGaps(v) {
+    const fi = this.frontInfo(), r = this.resp;
+    const mine = fi.list.filter((e) => r[e.i] === v);
+    let changed = false;
+    for (const e of fi.list) {
+      if (r[e.i] > 0 && this.holdIds.has(r[e.i])) continue;
+      const near = mine.filter((o) => Math.abs(o.cx - e.cx) <= GAP_FILL * CELL && Math.abs(o.cy - e.cy) <= GAP_FILL * CELL);
+      if (near.length < 2) continue;
+      let both = false;
+      for (let a = 0; a < near.length && !both; a++) {
+        for (let b = a + 1; b < near.length; b++) {
+          const ax = near[a].cx - e.cx, ay = near[a].cy - e.cy, bx = near[b].cx - e.cx, by = near[b].cy - e.cy;
+          if (ax * bx + ay * by < 0) { both = true; break; } // auf verschiedenen Seiten
+        }
+      }
+      if (!both) continue;
+      this.paintDisc(v, e.cx, e.cy, 1, r[e.i]);
+      r[e.i] = v;
+      changed = true;
+    }
+    if (changed) this.version++;
+  }
+
+  // Divisionen, die einer Armee beitreten, bringen ihre Front mit: die Armee hält sie
+  // danach gemeinsam, ihre Divisionen teilen sie neu auf
+  mergeInto(army) {
+    const own = army.children.map((d) => this.holdOf(d)).filter(Boolean);
+    if (!own.length) return;
+    const hd = this.makeHold(army);
+    const ids = new Set(own.map((o) => o.id)), r = this.resp;
+    for (let i = 0; i < r.length; i++) if (ids.has(r[i])) r[i] = hd.id;
+    for (const o of own) { this.holds = this.holds.filter((x) => x !== o); this.holdIds.delete(o.id); }
+    this.version++;
+    this.afterAssign([hd]);
+  }
+
+  // --- Auffanglinie -------------------------------------------------------------------
 
   // Auffanglinie wie in HOI4: eine Linie hinter der Front, auf die sich der Auftrag auf Befehl
   // zurückzieht. Mehrere Aufträge teilen sich eine gezogene Linie nach Lage und Stärke
@@ -249,7 +250,7 @@ export class FrontManager {
   }
 
   // Auf die Auffanglinie zurückfallen (on) bzw. wieder die Front halten. Laufende Angriffe
-  // enden; die Sektoren bleiben dem Auftrag zugeteilt
+  // enden; die Zuständigkeit an der Grenze bleibt
   fallBack(hd, on) {
     hd.falling = on && !!hd.fallback;
     for (const f of this.fronts) if (f.hold === hd) { f.plan = null; this.stopAttack(f); }
@@ -261,279 +262,301 @@ export class FrontManager {
     if (hd.falling) this.fallBack(hd, false);
   }
 
-  // Linie eines Auftrags neu bestimmen und seine Divisionen neu ausrichten
   refreshHold(hd) {
-    hd.ver = -1;
-    for (const f of this.fronts) if (f.hold === hd) { for (const u of f.units) u.frontGoal = null; this.prepare(f); }
-    this.updateNeighbors();
+    for (const f of this.fronts) if (f.hold === hd) { for (const u of f.units) u.frontGoal = null; this.schedule(f); }
+    this.layoutHold(hd);
   }
 
-  // Divisionen, die einer Armee beitreten, bringen ihre Sektoren mit: die Armee hält sie
-  // danach gemeinsam, ihre Divisionen teilen sie neu auf
-  mergeInto(army) {
-    const own = army.children.map((d) => this.holdOf(d)).filter((hd) => hd && hd.kind === 'sectors');
-    if (!own.length) return;
-    const hd = this.makeHold(army, 'sectors');
-    for (const o of own) {
-      for (const [r, h] of this.assign) if (h === o) this.assign.set(r, hd);
-      this.dropHold(o);
-    }
-    this.version++;
-    this.afterAssign([hd]);
-  }
+  // --- Grenze ------------------------------------------------------------------------
 
-  // --- Grenze und Sektoren -----------------------------------------------------------
-
-  // Grenzlinien je festem Zeitfenster von 0,5 s einmal berechnen; alle Fronten teilen sie
+  // Grenzfelder je festem Zeitfenster von 0,5 s einmal bestimmen; alle Fronten teilen sie
   // sich. Feste Fenster statt „0,5 s nach der letzten Abfrage“: so ändert eine zusätzliche
-  // Abfrage (Anzeige, Test) nichts am Spielverlauf. Dabei übernehmen neue Grenzsektoren
-  // ihren Auftrag (siehe computeSectors)
-  border() {
-    const slot = Math.floor(this.game.time / 0.5);
-    if (!this.borderCache || this.borderCache.slot !== slot) {
-      const cells = this.borderCells();
-      this.borderCache = { slot, chains: this.borderChains(cells), info: null };
-      this.borderCache.info = this.computeSectors(cells);
-    }
-    return this.borderCache.chains;
-  }
-
-  // Frontsektoren dieser Seite: Region -> { r, foes (angrenzende Gegner), n (Grenzfelder) }
-  sectorInfo() {
-    this.border();
-    return this.borderCache.info;
-  }
-
-  computeSectors(cells) {
-    const g = this.game, S = g.sectors, tr = g.territory, w = g.map.w, me = this.owner;
-    const regions = new Map();
+  // Abfrage (Anzeige, Test) nichts am Spielverlauf. Dabei übernehmen neue Grenzfelder ihre
+  // Zuständigkeit (inherit)
+  frontInfo() {
+    const g = this.game, slot = Math.floor(g.time / 0.5);
+    if (this.fi && this.fi.slot === slot) return this.fi;
+    const map = g.map, { w } = map, tr = g.territory, me = this.owner;
+    const { cells, isOut } = this.borderCells();
+    const list = [], byCell = new Map();
     for (const i of cells) {
-      const r = S.of[i];
-      if (r < 0) continue;
-      let e = regions.get(r);
-      if (!e) { e = { r, foes: new Set(), n: 0 }; regions.set(r, e); }
-      e.n++;
-      for (const j of [i - 1, i + 1, i - w, i + w]) {
-        const o = tr[j];
-        if (o && o !== me && g.hostile(me, o)) e.foes.add(o);
+      const x = i % w, y = (i / w) | 0;
+      let ox = 0, oy = 0, foe = 0;
+      const dirs = [];
+      for (const [dx, dy] of DIRS) {
+        const j = i + dy * w + dx;
+        if (!isOut(j)) continue;
+        ox += dx; oy += dy;
+        dirs.push([dx, dy]);
+        if (tr[j] && tr[j] !== me && g.hostile(me, tr[j])) foe = tr[j];
       }
+      if (!ox && !oy) { // Feind auf gegenüberliegenden Seiten: Richtung aus der Umgebung
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (isOut(i + dy * w + dx)) { ox += dx; oy += dy; }
+        if (!ox && !oy) ox = 1;
+      }
+      const l = Math.hypot(ox, oy), nx = ox / l, ny = oy / l;
+      const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL;
+      let px = cx - nx * HOLD_IN, py = cy - ny * HOLD_IN;
+      const k = map.cellIndex(px, py);
+      if (!map.cellPassable(k) || tr[k] !== me) { px = cx; py = cy; }
+      const e = { i, gw: w, cx, cy, x: px, y: py, nx, ny, dirs, foe, w: 1 };
+      list.push(e);
+      byCell.set(i, e);
     }
-    // Noch ohne Kontakt: der Gegner, dessen Stadt am nächsten liegt
+    // Ohne Kontakt: der Gegner, dessen Stadt am nächsten liegt
     const foeCities = g.cities.filter((c) => c.owner && g.hostile(me, c.owner));
-    for (const e of regions.values()) {
-      if (e.foes.size || !foeCities.length) continue;
-      const reg = S.regions[e.r];
+    for (const e of list) {
+      if (e.foe || !foeCities.length) continue;
       let best = foeCities[0], bd = Infinity;
-      for (const c of foeCities) { const d = Math.hypot(c.x - reg.x, c.y - reg.y); if (d < bd) { bd = d; best = c; } }
-      e.foes.add(best.owner);
+      for (const c of foeCities) { const d = (c.x - e.cx) ** 2 + (c.y - e.cy) ** 2; if (d < bd) { bd = d; best = c; } }
+      e.foe = best.owner;
     }
-    // Neue Grenzsektoren übernehmen den Auftrag ihres nächsten Nachbarn
-    let changed = false;
-    for (const e of regions.values()) {
-      if (this.assign.has(e.r)) continue;
-      const v = this.inherit(e.r);
-      if (v !== undefined) { this.assign.set(e.r, v); changed = true; }
-    }
-    if (changed) this.version++;
-    return { regions };
-  }
-
-  // Auftrag der nächsten Region mit Auftrag (Breitensuche über Nachbarregionen), undefined,
-  // wenn es in der Nähe keine gibt. Bewusst freie Sektoren geben ihre Lücke nicht weiter
-  inherit(r) {
-    const R = this.game.sectors.regions;
-    const seen = new Set([r]);
-    let level = [r];
-    for (let hop = 0; hop < INHERIT_HOPS && level.length; hop++) {
-      const next = [];
-      let best, bd = Infinity;
-      for (const q of level) {
-        for (const n of R[q].nb) {
-          if (seen.has(n)) continue;
-          seen.add(n);
-          next.push(n);
-          if (!this.assign.get(n)) continue;
-          const d = Math.hypot(R[n].x - R[r].x, R[n].y - R[r].y);
-          if (d < bd) { bd = d; best = this.assign.get(n); }
+    // Bedrohung: Feinde in der Nähe machen ein Grenzfeld wichtiger (mehr Kompanien dorthin)
+    // (Feinde einmal auf ein grobes Raster eintragen statt je Grenzfeld zu suchen)
+    if (list.length) {
+      const B = 4 * CELL, bw = Math.ceil(map.worldW / B), bh = Math.ceil(map.worldH / B);
+      const near = new Map();
+      for (const o of g.units) {
+        if (o.owner === me || !g.hostile(o.owner, me)) continue;
+        const k = Math.floor(o.y / B) * bw + Math.floor(o.x / B);
+        if (!near.has(k)) near.set(k, []);
+        near.get(k).push(o);
+      }
+      const reach = Math.ceil(THREAT_R / B);
+      for (const e of list) {
+        const bx = Math.floor(e.cx / B), by = Math.floor(e.cy / B);
+        search: for (let y = Math.max(0, by - reach); y <= Math.min(bh - 1, by + reach); y++) {
+          for (let x = Math.max(0, bx - reach); x <= Math.min(bw - 1, bx + reach); x++) {
+            const os = near.get(y * bw + x);
+            if (os) for (const o of os) if ((o.x - e.cx) ** 2 + (o.y - e.cy) ** 2 <= THREAT_R * THREAT_R) { e.w = 3; break search; }
+          }
         }
       }
-      if (bd < Infinity) return best;
-      level = next;
     }
-    return undefined;
+    this.fi = { slot, list, byCell, edges: null, order: null };
+    this.inherit(list);
+    this.wasFront.fill(0);
+    for (const e of list) this.wasFront[e.i] = 1;
+    return this.fi;
   }
 
-  // Frontsektor unter einem Punkt (auch knapp neben der Grenze), sonst -1
-  sectorAt(p) {
-    const g = this.game, info = this.sectorInfo();
-    const r = g.sectors.of[g.map.cellIndex(p.x, p.y)];
-    if (r >= 0 && info.regions.has(r)) return r;
-    let best = -1, bd = PICK_DIST;
-    for (const c of this.border()) {
-      for (const q of c) {
-        const d = Math.hypot(q.bx - p.x, q.by - p.y);
-        if (d < bd) { bd = d; best = q.r; }
+  // Neue Grenzfelder übernehmen den Auftrag des nächsten zuständigen Felds in der Nähe
+  // (bis INHERIT Felder). Bestehende freie Grenzfelder bleiben frei: nichts wächst von
+  // selbst die Grenze entlang
+  inherit(list) {
+    if (!this.holds.length) return;
+    const { w, h } = this.game.map, r = this.resp;
+    const found = [];
+    for (const e of list) {
+      if (this.wasFront[e.i] || r[e.i] < 0 || (r[e.i] > 0 && this.holdIds.has(r[e.i]))) continue;
+      const x0 = e.i % w, y0 = (e.i / w) | 0;
+      let best = 0, bd = INHERIT * INHERIT + 1;
+      for (let dy = -INHERIT; dy <= INHERIT; dy++) {
+        const y = y0 + dy;
+        if (y < 0 || y >= h) continue;
+        for (let dx = -INHERIT; dx <= INHERIT; dx++) {
+          const d = dx * dx + dy * dy, x = x0 + dx;
+          if (d >= bd || x < 0 || x >= w) continue;
+          const v = r[y * w + x];
+          if (v > 0 && this.holdIds.has(v)) { bd = d; best = v; }
+        }
       }
+      found.push([e.i, best]);
+    }
+    let changed = false;
+    for (const [i, v] of found) if (v) { r[i] = v; changed = true; }
+    if (changed) this.version++;
+  }
+
+  // Grenzfeld nahe einem Punkt (bis rad Felder), sonst null
+  entryAt(p, rad = BRUSH) {
+    let best = null, bd = (rad * CELL) ** 2;
+    for (const e of this.frontInfo().list) {
+      const d = (e.cx - p.x) ** 2 + (e.cy - p.y) ** 2;
+      if (d < bd) { bd = d; best = e; }
     }
     return best;
   }
 
-  // Reihenfolge der Frontsektoren entlang der Grenze (Region -> Rang)
-  regionOrder() {
-    const pos = new Map();
-    for (const c of this.border()) for (const p of c) if (!pos.has(p.r)) pos.set(p.r, pos.size);
-    return pos;
+  holdEntries(hd) {
+    const r = this.resp;
+    return this.frontInfo().list.filter((e) => r[e.i] === hd.id);
   }
 
-  // Teilstücke der Grenzlinie, deren Sektor test(region) erfüllt. An Wechseln zwischen zwei
-  // Sektoren treffen sich die Stücke in der Mitte: keine Lücke, keine Überlappung
-  runs(test) {
-    const out = [];
-    for (const c of this.border()) {
-      let cur = null;
-      for (let k = 0; k < c.length; k++) {
-        const p = c[k];
-        if (test(p.r)) {
-          if (!cur) cur = k > 0 ? [midPoint(c[k - 1], p)] : [];
-          cur.push(p);
-        } else if (cur) {
-          cur.push(midPoint(c[k - 1], p));
-          if (cur.length >= 2) out.push(cur);
-          cur = null;
+  // Grenzfelder ohne besetzten Auftrag (Lücken)
+  openEntries() {
+    const r = this.resp;
+    const manned = new Set(this.holds.filter((hd) => this.members(hd).length).map((hd) => hd.id));
+    return this.frontInfo().list.filter((e) => !manned.has(r[e.i]));
+  }
+
+  // Lage eines Punkts entlang der Grenze (für Sortierungen, z. B. in der KI)
+  along(p) {
+    const fi = this.frontInfo();
+    if (!fi.order) fi.order = orderAlong(fi.list);
+    const e = nearestEntry(fi.list, p);
+    return e ? fi.order.get(e) : 0;
+  }
+
+  // Besetzung eines Auftrags: Frontlänge, Divisionen, einsatzbereite Kompanien
+  // level: 'good' (dicht), 'thin' (dünn), 'weak' (zu dünn), 'none' (keine Grenze)
+  holdStatus(hd) {
+    const cells = this.holdEntries(hd).length;
+    const divs = this.members(hd);
+    const units = divs.reduce((s, d) => s + unitsOf(d).filter((u) => !u.broken).length, 0);
+    const per = cells ? units * 4 / cells : 0; // eine Kompanie je 4 Grenzfelder gilt als dicht
+    const level = !cells ? 'none' : per >= 1 ? 'good' : per >= 0.5 ? 'thin' : 'weak';
+    return { cells, km: Math.round(cells * (this.game.map.kmPerCell || 1)), divs: divs.length, units, level };
+  }
+
+  // Grenzlinien zum Zeichnen: die Kanten zwischen Grenzfeldern und Feindfeldern, zu Linien
+  // verbunden und geglättet; key = Auftrag (0 = keine Front). Keine Lücken: jede Kante
+  // gehört zu genau einer Linie. teeth: Stellen für die Zacken Richtung Feind
+  edges() {
+    const fi = this.frontInfo();
+    if (fi.edges && fi.edgesVer === this.version) return fi.edges;
+    const r = this.resp;
+    const key = (e) => (r[e.i] > 0 && this.holdIds.has(r[e.i]) ? r[e.i] : 0);
+    fi.edges = traceEdges(fi.list, this.game.map.w, key);
+    fi.edgesVer = this.version;
+    return fi.edges;
+  }
+
+  // Linien eines Abschnitts (einer Division), zum Hervorheben
+  edgesOf(f) {
+    const fi = this.frontInfo();
+    if (f.edgeCache && f.edgeCache.slot === fi.slot && f.edgeCache.n === f.cells.length) return f.edgeCache.lines;
+    const lines = traceEdges(f.cells, this.game.map.w, () => 1);
+    f.edgeCache = { slot: fi.slot, n: f.cells.length, lines };
+    return lines;
+  }
+
+  // Lage des Abzeichens eines Auftrags: das Grenzfeld nahe der Mitte seiner Felder
+  holdBadge(hd) {
+    const cells = this.holdEntries(hd);
+    if (!cells.length) return null;
+    return snapCenter(cells);
+  }
+
+  // Trenner: Stellen, an denen zwei Aufträge auf der Grenze aneinanderstoßen
+  boundaries() {
+    const fi = this.frontInfo();
+    if (fi.bounds && fi.boundsVer === this.version) return fi.bounds;
+    const { w } = this.game.map, r = this.resp;
+    const list = [];
+    for (const e of fi.list) {
+      const a = r[e.i];
+      if (!(a > 0) || !this.holdIds.has(a)) continue;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const o = fi.byCell.get(e.i + dy * w + dx);
+          if (!o) continue;
+          const b = r[o.i];
+          if (!(b > a) || !this.holdIds.has(b)) continue; // jedes Paar nur einmal (b > a)
+          const x = (e.cx + o.cx) / 2, y = (e.cy + o.cy) / 2;
+          if (list.some((q) => ((q.a.id === a && q.b.id === b) || (q.a.id === b && q.b.id === a)) && Math.hypot(q.x - x, q.y - y) < 5 * CELL)) continue;
+          const A = this.holdIds.get(a), B = this.holdIds.get(b);
+          if (A.falling || B.falling) continue;
+          list.push({ a: A, b: B, x, y });
         }
       }
-      if (cur && cur.length >= 2) out.push(cur);
     }
-    return out;
-  }
-
-  // Linie eines Auftrags (je Zeitfenster und Zuteilung einmal berechnet)
-  holdChains(hd) {
-    this.border();
-    const slot = this.borderCache.slot;
-    if (hd.slot === slot && hd.ver === this.version) return hd.chains;
-    const facing = (p, n) => this.facing(p, n);
-    hd.chains = hd.falling && hd.fallback ? [withNormals(hd.fallback.line, facing)]
-      : hd.kind === 'line' ? (hd.line ? [withNormals(hd.line, facing)] : [])
-        : this.runs((r) => this.assign.get(r) === hd);
-    hd.length = hd.chains.reduce((s, c) => s + chainLength(c), 0);
-    hd.slot = slot;
-    hd.ver = this.version;
-    return hd.chains;
-  }
-
-  // Teil des Auftrags, den eine Division hält
-  chainsFor(f) {
-    const hd = f.hold;
-    const chains = this.holdChains(hd);
-    const part = hd.parts.get(f.division);
-    if (!part || (part[0] <= 0 && part[1] >= 1)) return chains;
-    return sliceChains(chains, part[0] * hd.length, part[1] * hd.length);
-  }
-
-  // Grenzstücke ohne besetzten Auftrag (zum Anzeigen; die KI füllt sie auf)
-  uncovered() {
-    this.border();
-    const slot = this.borderCache.slot;
-    const manned = new Set(this.holds.filter((hd) => this.members(hd).length));
-    const sig = [...manned].map((hd) => hd.id).join();
-    const c = this.gapCache;
-    if (c && c.slot === slot && c.ver === this.version && c.sig === sig) return c.parts;
-    const parts = this.runs((r) => !manned.has(this.assign.get(r)));
-    this.gapCache = { slot, ver: this.version, sig, parts };
-    return parts;
-  }
-
-  // Abfolge der Sektoren je Grenzlinie (gleiche hintereinander zusammengefasst), mit dem
-  // Punkt, an dem der Sektor beginnt (Mitte zum Vorgänger)
-  sequences() {
-    return this.border().map((c) => {
-      const seq = [];
-      for (let k = 0; k < c.length; k++) {
-        const p = c[k];
-        const last = seq[seq.length - 1];
-        if (!last || last.r !== p.r) seq.push({ r: p.r, at: k ? midPoint(c[k - 1], p) : p });
-      }
-      return seq;
-    });
-  }
-
-  // Trenner: Nahtstellen zwischen zwei verschiedenen Aufträgen auf der Grenze
-  boundaries() {
-    this.border();
-    const c = this.boundCache;
-    if (c && c.slot === this.borderCache.slot && c.ver === this.version) return c.list;
-    const list = [];
-    for (const seq of this.sequences()) {
-      for (let k = 1; k < seq.length; k++) {
-        const a = this.assign.get(seq[k - 1].r) || null, b = this.assign.get(seq[k].r) || null;
-        if (a && b && a !== b && a.kind === 'sectors' && b.kind === 'sectors' && !a.falling && !b.falling) list.push({ a, b, x: seq[k].at.x, y: seq[k].at.y });
-      }
-    }
-    this.boundCache = { slot: this.borderCache.slot, ver: this.version, list };
+    fi.bounds = list;
+    fi.boundsVer = this.version;
     return list;
   }
 
-  // Trenner zwischen den Aufträgen a und b (zuletzt bei near) zum Punkt p verschieben:
-  // Sektoren zwischen beiden wechseln, jeder behält mindestens einen. Liefert die neue Lage
+  // Trenner zwischen den Aufträgen a und b (zuletzt bei near) zum Punkt p ziehen: die
+  // Grenzfelder der anderen Seite zwischen Trenner und p wechseln. Liefert die neue Lage
   moveBoundary(a, b, near, p) {
-    let best = null, bd = Infinity;
-    for (const seq of this.sequences()) {
-      for (let k = 1; k < seq.length; k++) {
-        const x = this.assign.get(seq[k - 1].r), y = this.assign.get(seq[k].r);
-        if (!((x === a && y === b) || (x === b && y === a))) continue;
-        const d = Math.hypot(seq[k].at.x - near.x, seq[k].at.y - near.y);
-        if (d < bd) { bd = d; best = { seq, k, A: x, B: y }; }
+    const fi = this.frontInfo(), r = this.resp, { w } = this.game.map;
+    const c = nearestEntry(fi.list.filter((e) => r[e.i] === a.id || r[e.i] === b.id), p);
+    if (!c || Math.hypot(c.cx - p.x, c.cy - p.y) > 6 * CELL) return near;
+    const from = r[c.i] === b.id ? a : b, into = from === a ? b : a; // from wächst in into hinein
+    // Breitensuche über die Grenzfelder von into, ab denen, die am Trenner an from grenzen
+    const dist = new Map(), queue = [];
+    for (const e of fi.list) {
+      if (r[e.i] !== into.id || Math.hypot(e.cx - near.x, e.cy - near.y) > 4 * CELL) continue;
+      dist.set(e, 0);
+      queue.push(e);
+    }
+    for (let q = 0; q < queue.length; q++) {
+      const e = queue[q];
+      for (let dy = -LINK; dy <= LINK; dy++) {
+        for (let dx = -LINK; dx <= LINK; dx++) {
+          const o = fi.byCell.get(e.i + dy * w + dx);
+          if (!o || dist.has(o) || r[o.i] !== into.id) continue;
+          dist.set(o, dist.get(e) + 1);
+          queue.push(o);
+        }
       }
     }
-    if (!best) return null;
-    const { seq, k, A, B } = best;
-    let lo = k - 1, hi = k;
-    while (lo > 0 && this.assign.get(seq[lo - 1].r) === A) lo--;
-    while (hi < seq.length - 1 && this.assign.get(seq[hi + 1].r) === B) hi++;
-    let j = k, jd = Infinity;
-    for (let m = lo + 1; m <= hi; m++) {
-      const d = Math.hypot(seq[m].at.x - p.x, seq[m].at.y - p.y);
-      if (d < jd) { jd = d; j = m; }
-    }
-    if (j !== k) {
-      for (let m = lo; m <= hi; m++) this.assign.set(seq[m].r, m < j ? A : B);
-      this.version++;
-      this.afterAssign([A, B]);
-    }
-    return { x: seq[j].at.x, y: seq[j].at.y };
+    if (!dist.has(c)) return near;
+    // into behält mindestens ein Feld
+    const limit = dist.get(c);
+    const take = [...dist.keys()].filter((e) => dist.get(e) <= limit);
+    if (take.length >= this.holdEntries(into).length) return near;
+    for (const e of take) this.paintDisc(from.id, e.cx, e.cy, BAND, into.id);
+    this.version++;
+    this.afterAssign([from, into]);
+    return { x: c.cx, y: c.cy };
   }
 
-  // Frontsektoren ohne besetzten Auftrag (Lücken)
-  openSectors() {
-    const manned = new Set(this.holds.filter((hd) => this.members(hd).length));
-    return [...this.sectorInfo().regions.keys()].filter((r) => !manned.has(this.assign.get(r)));
-  }
+  // --- Verteilung --------------------------------------------------------------------
 
-  // Besetzung eines Auftrags: einsatzbereite Kompanien je Frontsektor
-  // level: 'good' (dicht), 'thin' (dünn), 'weak' (zu dünn), 'none' (keine Sektoren)
-  holdStatus(hd) {
-    let sectors = 0;
-    for (const r of this.sectorInfo().regions.keys()) if (this.assign.get(r) === hd) sectors++;
-    const divs = this.members(hd);
-    const units = divs.reduce((s, d) => s + unitsOf(d).filter((u) => !u.broken).length, 0);
-    const per = sectors ? units / sectors : 0;
-    const level = !sectors ? 'none' : per >= 1 ? 'good' : per >= 0.5 ? 'thin' : 'weak';
-    return { sectors, divs: divs.length, units, level };
-  }
-
-  // Nachbarn: Fronten desselben Auftrags, deren Enden nah an den eigenen Enden liegen
-  // (HQs helfen einander nur innerhalb ihrer Armee aus)
-  updateNeighbors() {
-    const ends = new Map();
-    for (const f of this.fronts) {
-      const c = f.chains.filter((x) => x.length);
-      ends.set(f, c.length ? [c[0][0], c[c.length - 1][c[c.length - 1].length - 1]] : []);
+  // Den Auftrag auf seine Divisionen verteilen und darin auf die Kompanien: zusammenhängend
+  // entlang der Grenze, Divisionen nach Stärke, Kompanien gleichmäßig nach Gewicht der Felder.
+  // Die Reihenfolge folgt der Lage (keine Kompanie läuft an einer anderen vorbei)
+  layoutHold(hd) {
+    hd.sig = this.members(hd).map((d) => d.id).join();
+    const fronts = this.fronts.filter((f) => f.hold === hd);
+    for (const f of fronts) { f.cells = []; f.points = []; f.slots = new Map(); f.neighbors = []; }
+    if (!fronts.length) return;
+    if (hd.falling && hd.fallback) { this.layoutLine(fronts, [withNormals(hd.fallback.line, (p, n) => this.facing(p, n))]); return; }
+    const cells = this.holdEntries(hd);
+    if (!cells.length) return;
+    const order = orderAlong(cells);
+    const seeds = fronts.map((f) => hd.seeds.get(f.division) || centerOf(f.division) || cells[0]);
+    const parts = splitAlong(cells, seeds, fronts.map((f) => Math.max(0.1, divStrength(f.division))), (e) => e.w, order);
+    fronts.forEach((f, k) => {
+      f.cells = parts[k];
+      f.points = parts[k];
+      if (parts[k].length) hd.seeds.set(f.division, snapCenter(parts[k]));
+      this.layoutUnits(f, order);
+    });
+    // Nachbarn: Divisionen, deren Abschnitte aneinanderstoßen (HQs helfen einander aus)
+    for (const f of fronts) {
+      f.neighbors = fronts.filter((o) => o !== f && touches(f.cells, o.cells));
     }
-    for (const f of this.fronts) {
-      const mine = ends.get(f);
-      f.neighbors = this.fronts.filter((o) => o !== f && o.hold === f.hold &&
-        mine.some((p) => ends.get(o).some((q) => Math.hypot(p.x - q.x, p.y - q.y) < NEIGHBOR_DIST)));
+  }
+
+  // Kompanien einer Division gleichmäßig auf ihre Grenzfelder
+  layoutUnits(f, order) {
+    const act = f.units.filter((u) => !u.rotating && !u.broken);
+    if (!act.length || !f.cells.length) return;
+    const parts = splitAlong(f.cells, act.map((u) => u.frontGoal || u), act.map(() => 1), (e) => e.w, order);
+    act.forEach((u, k) => {
+      const e = parts[k].length ? snapCenter(parts[k]) : nearestEntry(f.cells, u);
+      f.slots.set(u, { x: e.x, y: e.y, nx: e.nx, ny: e.ny });
+    });
+  }
+
+  // Auf einer Linie (Auffanglinie): Divisionen nach Lage und Stärke, Kompanien gleichmäßig
+  layoutLine(fronts, chains) {
+    const total = chains.reduce((s, c) => s + chainLength(c), 0);
+    const order = this.byPosition(fronts.map((f) => f.division), (c) => projectOnChains(chains, c));
+    const sum = order.reduce((s, o) => s + o.s, 0) || 1;
+    let acc = 0;
+    for (const o of order) {
+      const f = o.d.front;
+      const from = acc;
+      acc += total * o.s / sum;
+      const part = sliceChains(chains, from, acc);
+      const act = f.units.filter((u) => !u.rotating && !u.broken)
+        .sort((a, b) => projectOnChains(chains, a) - projectOnChains(chains, b));
+      const slots = distribute(part.length ? part : chains, act.length);
+      act.forEach((u, k) => f.slots.set(u, slots[k]));
+      f.points = (part.length ? part : chains).flat();
     }
   }
 
@@ -596,6 +619,144 @@ export class FrontManager {
       if (f.division.dissolved) this.remove(f);
       else if (this.sync(f)) this.schedule(f);
     }
+    // neu verteilen nur, wo sich die Divisionen geändert haben (sonst im nächsten Durchgang)
+    for (const hd of this.holds) {
+      const sig = this.members(hd).map((d) => d.id).join();
+      if (sig !== hd.sig) this.layoutHold(hd);
+    }
+  }
+
+  // Angriff beenden (erreicht oder abgebrochen): zurück zum Halten des eigenen Abschnitts
+  stopAttack(f) {
+    if (!f.attack) return;
+    f.attack = null;
+    for (const u of f.units) u.frontGoal = null;
+    this.schedule(f);
+  }
+
+  // Besetzung sofort, die Wege erst im nächsten Durchgang (verteilt die Rechenlast)
+  prepare(f) {
+    this.sync(f);
+    this.schedule(f);
+  }
+
+  update(dt) {
+    const fi = this.frontInfo(); // Grenze zu festem Zeitpunkt im Durchgang auffrischen
+    this.timer -= dt;
+    if (this.timer > 0) return;
+    this.timer = REFRESH;
+    this.pathBudget = PATH_BUDGET;
+    this.syncHolds();
+    for (const f of this.fronts) this.sync(f);
+    // Neu verteilen höchstens einmal je Zeitfenster der Grenze
+    for (const hd of this.holds) if (hd.layoutSlot !== fi.slot || hd.layoutVer !== this.version) {
+      hd.layoutSlot = fi.slot;
+      hd.layoutVer = this.version;
+      this.layoutHold(hd);
+    }
+    for (const f of [...this.fronts]) this.refresh(f);
+  }
+
+  refresh(f) {
+    const g = this.game;
+    f.force = false;
+    if (f.division.dissolved) { this.remove(f); return; }
+    this.sync(f);
+
+    // Rotation: Verwundete zur nächsten Stadt, geheilte zurück an die Front
+    const active = [];
+    for (const u of f.units) {
+      const frac = u.hp / u.maxHp;
+      const limit = f.attack ? ROTATE_AT_ATTACK : ROTATE_AT;
+      // Bei Feindkontakt wird nicht rotiert: die Front hält. Verwundete gehen nur
+      // zum Heilen, wenn kein Feind in der Nähe ist.
+      if (f.rotate && !u.rotating && frac < limit && !u.target && this.pathBudget > 0 && !this.enemyNear(u, 160)) {
+        const c = this.nearestCity(u);
+        if (c) {
+          this.pathBudget--;
+          u.rotating = true;
+          u.frontGoal = null;
+          u.path = g.map.findPath(u.x, u.y, c.x, c.y, this.safeRouting()) || [];
+          continue;
+        }
+      }
+      if (u.rotating && (frac >= RETURN_AT || !f.rotate)) u.rotating = false;
+      if (!u.rotating && !u.broken) active.push(u); // Zerschlagene kehren erst erholt zurück
+    }
+
+    // Plätze: beim Halten aus der Verteilung des Auftrags (layoutHold), im Angriff auf der
+    // Ziellinie (die Front selbst bleibt unverändert)
+    let pairs;
+    if (f.attack) {
+      if (!f.attack.parts.length) { this.stopAttack(f); this.events.push({ type: 'attackStalled', front: f }); return; }
+      const target = f.attack.parts.map((c) => withNormals(c, (p, n) => this.facing(p, n)));
+      const total = target.reduce((s, c) => s + chainLength(c), 0);
+      const { slots, ordered } = this.sectionSlots(f, active, target, total);
+      pairs = ordered.map((u, k) => [slots[k], u]);
+    } else {
+      pairs = active.map((u) => [f.slots.get(u), u]);
+    }
+    let pending = false;
+    const shared = new Map(); // Wege für nebeneinander stehende Einheiten mit ähnlichem Ziel teilen
+    for (const [s, u] of pairs) {
+      if (!s) continue;
+      const goalMoved = !u.frontGoal || Math.hypot(u.frontGoal.x - s.x, u.frontGoal.y - s.y) > 20;
+      if (!goalMoved && u.path.length) continue; // schon unterwegs: Budget den Wartenden lassen
+      if (!goalMoved && Math.hypot(u.x - s.x, u.y - s.y) < 10) continue;
+      if (u.target) continue; // im Gefecht die Stellung halten, keine neuen Marschbefehle
+      if (u.swapUntil > g.time) continue; // Platztausch innerhalb der Division läuft
+      if (u.hqOrder > g.time) continue;   // Befehl des Divisions-HQ hat Vorrang
+      // Feindkontakt: Stellung halten wie in HOI4. Seitliche Verschiebung im eigenen
+      // Abschnitt ist erlaubt (hinter der Linie), nur ein Rückzug weg vom Feind nicht
+      const back = s.nx === undefined ? 0 : -((s.x - u.x) * s.nx + (s.y - u.y) * s.ny);
+      if (!f.attack && u.frontGoal && Math.hypot(u.x - u.frontGoal.x, u.y - u.frontGoal.y) < 80 &&
+          back > 15 && this.enemyNear(u, 160) && !this.cutOff(u)) {
+        if (u.path.length && this.pathLeadsBack(u)) u.path = [];
+        continue;
+      }
+      // Verschiebungen laufen hinter der eigenen Linie, nicht durch Feindgebiet;
+      // nur ein Angriff darf direkt hinein
+      const opts = f.attack ? null : this.safeRouting();
+      if (g.map.clearLine(u, s, opts && opts.safe)) {
+        u.path = [{ x: s.x, y: s.y }];
+      } else {
+        const key = (u.x / 30 | 0) + ',' + (u.y / 30 | 0) + '>' + (s.x / 30 | 0) + ',' + (s.y / 30 | 0);
+        let base = shared.get(key);
+        if (base === undefined) {
+          if (this.pathBudget <= 0) { pending = true; continue; }
+          this.pathBudget--;
+          base = g.map.findPath(u.x, u.y, s.x, s.y, opts) || [];
+          shared.set(key, base);
+        }
+        u.path = base.map((q) => ({ x: q.x, y: q.y }));
+        if (u.path.length) u.path[u.path.length - 1] = { x: s.x, y: s.y };
+      }
+      u.frontGoal = { x: s.x, y: s.y };
+      u.stuck = 0;
+    }
+
+    // Noch Wege offen: gleich im nächsten Frame weiterrechnen statt bis zur
+    // nächsten regulären Neuberechnung zu warten
+    if (pending) {
+      f.force = true;
+      this.timer = Math.min(this.timer, 0.03);
+    }
+
+    // Angriff abgeschlossen, sobald die meisten Einheiten ihre Plätze erreicht haben
+    if (f.attack && active.length) {
+      const arrived = active.filter((u) => u.frontGoal && Math.hypot(u.x - u.frontGoal.x, u.y - u.frontGoal.y) < 30).length;
+      if (arrived >= active.length * 0.7) {
+        this.stopAttack(f);
+        this.events.push({ type: 'attackDone', front: f });
+      } else if (arrived > f.attack.best) {
+        f.attack.best = arrived;
+        f.attack.gained = g.time;
+      } else if (g.time - f.attack.gained > ATTACK_STALL) {
+        // Kein Fortschritt mehr (Ziel unerreichbar, Gegner zu stark): zurück in den Abschnitt
+        this.stopAttack(f);
+        this.events.push({ type: 'attackStalled', front: f });
+      }
+    }
   }
 
   // Angriff wie in Hearts of Iron: erst Ziel-Linie planen, dann auf Befehl vorstoßen
@@ -648,27 +809,6 @@ export class FrontManager {
     this.prepare(f);
   }
 
-  // Angriff beenden (erreicht oder abgebrochen): zurück zum Halten des eigenen Abschnitts.
-  // Eine frei gezeichnete Linie einer einzelnen Division rückt dabei auf die Ziellinie vor
-  stopAttack(f, reached = false) {
-    if (!f.attack) return;
-    if (reached && f.kind === 'line' && this.members(f.hold).length === 1) {
-      f.hold.line = f.attack.line;
-      f.hold.ver = -1;
-    }
-    f.attack = null;
-    for (const u of f.units) u.frontGoal = null;
-    this.schedule(f);
-  }
-
-  // Linie und Besetzung sofort, die Wege erst im nächsten Durchgang (verteilt die Rechenlast)
-  prepare(f) {
-    this.sync(f);
-    f.chains = this.chainsFor(f);
-    f.length = f.chains.reduce((s, c) => s + chainLength(c), 0);
-    this.schedule(f);
-  }
-
   // Neuberechnung im nächsten Frame statt sofort, damit sich die Rechenlast verteilt
   schedule(f) {
     f.force = true;
@@ -712,129 +852,6 @@ export class FrontManager {
   }
 
 
-  update(dt) {
-    this.border(); // Grenzlinie zu festem Zeitpunkt im Durchgang auffrischen (siehe border())
-    this.timer -= dt;
-    if (this.timer > 0) return;
-    this.timer = REFRESH;
-    this.pathBudget = PATH_BUDGET;
-    this.syncHolds();
-    for (const f of [...this.fronts]) this.refresh(f, !!f.force);
-    this.updateNeighbors();
-  }
-
-
-  refresh(f, force) {
-    const g = this.game;
-    f.force = false;
-    if (f.division.dissolved) { this.remove(f); return; }
-    this.sync(f);
-
-    f.chains = this.chainsFor(f);
-    f.length = 0;
-    for (const c of f.chains) f.length += chainLength(c);
-
-    // Rotation: Verwundete zur nächsten Stadt, geheilte zurück an die Front
-    const active = [];
-    for (const u of f.units) {
-      const frac = u.hp / u.maxHp;
-      const limit = f.attack ? ROTATE_AT_ATTACK : ROTATE_AT;
-      // Im Gefecht erst bei schweren Verlusten herauslösen
-      // Bei Feindkontakt wird nicht rotiert: die Front hält. Verwundete gehen nur
-      // zum Heilen, wenn kein Feind in der Nähe ist.
-      if (f.rotate && !u.rotating && frac < limit && !u.target && this.pathBudget > 0 && !this.enemyNear(u, 160)) {
-        const c = this.nearestCity(u);
-        if (c) {
-          this.pathBudget--;
-          u.rotating = true;
-          u.frontGoal = null;
-          u.path = g.map.findPath(u.x, u.y, c.x, c.y, this.safeRouting()) || [];
-          continue;
-        }
-      }
-      if (u.rotating && (frac >= RETURN_AT || !f.rotate)) u.rotating = false;
-      if (!u.rotating && !u.broken) active.push(u); // Zerschlagene kehren erst erholt zurück
-    }
-
-    // Divisionsabschnitte: jede Division bekommt einen zusammenhängenden Abschnitt der
-    // Front, Länge nach ihrer Stärke. Kompanien bleiben in ihrem Abschnitt. Im Angriff
-    // liegen die Plätze auf der Ziellinie, die Front selbst bleibt unverändert.
-    let target = f.chains, targetLen = f.length;
-    if (f.attack) {
-      if (!f.attack.parts.length) { this.stopAttack(f); this.events.push({ type: 'attackStalled', front: f }); return; }
-      target = f.attack.parts.map((c) => withNormals(c, (p, n) => this.facing(p, n)));
-      targetLen = target.reduce((s, c) => s + chainLength(c), 0);
-    }
-    const { slots, ordered } = this.sectionSlots(f, active, target, targetLen, !f.attack);
-    if (!slots.length) return;
-    let pending = false;
-    const shared = new Map(); // Wege für nebeneinander stehende Einheiten mit ähnlichem Ziel teilen
-    for (let k = 0; k < slots.length && k < ordered.length; k++) {
-      const s = slots[k];
-      const u = ordered[k];
-      const goalMoved = !u.frontGoal || Math.hypot(u.frontGoal.x - s.x, u.frontGoal.y - s.y) > 20;
-      if (!goalMoved && u.path.length) continue; // schon unterwegs: Budget den Wartenden lassen
-      if (!goalMoved && Math.hypot(u.x - s.x, u.y - s.y) < 10) continue;
-      if (u.target) continue; // im Gefecht die Stellung halten, keine neuen Marschbefehle
-      if (u.swapUntil > g.time) continue; // Platztausch innerhalb der Division läuft
-      if (u.hqOrder > g.time) continue;   // Befehl des Divisions-HQ hat Vorrang
-      // Mit Feind in der Nähe nicht zurückweichen, nur weil sich die Grenze verschoben hat
-      // (kleine Verschiebungen ignorieren, bei echtem Durchbruch geordnet zurück)
-      // Feindkontakt: Stellung halten wie in HOI4. Nur wer bereits an der Front steht
-      // und nicht abgeschnitten im Feindgebiet ist, bleibt; Lücken füllen andere auf.
-      // Seitliche Verschiebung in den eigenen Divisionsabschnitt ist erlaubt (hinter der
-      // Linie), nur ein Rückzug weg vom Feind wird unterbunden.
-      const back = s.nx === undefined ? 0 : -((s.x - u.x) * s.nx + (s.y - u.y) * s.ny);
-      if (!f.attack && u.frontGoal && Math.hypot(u.x - u.frontGoal.x, u.y - u.frontGoal.y) < 80 &&
-          back > 15 && this.enemyNear(u, 160) && !this.cutOff(u)) {
-        if (u.path.length && this.pathLeadsBack(u)) u.path = [];
-        continue;
-      }
-      // Verschiebungen laufen hinter der eigenen Linie, nicht durch Feindgebiet;
-      // nur ein Angriff darf direkt hinein
-      const opts = f.attack ? null : this.safeRouting();
-      if (g.map.clearLine(u, s, opts && opts.safe)) {
-        u.path = [{ x: s.x, y: s.y }];
-      } else {
-        const key = (u.x / 30 | 0) + ',' + (u.y / 30 | 0) + '>' + (s.x / 30 | 0) + ',' + (s.y / 30 | 0);
-        let base = shared.get(key);
-        if (base === undefined) {
-          if (this.pathBudget <= 0) { pending = true; continue; }
-          this.pathBudget--;
-          base = g.map.findPath(u.x, u.y, s.x, s.y, opts) || [];
-          shared.set(key, base);
-        }
-        u.path = base.map((q) => ({ x: q.x, y: q.y }));
-        if (u.path.length) u.path[u.path.length - 1] = { x: s.x, y: s.y };
-      }
-      u.frontGoal = { x: s.x, y: s.y };
-      u.stuck = 0;
-    }
-
-    // Noch Wege offen: gleich im nächsten Frame weiterrechnen statt bis zur
-    // nächsten regulären Neuberechnung zu warten
-    if (pending) {
-      f.force = true;
-      this.timer = Math.min(this.timer, 0.03);
-    }
-
-    // Angriff abgeschlossen, sobald die meisten Einheiten ihre Plätze erreicht haben
-    if (f.attack && active.length) {
-      const arrived = active.filter((u) => u.frontGoal && Math.hypot(u.x - u.frontGoal.x, u.y - u.frontGoal.y) < 30).length;
-      if (arrived >= active.length * 0.7) {
-        this.stopAttack(f, true);
-        this.events.push({ type: 'attackDone', front: f });
-      } else if (arrived > f.attack.best) {
-        f.attack.best = arrived;
-        f.attack.gained = g.time;
-      } else if (g.time - f.attack.gained > ATTACK_STALL) {
-        // Kein Fortschritt mehr (Ziel unerreichbar, Gegner zu stark): zurück in den Abschnitt
-        this.stopAttack(f);
-        this.events.push({ type: 'attackStalled', front: f });
-      }
-    }
-  }
-
   // Abgeschnitten: die Einheit steht auf Feindgebiet und hat kein eigenes Gebiet in der Nähe
   cutOff(u) {
     const g = this.game;
@@ -866,55 +883,10 @@ export class FrontManager {
     return false;
   }
 
-  // Plätze auf einer Linie (chains, Länge total) verteilen, je Division ein zusammenhängender
-  // Abschnitt. Nur auf der eigenen Frontlinie (own) werden Abschnitte und Anteile gemerkt;
-  // ein Angriff verteilt auf der Ziellinie, ohne sie zu verändern.
-  sectionSlots(f, active, chains = f.chains, total = f.length || 0, own = true) {
-    if (!active.length || total < 1) return { slots: distribute(chains, active.length), ordered: active };
-    // Lage jeder Kompanie auf der Linie: bevorzugt ihr bisheriger Platz (stabile Reihenfolge)
-    const posOf = (u) => projectOnChains(chains, u.frontGoal && u.front === f ? u.frontGoal : u);
-    const groups = new Map();
-    for (const u of active) {
-      const d = formationOf(u, DIVISION) || null;
-      if (!groups.has(d)) groups.set(d, []);
-      groups.get(d).push({ u, t: posOf(u) });
-    }
-    const divs = [...groups.entries()].map(([div, list]) => {
-      list.sort((a, b) => a.t - b.t);
-      const strength = list.reduce((s, o) => s + UNIT_TYPES[o.u.type].strength * (0.4 + 0.6 * o.u.hp / o.u.maxHp), 0);
-      // Bekannte Divisionen behalten ihre Reihenfolge (Mitte ihres bisherigen Abschnitts),
-      // neue reihen sich nach ihrer Lage ein
-      const old = (f.sections || []).find((x) => x.div === div);
-      const mean = old ? (old.from + old.to) / 2 : list.reduce((s, o) => s + o.t, 0) / list.length;
-      return { div, list, strength, mean };
-    }).sort((a, b) => a.mean - b.mean);
-    // Anteile langsam angleichen, damit Abschnitte bei kleinen Verlusten nicht springen
-    const prev = f.shares || new Map();
-    const rawSum = divs.reduce((s, d) => s + d.strength, 0) || 1;
-    for (const d of divs) {
-      const target = d.strength / rawSum;
-      const old = prev.get(d.div);
-      d.strength = old === undefined ? target : old * 0.85 + target * 0.15;
-    }
-    if (own) f.shares = new Map(divs.map((d) => [d.div, d.strength]));
-    const sum = divs.reduce((s, d) => s + d.strength, 0) || 1;
-    const slots = [], ordered = [];
-    const sections = [];
-    let start = 0;
-    for (const d of divs) {
-      const len = total * d.strength / sum;
-      const n = d.list.length;
-      for (let k = 0; k < n; k++) {
-        const pt = pointAt(chains, start + (k + 0.5) * len / n);
-        if (!pt) continue;
-        slots.push(pt);
-        ordered.push(d.list[k].u);
-      }
-      sections.push({ div: d.div, from: start, to: start + len });
-      start += len;
-    }
-    if (own) f.sections = sections;
-    return { slots, ordered };
+  // Plätze auf der Ziellinie eines Angriffs gleichmäßig verteilen, Kompanien nach ihrer Lage
+  sectionSlots(f, active, chains) {
+    const ordered = [...active].sort((a, b) => projectOnChains(chains, a) - projectOnChains(chains, b));
+    return { slots: distribute(chains, ordered.length), ordered };
   }
 
   nearestCity(u) {
@@ -947,14 +919,18 @@ export class FrontManager {
     return (best.x - p.x) * n.x + (best.y - p.y) * n.y >= 0 ? 1 : -1;
   }
 
-  // Grenzzellen zum Gegner (ohne Kontakt: zu fremdem Land, das in seine Richtung zeigt)
+  // Grenzfelder zum Gegner (ohne Kontakt: Rand zu fremdem Land, das in seine Richtung zeigt);
+  // isOut(j): liegt das Nachbarfeld j auf der Feindseite?
   borderCells() {
     const g = this.game;
     const map = g.map;
     const { w, h } = map;
     const tr = g.territory;
     const me = this.owner;
-    const foe = (o) => g.hostile(me, o); // feindliche Seite
+    // feindliche Seite als Tabelle je Besitzer (die Abfrage läuft über die ganze Karte)
+    const hostileTo = new Uint8Array(256);
+    for (const o of g.players) if (o !== me && g.hostile(me, o)) hostileTo[o] = 1;
+    const foe = (o) => hostileTo[o] === 1;
     const passable = (i) => TERRAIN_INFO[map.cells[i]].passable;
     const collect = (test) => {
       const out = [];
@@ -967,7 +943,8 @@ export class FrontManager {
       }
       return out;
     };
-    let cells = collect((n) => foe(tr[n]));
+    let cells = collect((n) => hostileTo[tr[n]] === 1);
+    let isOut = (n) => hostileTo[tr[n]] === 1;
     if (cells.length < 3) {
       // Noch kein Kontakt: Rand zum fremden Land, das mit dem Gegner verbunden ist und in seine Richtung zeigt
       const outside = new Uint8Array(w * h);
@@ -988,7 +965,8 @@ export class FrontManager {
         }
       }
       const foeCities = g.cities.filter((c) => foe(c.owner));
-      const frontier = collect((n) => outside[n] === 1);
+      isOut = (n) => outside[n] === 1;
+      const frontier = collect(isOut);
       cells = frontier.filter((i) => {
         if (!foeCities.length) return true;
         const x = (i % w + 0.5) * map.worldW / w, y = ((i / w | 0) + 0.5) * map.worldH / h;
@@ -1002,121 +980,9 @@ export class FrontManager {
       });
       if (cells.length < 4) cells = frontier;
     }
-    return cells;
+    return { cells, isOut };
   }
 
-  // Grenzzellen zu Linien verketten; jeder Punkt kennt seine Grenzzelle (bx, by), deren
-  // Sektor (r) und die Richtung zum Feind (nx, ny)
-  borderChains(cells) {
-    const g = this.game;
-    const map = g.map;
-    const { w, h } = map;
-    const tr = g.territory;
-    const me = this.owner;
-    const passable = (i) => TERRAIN_INFO[map.cells[i]].passable;
-    const set = new Set(cells);
-    // Nachbarzahl einmal vorab bestimmen; Enden einer Linie haben wenige Nachbarn
-    const degree = new Map();
-    for (const i of set) {
-      let d = 0;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && set.has(i + dy * w + dx)) d++;
-      degree.set(i, d);
-    }
-    const chains = [];
-    while (set.size) {
-      let start = -1, sd = Infinity;
-      for (const i of set) { const d = degree.get(i); if (d < sd) { sd = d; start = i; if (d <= 1) break; } }
-      const chain = [];
-      let cur = start;
-      set.delete(cur);
-      while (cur >= 0) {
-        chain.push(cur);
-        const cx = cur % w, cy = (cur / w) | 0;
-        let next = -1, nd = Infinity;
-        for (let dy = -2; dy <= 2; dy++) {
-          for (let dx = -2; dx <= 2; dx++) {
-            const ni = (cy + dy) * w + cx + dx;
-            if (!set.has(ni)) continue;
-            const d = dx * dx + dy * dy;
-            if (d < nd) { nd = d; next = ni; }
-          }
-        }
-        if (next >= 0) set.delete(next);
-        cur = next;
-      }
-      chains.push(chain);
-    }
-    mergeChains(chains, w, 6);
-    const longest = Math.max(0, ...chains.map((c) => c.length));
-    const kept = chains.filter((c) => c.length >= 4 && (c.length >= 8 || longest < 16));
-    chains.length = 0;
-    chains.push(...kept);
-
-    // Feste Richtung und Reihenfolge, damit die Einheiten bei jeder Neuberechnung
-    // ihre Plätze behalten (sonst kehrt sich die Linie um und alle tauschen quer)
-    const key = (i) => { const x = i % w, y = (i / w) | 0; return x * 0.3 + y; };
-    for (const c of chains) if (key(c[0]) > key(c[c.length - 1])) c.reverse();
-    chains.sort((a, b) => key(a[0]) - key(b[0]));
-    return chains.map((chain) => {
-      const pts = [];
-      for (let k = 0; k < chain.length; k += 2) {
-        const i = chain[k];
-        const cx = i % w, cy = (i / w) | 0;
-        // Nach außen zeigende Richtung aus der Umgebung schätzen
-        let ox = 0, oy = 0;
-        for (let dy = -3; dy <= 3; dy++) {
-          for (let dx = -3; dx <= 3; dx++) {
-            const x = cx + dx, y = cy + dy;
-            if (x < 0 || y < 0 || x >= w || y >= h) continue;
-            if (tr[y * w + x] !== me && passable(y * w + x)) { ox += dx; oy += dy; }
-          }
-        }
-        const ol = Math.hypot(ox, oy) || 1;
-        const n = { x: ox / ol, y: oy / ol };
-        const bx = (cx + 0.5) * map.worldW / w, by = (cy + 0.5) * map.worldH / h;
-        let px = bx - n.x * HOLD_OFFSET, py = by - n.y * HOLD_OFFSET;
-        if (!map.passableAt(px, py)) { px = bx; py = by; }
-        pts.push({ x: px, y: py, nx: n.x, ny: n.y, bx, by, r: g.sectors.of[i] });
-      }
-      return smooth(smooth(pts));
-    });
-  }
-}
-
-// Teilstücke verbinden, deren Enden nah beieinander liegen
-function mergeChains(chains, w, maxGap) {
-  const pos = (i) => [i % w, (i / w) | 0];
-  const gap = (a, b) => { const [ax, ay] = pos(a), [bx, by] = pos(b); return Math.hypot(ax - bx, ay - by); };
-  let merged = true;
-  while (merged) {
-    merged = false;
-    outer: for (let i = 0; i < chains.length; i++) {
-      for (let j = 0; j < chains.length; j++) {
-        if (i === j) continue;
-        const A = chains[i], B = chains[j];
-        const options = [
-          [gap(A[A.length - 1], B[0]), () => A.concat(B)],
-          [gap(A[A.length - 1], B[B.length - 1]), () => A.concat(B.slice().reverse())],
-          [gap(A[0], B[0]), () => A.slice().reverse().concat(B)],
-        ];
-        for (const [d, join] of options) {
-          if (d > maxGap) continue;
-          chains[i] = join();
-          chains.splice(j, 1);
-          merged = true;
-          break outer;
-        }
-      }
-    }
-  }
-}
-
-function smooth(pts) {
-  if (pts.length < 3) return pts;
-  return pts.map((p, i) => {
-    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
-    return { ...p, x: (a.x + p.x * 2 + b.x) / 4, y: (a.y + p.y * 2 + b.y) / 4 };
-  });
 }
 
 function withNormals(line, facing) {
@@ -1227,24 +1093,9 @@ function distribute(chains, n) {
   return slots;
 }
 
+// Stelle für das Abzeichen einer Divisionsfront: ihr Grenzfeld nahe der Mitte
 export function frontBadge(f) {
-  let best = null, bl = -1;
-  for (const c of f.chains) {
-    const l = chainLength(c);
-    if (l > bl) { bl = l; best = c; }
-  }
-  if (!best || !best.length) return null;
-  let half = bl / 2;
-  for (let i = 1; i < best.length; i++) {
-    const a = best[i - 1], b = best[i];
-    const seg = Math.hypot(b.x - a.x, b.y - a.y);
-    if (half <= seg) {
-      const t = seg ? half / seg : 0;
-      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-    }
-    half -= seg;
-  }
-  return best[0];
+  return f.points && f.points.length ? snapCenter(f.points) : null;
 }
 
 // Begehbare Stücke einer Linie (im Abstand von etwa einem halben Feld geprüft)
@@ -1264,10 +1115,6 @@ function passableParts(line, map) {
   return out.filter((c) => chainLength(c) >= CELL);
 }
 
-function midPoint(a, b) {
-  return { ...b, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-}
-
 // Kampfwert einer Kompanie zum Aufteilen von Fronten (Typ und Lebenspunkte)
 function compStrength(u) {
   return UNIT_TYPES[u.type].strength * (0.4 + 0.6 * u.hp / u.maxHp);
@@ -1281,3 +1128,220 @@ function divStrength(d) {
 function formStrength(f) {
   return unitsOf(f).reduce((s, u) => s + compStrength(u), 0);
 }
+
+// --- Grenzfelder: Ordnung, Aufteilung, Linien ----------------------------------------
+
+// Abstand eines Punkts zur Strecke a–b
+function segDist(px, py, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / l2)) : 0;
+  return Math.hypot(px - a.x - dx * t, py - a.y - dy * t);
+}
+
+function nearestEntry(list, p) {
+  let best = null, bd = Infinity;
+  for (const e of list) {
+    const d = (e.x - p.x) ** 2 + (e.y - p.y) ** 2;
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+
+// Grenzfeld nahe dem Schwerpunkt einer Menge von Grenzfeldern
+function snapCenter(list) {
+  let x = 0, y = 0;
+  for (const e of list) { x += e.x; y += e.y; }
+  return nearestEntry(list, { x: x / list.length, y: y / list.length });
+}
+
+// Berühren sich zwei Mengen von Grenzfeldern (Abstand bis LINK Felder)?
+function touches(A, B) {
+  if (!A.length || !B.length) return false;
+  const set = new Set(B.map((e) => e.i)), w = A[0].gw;
+  for (const e of A) {
+    for (let dy = -LINK; dy <= LINK; dy++) for (let dx = -LINK; dx <= LINK; dx++) if (set.has(e.i + dy * w + dx)) return true;
+  }
+  return false;
+}
+
+// Lage jedes Grenzfelds entlang der Grenze: Weglänge über benachbarte Grenzfelder (Lücken
+// bis LINK Felder überbrückt) von einem Ende aus. Getrennte Stücke (z. B. durch Gebirge)
+// werden hintereinander gehängt. Robust auch bei Verzweigungen: Felder einer Abzweigung
+// bekommen ähnliche Werte wie die Stelle, an der sie abzweigt
+function orderAlong(list) {
+  const out = new Map();
+  if (!list.length) return out;
+  const w = list[0].gw;
+  const byCell = new Map(list.map((e) => [e.i, e]));
+  const near = (e) => {
+    const res = [];
+    for (let dy = -LINK; dy <= LINK; dy++) {
+      for (let dx = -LINK; dx <= LINK; dx++) {
+        if (!dx && !dy) continue;
+        const o = byCell.get(e.i + dy * w + dx);
+        if (o) res.push([o, Math.max(Math.abs(dx), Math.abs(dy)) === 1 ? (dx && dy ? 1.4 : 1) : 2.2]);
+      }
+    }
+    return res;
+  };
+  // Kürzeste Wege (Dijkstra mit kleinem Heap) innerhalb eines Stücks
+  const dijkstra = (start, comp) => {
+    const dist = new Map([[start, 0]]);
+    const heap = new Heap();
+    heap.push(0, start);
+    while (heap.size) {
+      const [d, e] = heap.pop();
+      if (d > dist.get(e)) continue;
+      for (const [o, c] of near(e)) {
+        if (comp && !comp.has(o)) continue;
+        const nd = d + c;
+        if (nd < (dist.has(o) ? dist.get(o) : Infinity)) { dist.set(o, nd); heap.push(nd, o); }
+      }
+    }
+    return dist;
+  };
+  const farthest = (dist) => {
+    let best = null, bd = -1;
+    for (const [e, d] of dist) if (d > bd || (d === bd && e.i < best.i)) { bd = d; best = e; }
+    return best;
+  };
+  const key = (e) => e.cx * 0.3 + e.cy; // feste Richtung: das „obere“ Ende zuerst
+  const seen = new Set(), comps = [];
+  for (const e of list) {
+    if (seen.has(e)) continue;
+    const all = dijkstra(e);
+    for (const o of all.keys()) seen.add(o);
+    const comp = new Set(all.keys());
+    const a = farthest(all);
+    const fromA = dijkstra(a, comp);
+    const b = farthest(fromA);
+    comps.push(key(a) <= key(b) ? { start: a, dist: fromA } : { start: b, dist: dijkstra(b, comp) });
+  }
+  comps.sort((p, q) => key(p.start) - key(q.start));
+  let offset = 0;
+  for (const c of comps) {
+    let max = 0;
+    for (const [e, d] of c.dist) { out.set(e, offset + d); max = Math.max(max, d); }
+    offset += max + 10;
+  }
+  return out;
+}
+
+// Grenzfelder zusammenhängend entlang der Grenze auf mehrere Empfänger aufteilen
+// (Divisionen oder Kompanien): Anteil nach caps, Gewicht je Feld wf, Reihenfolge der
+// Empfänger nach der Lage ihres seed (so läuft keiner am anderen vorbei)
+// order: Lage aus orderAlong (für Teilmengen die der ganzen Front weiterverwenden)
+function splitAlong(list, seeds, caps, wf, order = orderAlong(list)) {
+  const parts = seeds.map(() => []);
+  if (!list.length || !seeds.length) return parts;
+  const sorted = [...list].sort((a, b) => order.get(a) - order.get(b) || a.i - b.i);
+  const rank = seeds.map((s, k) => ({ k, t: order.get(nearestEntry(list, s)) + k * 1e-6 })).sort((a, b) => a.t - b.t);
+  const total = sorted.reduce((s, e) => s + wf(e), 0);
+  const capSum = caps.reduce((s, c) => s + c, 0) || 1;
+  let acc = 0, cum = 0, idx = 0;
+  rank.forEach(({ k }, n) => {
+    acc += total * caps[k] / capSum;
+    const last = n === rank.length - 1;
+    while (idx < sorted.length && (last || cum + wf(sorted[idx]) / 2 <= acc + 1e-9)) {
+      cum += wf(sorted[idx]);
+      parts[k].push(sorted[idx++]);
+    }
+  });
+  return parts;
+}
+
+// Kanten zwischen Grenzfeldern und Feindfeldern zu Linien verbinden (je key eigene Linien),
+// geglättet; die Kanten laufen so, dass das eigene Feld rechts liegt, aufeinanderfolgende
+// Kanten hängen also Kopf an Fuß. teeth: Stellen und Richtung der Zacken zum Feind
+function traceEdges(list, w, keyOf) {
+  const segs = [];
+  for (const e of list) {
+    const x = e.i % w, y = (e.i / w) | 0, key = keyOf(e);
+    for (const [dx, dy] of e.dirs) {
+      let a, b;
+      if (dx === 1) { a = [x + 1, y]; b = [x + 1, y + 1]; }
+      else if (dx === -1) { a = [x, y + 1]; b = [x, y]; }
+      else if (dy === 1) { a = [x + 1, y + 1]; b = [x, y + 1]; }
+      else { a = [x, y]; b = [x + 1, y]; }
+      segs.push({ a, b, key, nx: dx, ny: dy, used: false });
+    }
+  }
+  const from = new Map(), to = new Map();
+  const vk = (p) => p[0] * 100000 + p[1];
+  segs.forEach((s, k) => {
+    if (!from.has(vk(s.a))) from.set(vk(s.a), []);
+    from.get(vk(s.a)).push(k);
+    if (!to.has(vk(s.b))) to.set(vk(s.b), []);
+    to.get(vk(s.b)).push(k);
+  });
+  const next = (s, map, end) => {
+    for (const k of map.get(vk(end)) || []) if (!segs[k].used && segs[k].key === s.key) return segs[k];
+    return null;
+  };
+  const lines = [];
+  for (const s0 of segs) {
+    if (s0.used) continue;
+    s0.used = true;
+    const chain = [s0];
+    for (let s = next(s0, from, s0.b); s; s = next(s, from, s.b)) { s.used = true; chain.push(s); }
+    for (let s = next(s0, to, s0.a); s; s = next(s, to, s.a)) { s.used = true; chain.unshift(s); }
+    const pts = [chain[0].a, ...chain.map((s) => s.b)].map((p) => ({ x: p[0] * CELL, y: p[1] * CELL }));
+    const teeth = [];
+    chain.forEach((s, k) => {
+      if (k % 3 !== 1) return;
+      teeth.push({ x: (s.a[0] + s.b[0]) / 2 * CELL, y: (s.a[1] + s.b[1]) / 2 * CELL, nx: s.nx, ny: s.ny });
+    });
+    lines.push({ key: s0.key, pts: chaikin(chaikin(pts)), teeth });
+  }
+  return lines;
+}
+
+// Ecken abrunden (Enden bleiben fest, damit benachbarte Linien aneinanderstoßen)
+function chaikin(pts) {
+  if (pts.length < 3) return pts;
+  const out = [pts[0]];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
+    out.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+// Kleiner Binär-Heap (Vorrang: kleinster Schlüssel)
+class Heap {
+  constructor() { this.k = []; this.v = []; }
+  get size() { return this.k.length; }
+  push(key, val) {
+    const k = this.k, v = this.v;
+    let i = k.length;
+    k.push(key); v.push(val);
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (k[p] <= key) break;
+      k[i] = k[p]; v[i] = v[p]; i = p;
+    }
+    k[i] = key; v[i] = val;
+  }
+  pop() {
+    const k = this.k, v = this.v;
+    const top = [k[0], v[0]];
+    const lk = k.pop(), lv = v.pop();
+    if (k.length) {
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1, r = l + 1;
+        let m = i, mk = lk;
+        if (l < k.length && k[l] < mk) { m = l; mk = k[l]; }
+        if (r < k.length && k[r] < mk) { m = r; }
+        if (m === i) break;
+        k[i] = k[m]; v[i] = v[m]; i = m;
+      }
+      k[i] = lk; v[i] = lv;
+    }
+    return top;
+  }
+}
+

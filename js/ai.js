@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX } from './config.js?v=107';
-import { unitStrength } from './game.js?v=107';
-import { mulberry32 } from './rng.js?v=107';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=107';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=107';
+import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX } from './config.js?v=108';
+import { unitStrength } from './game.js?v=108';
+import { mulberry32 } from './rng.js?v=108';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=108';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=108';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -10,7 +10,7 @@ const ORGANIZE_EVERY = 5;   // Sekunden zwischen zwei Gliederungsdurchgängen
 const DIV_MIN = 6;          // neue Front-Divisionen: mindestens so viele Kompanien
 const DIV_SIZE = 10;        // und höchstens so viele
 const DIV_LEAVE = 400;      // so weit entfernte Kompanien verlassen ihre Division
-const GAP_RESPLIT = 80;     // so viel ungedeckte Grenze löst eine neue Aufteilung aus
+const GAP_RESPLIT = 8;      // so viele Grenzfelder ohne Front lösen eine neue Aufteilung aus
 const PUSH_DEPTH = 80;      // begrenzter Vorstoß: so weit (8 km) ins Feindgebiet
 const PUSH_RATIO = 1.3;     // und nur mit so viel Überlegenheit vor Ort
 
@@ -339,9 +339,8 @@ export class AI {
     const want = myUnits.length >= 6 ? Math.round(myUnits.length * this.cfg.frontShare) : 0;
     const divs = ob.all(DIVISION);
     const have = divs.reduce((s, d) => s + strength(d), 0);
-    const chains = this.fronts.border();
-    if (have < want && chains.length) {
-      const pts = chains.flat();
+    const pts = this.fronts.frontInfo().list;
+    if (have < want && pts.length) {
       const dist = (u) => {
         let best = Infinity;
         for (let i = 0; i < pts.length; i += 3) best = Math.min(best, Math.hypot(pts[i].x - u.x, pts[i].y - u.y));
@@ -367,7 +366,7 @@ export class AI {
       }
       // ... die übrigen nach ihrer Lage an der Grenze zu neuen Divisionen zusammenfassen
       if (rest.length >= DIV_MIN) {
-        const along = new Map(rest.map((u) => [u, projectOnChains(chains, u)]));
+        const along = new Map(rest.map((u) => [u, this.fronts.along(u)]));
         rest.sort((a, b) => along.get(a) - along.get(b));
         const size = Math.ceil(rest.length / Math.ceil(rest.length / DIV_SIZE));
         for (let k = 0; k + 3 <= rest.length; k += size) {
@@ -392,7 +391,7 @@ export class AI {
       else ob.createArmy(loose);
     }
     this.fronts.syncAll(); // Fronten sofort an die neue Gliederung anpassen
-    const gap = this.fronts.uncovered().reduce((s, c) => s + chainLength(c), 0);
+    const gap = this.fronts.openEntries().length;
     if (changed || this.needSplit || gap > GAP_RESPLIT) this.splitFronts();
   }
 
@@ -496,7 +495,7 @@ export class AI {
     let best = null;
     for (const f of ready) {
       const units = f.units.filter((u) => !u.rotating && !u.broken);
-      const pts = f.chains.flat().filter((p) => p.nx !== undefined);
+      const pts = f.points.filter((p) => p.nx !== undefined);
       if (units.length < 4 || !pts.length) continue;
       let nx = pts.reduce((a, p) => a + p.nx, 0), ny = pts.reduce((a, p) => a + p.ny, 0);
       const nl = Math.hypot(nx, ny);

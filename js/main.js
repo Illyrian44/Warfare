@@ -1,17 +1,17 @@
-import { loadMap, MAPS } from './map.js?v=107';
-import { Game } from './game.js?v=107';
-import { AI } from './ai.js?v=107';
-import { Renderer } from './render.js?v=107';
-import { Input } from './input.js?v=107';
-import { formationSlots } from './formation.js?v=107';
-import { FrontManager, chainLength } from './fronts.js?v=107';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=107';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY, FRONT } from './config.js?v=107';
-import { templateCost } from './production.js?v=107';
+import { loadMap, MAPS } from './map.js?v=108';
+import { Game } from './game.js?v=108';
+import { AI } from './ai.js?v=108';
+import { Renderer } from './render.js?v=108';
+import { Input } from './input.js?v=108';
+import { formationSlots } from './formation.js?v=108';
+import { FrontManager, chainLength } from './fronts.js?v=108';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=108';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=108';
+import { templateCost } from './production.js?v=108';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '107'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '108'; // für Kartendaten, siehe scripts/bump-version.sh
 // Reiter der oberen Leiste: Inhalt in der Seitenleiste
 const TAB_BODIES = { build: 'buildBody', city: 'cityBody', diplo: 'diploBody', logistics: 'logiBody', troops: 'troopBody' };
 const TAB_TITLES = { build: 'Produktion', city: 'Städte', diplo: 'Diplomatie', logistics: 'Logistik', troops: 'Truppen' };
@@ -30,8 +30,7 @@ const app = {
 
   // Ohne startCity: erst die Karte zeigen und die Startstadt wählen lassen (pickStart).
   // seed: Zufall dieser Partie (KI, Produktion), „Nochmal“ spielt sie gleich wieder
-  // sectorKm: Größe der Frontsektoren (Menü „Frontsektoren“)
-  async start(seed, mapId, difficulty, opponents = 1, startCity = null, sectorKm = FRONT.sectorKm) {
+  async start(seed, mapId, difficulty, opponents = 1, startCity = null) {
     let map;
     try {
       map = await loadMap(mapId, seed, VERSION);
@@ -45,7 +44,7 @@ const app = {
     $('menuError').hidden = true;
     const preview = startCity === null;
     this.picking = preview;
-    this.game = new Game(map, { players: 1 + opponents, preview, starts: [null, startCity], sectorKm });
+    this.game = new Game(map, { players: 1 + opponents, preview, starts: [null, startCity] });
     this.ais = preview ? [] : this.game.players.filter((p) => p !== this.human).map((p) => new AI(this.game, p, difficulty));
     this.fronts = new FrontManager(this.game, this.human);
     this.ui.frontMode = null;
@@ -60,8 +59,8 @@ const app = {
     $('supplyBtn').classList.remove('active');
     this.paused = true; // jede Runde beginnt pausiert: erst in Ruhe gliedern und Fronten setzen
     this.setSpeed(1);
-    this.current = { seed, map: mapId, difficulty, opponents, sectorKm };
-    this.settings = { map: mapId, difficulty, opponents, sectorKm };
+    this.current = { seed, map: mapId, difficulty, opponents };
+    this.settings = { map: mapId, difficulty, opponents };
     saveSettings(this.settings);
     this.divBarSig = null;
     this.fitCamera();
@@ -100,9 +99,9 @@ const app = {
   async pickStart(w) {
     const c = w ? this.cityAt(w) : this.game.cities[Math.floor(Math.random() * this.game.cities.length)];
     if (!c) { this.toast('Tippe auf eine Stadt (gelber Kreis), um dort zu beginnen'); return; }
-    const { seed, map, difficulty, opponents, sectorKm } = this.current;
+    const { seed, map, difficulty, opponents } = this.current;
     const cam = { ...this.cam };
-    await this.start(seed, map, difficulty, opponents, c.id, sectorKm);
+    await this.start(seed, map, difficulty, opponents, c.id);
     if (window.innerWidth >= 700) Object.assign(this.cam, cam); // Ansicht beibehalten
   },
 
@@ -189,6 +188,7 @@ const app = {
     $('frontBanner').hidden = !mode;
     $('frontErase').hidden = !(mode && mode.forms);
     this.updateCommands(); // Befehlsfeld weicht, solange gemalt bzw. gezogen wird
+    $('frontQuick').innerHTML = mode && mode.forms && !mode.erase ? this.frontQuickHtml() : '';
     if (!mode) return;
     $('frontErase').classList.toggle('active', !!mode.erase);
     $('frontCancel').textContent = mode.forms ? 'Fertig' : 'Abbrechen';
@@ -197,7 +197,38 @@ const app = {
       : !mode.forms ? 'Angriffsziel: Linie ziehen, bis wohin die Front vorstoßen soll'
       : mode.erase
         ? 'Front entziehen: über die Grenze ziehen'
-        : `Front für ${this.formsName(mode.forms)}: über die Grenze ziehen · Feindgebiet antippen = ganze Grenze zum Gegner`;
+        : `Front für ${this.formsName(mode.forms)}: über die Grenze ziehen oder wählen:`;
+  },
+
+  // Schnellwahl im Front-Werkzeug: ganze Grenze und je Gegner seine Grenze (mit Länge)
+  frontQuickHtml() {
+    const list = this.fronts.frontInfo().list;
+    if (!list.length) return '';
+    const km = (n) => Math.round(n * (this.game.map.kmPerCell || 1));
+    const foes = new Map();
+    for (const e of list) foes.set(e.foe, (foes.get(e.foe) || 0) + 1);
+    let h = `<button data-foe="all" title="Grenze zu allen Gegnern">Ganze Grenze · ${km(list.length)} km</button>`;
+    if (foes.size > 1) { // bei nur einem Gegner ist seine Grenze die ganze Grenze
+      for (const [p, n] of [...foes].sort((a, b) => b[1] - a[1])) {
+        if (!p) continue;
+        h += `<button data-foe="${p}" title="Grenze zu ${PLAYER_NAMES[p]}"><span class="dot" style="background:${PLAYER_COLORS[p]}"></span>${PLAYER_NAMES[p]} · ${km(n)} km</button>`;
+      }
+    }
+    return h;
+  },
+
+  // Schnellwahl angetippt: die Auswahl hält diese Grenze (mehrere Verbände teilen sie sich)
+  frontQuick(foe) {
+    const mode = this.ui.frontMode;
+    if (!mode || !mode.forms) return;
+    const forms = mode.forms.filter((f) => !f.dissolved && unitsOf(f).length);
+    const entries = foe === 'all' ? this.fronts.frontInfo().list : this.fronts.foeEntries(+foe);
+    if (!forms.length || !entries.length) return;
+    this.fronts.assignSplit(forms, entries);
+    this.setFrontMode(null);
+    this.afterFrontChange();
+    const km = Math.round(entries.length * (this.game.map.kmPerCell || 1));
+    this.toast(`${this.formsName(forms)} hält ${foe === 'all' ? 'die ganze Grenze' : `die Grenze zu ${PLAYER_NAMES[+foe]}`} (${km} km)`);
   },
 
   toggleFrontMode() {
@@ -243,60 +274,47 @@ const app = {
     this.updateSelectionInfo();
   },
 
-  // Pinselstrich über die Grenze: jeder berührte Sektor geht an den (ersten) Verband;
+  // Pinselstrich über die Grenze: die Grenze unter dem Pinsel geht an den (ersten) Verband;
   // mehrere Verbände teilen sich den Strich am Ende (frontStrokeEnd)
   frontStroke(g, w) {
     const mode = this.ui.frontMode;
     if (!mode || !mode.forms) return;
-    const from = g.last || g.start;
-    const steps = Math.max(1, Math.ceil(Math.hypot(w.x - from.x, w.y - from.y) / 8));
-    const hit = [];
-    for (let k = g.last ? 1 : 0; k <= steps; k++) {
-      const r = this.fronts.sectorAt({ x: from.x + (w.x - from.x) * k / steps, y: from.y + (w.y - from.y) * k / steps });
-      if (r >= 0 && !g.stroke.has(r)) { g.stroke.add(r); hit.push(r); }
-    }
+    const hit = this.fronts.paintStroke(mode.erase ? null : mode.forms[0], g.last || g.start, w, true);
     g.last = w;
-    if (!hit.length) return;
-    this.ui.drawPath = null; // kein Linienentwurf, sobald Sektoren gemalt werden
-    if (mode.erase) this.fronts.erase(hit);
-    else this.fronts.paint(mode.forms[0], hit);
+    for (const e of hit) g.stroke.set(e.i, e);
+    if (g.stroke.size) this.ui.drawPath = null; // kein Linienentwurf, sobald gemalt wird
   },
 
-  frontStrokeEnd(g, path) {
+  frontStrokeEnd(g) {
     const mode = this.ui.frontMode;
     if (!mode || !mode.forms) return;
     const forms = mode.forms.filter((f) => !f.dissolved && unitsOf(f).length);
     if (!forms.length) { this.setFrontMode(null); return; }
     const name = this.formsName(forms);
+    const km = (n) => Math.round(n * (this.game.map.kmPerCell || 1));
     if (g.stroke.size) {
-      if (!mode.erase && forms.length > 1) this.fronts.paintSplit(forms, [...g.stroke]);
+      if (!mode.erase && forms.length > 1) this.fronts.assignSplit(forms, [...g.stroke.values()]);
+      else this.fronts.commit(mode.erase ? [] : [forms[0]]);
       this.afterFrontChange();
       return;
     }
     if (!g.moved) {
-      // Antippen: Feindgebiet = ganze Grenze zu diesem Gegner, sonst der Sektor darunter
+      // Antippen: Feindgebiet = ganze Grenze zu diesem Gegner, sonst die Grenze unter dem Pinsel
       const owner = this.game.territory[this.game.map.cellIndex(g.start.x, g.start.y)];
-      const r = this.fronts.sectorAt(g.start);
       if (!mode.erase && owner && this.game.hostile(this.human, owner)) {
-        const regions = this.fronts.foeSectors(owner);
-        if (!regions.length) { this.toast(`Keine gemeinsame Grenze mit ${PLAYER_NAMES[owner]}`); return; }
-        this.fronts.paintSplit(forms, regions);
+        const entries = this.fronts.foeEntries(owner);
+        if (!entries.length) { this.toast(`Keine gemeinsame Grenze mit ${PLAYER_NAMES[owner]}`); return; }
+        this.fronts.assignSplit(forms, entries);
         this.setFrontMode(null);
         this.afterFrontChange();
-        this.toast(`${name} hält die Grenze zu ${PLAYER_NAMES[owner]} (${regions.length} Sektoren)`);
-      } else if (r >= 0) {
-        if (mode.erase) this.fronts.erase([r]); else this.fronts.paintSplit(forms, [r]);
+        this.toast(`${name} hält die Grenze zu ${PLAYER_NAMES[owner]} (${km(entries.length)} km)`);
+      } else if (this.fronts.entryAt(g.start)) {
+        this.fronts.paintStroke(mode.erase ? null : forms[0], g.start, g.start);
         this.afterFrontChange();
       } else this.toast('Auf die Grenze tippen bzw. darüber ziehen – oder ins Feindgebiet tippen');
       return;
     }
-    if (mode.erase) return;
-    if (chainLength(path) < 30) { this.toast('Linie zu kurz – nochmal versuchen'); return; }
-    // Ohne Sektor unter dem Strich: frei gezeichnete Verteidigungslinie
-    this.fronts.drawLine(forms, path);
-    this.setFrontMode(null);
-    this.afterFrontChange();
-    this.toast(`${name} hält eine Verteidigungslinie`);
+    this.toast('Hier liegt keine Grenze – über die Grenze ziehen oder ins Feindgebiet tippen');
   },
 
   // Angriffsziel bzw. Auffanglinie gezogen
@@ -322,19 +340,6 @@ const app = {
     this.updateCommands();
     this.toast(fronts.length > 1 ? `Angriff für ${fronts.length} Divisionen geplant – „▶ Angriff starten“ drücken`
       : 'Angriff geplant – „▶ Angriff starten“ drücken');
-  },
-
-  // Ganze Grenze (alle Gegner) für die Auswahl; mehrere Verbände teilen sie sich nach Lage
-  // und Stärke
-  borderFront() {
-    const forms = this.frontTargets();
-    if (!forms) return;
-    const regions = [...this.fronts.sectorInfo().regions.keys()];
-    if (!regions.length) { this.toast('Keine Grenze zum Gegner gefunden'); return; }
-    const made = this.fronts.paintSplit(forms, regions);
-    this.setFrontMode(null);
-    this.afterFrontChange();
-    this.toast(made.length > 1 ? `${made.length} Verbände teilen sich die ganze Grenze` : `${forms[0].name} hält die ganze Grenze`);
   },
 
   // Front auflösen: Aufträge der ausgewählten Verbände; eine Division im Auftrag ihrer Armee
@@ -393,10 +398,10 @@ const app = {
   pickHold(w) {
     if (!this.ui.showFronts) return null;
     const tol = Math.max(8, 10 / this.cam.zoom);
-    for (const hd of this.fronts.holds) {
-      for (const c of this.fronts.holdChains(hd)) {
-        for (let i = 1; i < c.length; i++) if (segDist(w, c[i - 1], c[i]) < tol) return hd;
-      }
+    for (const l of this.fronts.edges()) {
+      const hd = l.key && this.fronts.holdIds.get(l.key);
+      if (!hd) continue;
+      for (let i = 1; i < l.pts.length; i++) if (segDist(w, l.pts[i - 1], l.pts[i]) < tol) return hd;
     }
     return null;
   },
@@ -557,7 +562,7 @@ const app = {
     const divs = this.selectedDivisions();
     if (!divs.length) { this.toast('Erst Divisionen auswählen'); return; }
     const army = this.game.orbat[this.human].createArmy(divs);
-    this.fronts.mergeInto(army); // Sektoren der Divisionen gehen an die Armee
+    this.fronts.mergeInto(army); // die Fronten der Divisionen gehen an die Armee
     this.afterOrbatChange();
     this.toast(`${army.name} gebildet (${army.children.length} Divisionen)`);
   },
@@ -568,7 +573,7 @@ const app = {
     const divs = this.selectedDivisions().filter((d) => armyOf(d) !== army);
     if (!army || !divs.length) return;
     ob.addToArmy(army, divs);
-    // Neue Divisionen bringen ihre Sektoren mit und bekommen einen Teil der Armeefront
+    // Neue Divisionen bringen ihre Front mit und bekommen einen Teil der Armeefront
     this.fronts.mergeInto(army);
     this.afterOrbatChange();
     this.toast(`${divs.length} Division${divs.length > 1 ? 'en' : ''} zur ${army.name}`);
@@ -693,14 +698,14 @@ const app = {
     if (!this.game || this.ui.tab !== 'troops') return;
     const g = this.game, ob = g.orbat[this.human];
     const pct = (v) => `${Math.round(v * 100)} %`;
-    const LEVEL = { good: ['gut besetzt', 'good'], thin: ['dünn', 'thin'], weak: ['zu dünn', 'weak'], none: ['ohne Sektoren', 'none'] };
+    const LEVEL = { good: ['gut besetzt', 'good'], thin: ['dünn', 'thin'], weak: ['zu dünn', 'weak'], none: ['ohne Grenze', 'none'] };
     const frontOf = (f) => {
       const hd = this.fronts.holdOf(f);
       if (!hd) return { text: 'ohne Front', tag: '' };
       const st = this.fronts.holdStatus(hd);
       if (hd.kind === 'line') return { text: 'Verteidigungslinie', tag: '' };
       const [name, cls] = LEVEL[st.level];
-      return { text: `${st.sectors} Sektoren, ${st.units} Kp.`, tag: `<span class="tag ${cls}">${name}</span>` };
+      return { text: `${st.km} km Front, ${st.units} Kp.`, tag: `<span class="tag ${cls}">${name}</span>` };
     };
     const divRow = (d, child) => {
       const units = unitsOf(d);
@@ -730,9 +735,10 @@ const app = {
     h += loose
       ? `<p class="muted">${loose} Kompanien ohne Division – frei verfügbar, aber ohne HQ und Front.</p><div class="buildRow"><button data-act="auto">Auto-Gliederung<small>nach ihrer Lage zu Divisionen zusammenfassen</small></button></div>`
       : reserve.length ? '' : '<p class="muted">Keine Reserve.</p>';
-    const all = this.fronts.sectorInfo().regions.size, gaps = this.fronts.openSectors().length;
-    h += `<h4>Grenze</h4><p class="muted">${all} Frontsektoren${gaps ? `, davon <b>${gaps} ohne Front</b>` : ', alle mit Front'}.</p>`;
-    if (gaps) h += '<div class="buildRow"><button data-act="gap">Lücke zeigen<small>springt zum ersten Sektor ohne Front</small></button></div>';
+    const km = (n) => Math.round(n * (g.map.kmPerCell || 1));
+    const all = this.fronts.frontInfo().list.length, gaps = this.fronts.openEntries().length;
+    h += `<h4>Grenze</h4><p class="muted">${km(all)} km Grenze zum Gegner${gaps ? `, davon <b>${km(gaps)} km ohne Front</b>` : ', überall mit Front'}.</p>`;
+    if (gaps) h += '<div class="buildRow"><button data-act="gap">Lücke zeigen<small>springt zur ersten Stelle ohne Front</small></button></div>';
     if (h !== this.troopSig) { this.troopSig = h; $('troopBody').innerHTML = h; }
   },
 
@@ -819,7 +825,7 @@ const app = {
   },
 
   // Division per Ziehen umhängen: zu einer Armee (army), in die Reserve (null) oder in eine
-  // neue Armee ('new'). Sie bringt ihre Sektoren mit, die Armee teilt neu auf
+  // neue Armee ('new'). Sie bringt ihre Front mit, die Armee teilt neu auf
   moveDivision(id, target) {
     const ob = this.game.orbat[this.human];
     const div = ob.all(DIVISION).find((d) => d.id === id);
@@ -842,10 +848,10 @@ const app = {
 
   // Kamera zum ersten Grenzstück ohne Front
   showGap() {
-    const part = this.fronts.uncovered()[0];
-    if (!part) { this.toast('Alle Frontsektoren haben eine Front'); return; }
+    const e = this.fronts.openEntries()[0];
+    if (!e) { this.toast('Die ganze Grenze hat eine Front'); return; }
     if (!this.ui.showFronts) this.toggleShowFronts();
-    this.focusOn([part[Math.floor(part.length / 2)]]);
+    this.focusOn([{ x: e.cx, y: e.cy }]);
   },
 
   // Meldungen in der oberen Leiste: Lücken an der Front, Nachschubmangel, Kompanien ohne
@@ -853,8 +859,8 @@ const app = {
   updateAlerts() {
     const g = this.game;
     const list = [];
-    const gaps = this.fronts.openSectors().length;
-    if (gaps && this.game.orbat[this.human].all(DIVISION).length) list.push(['gap', 'bad', `⚠ ${gaps} Sektor${gaps > 1 ? 'en' : ''} ohne Front`, 'Zur ersten Lücke springen']);
+    const gaps = Math.round(this.fronts.openEntries().length * (g.map.kmPerCell || 1));
+    if (gaps && this.game.orbat[this.human].all(DIVISION).length) list.push(['gap', 'bad', `⚠ ${gaps} km Front ohne Armee`, 'Zur ersten Lücke springen']);
     const hungry = g.units.filter((u) => u.owner === this.human && u.supply < 0.2).length;
     if (hungry) list.push(['supply', 'warn', `⛟ ${hungry} Kp. ohne Nachschub`, 'Kartenebene Nachschub zeigen']);
     const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
@@ -1209,7 +1215,7 @@ const app = {
       const hd = this.fronts.holdOf(f);
       return hd ? { hd, st: this.fronts.holdStatus(hd) } : null;
     };
-    const holdSig = (f) => { const h = holdInfo(f); return h ? `${h.st.sectors}${h.st.level}` : '-'; };
+    const holdSig = (f) => { const h = holdInfo(f); return h ? `${h.st.km}${h.st.level}` : '-'; };
     const sig = divs.map((d) => d.f.id + ':' + d.units.length + ':' + stats(d.units) + ':' + (armyOf(d.f) ? armyOf(d.f).id : '-') + ':' +
       (d.units.some((u) => this.ui.selection.has(u)) ? 1 : 0) + (canAdd(d) ? 1 : 0) + (d.f.refill ? 1 : 0) + (d.f.front ? 1 : 0) + holdSig(d.f)).join('|') +
       '#' + armies.map((x) => x.a.id + ':' + stats(x.units) + (canAddArmy(x) ? 1 : 0) + holdSig(x.a) + (x.units.every((u) => this.ui.selection.has(u)) ? 's' : '')).join('|') +
@@ -1236,14 +1242,14 @@ const app = {
         `<span class="name">${d.f.name}${d.f.front ? ' <span class="fr" title="hält eine Front">〰</span>' : ''}</span>` +
         bars(d.units) + `<span class="regs">${regs.join('')}</span></button>`;
     };
-    const LEVEL_NAMES = { good: 'gut besetzt', thin: 'dünn besetzt', weak: 'zu dünn besetzt', none: 'ohne Sektoren' };
+    const LEVEL_NAMES = { good: 'gut besetzt', thin: 'dünn besetzt', weak: 'zu dünn besetzt', none: 'ohne Grenze' };
     const LEVEL_COLORS = { good: 'var(--good)', thin: 'var(--accent)', weak: 'var(--bad)', none: 'var(--grey)' };
     const armyCard = (x) => {
       const heavy = x.units.filter((u) => u.type === 'heavy').length / x.units.length;
       const chosen = x.units.every((u) => this.ui.selection.has(u)) ? ' sel' : '';
       const add = canAddArmy(x) ? `<span class="add" data-act="armyadd" data-id="${x.a.id}" title="Ausgewählte Divisionen zur ${x.a.name}">＋</span>` : '';
       const h = holdInfo(x.a);
-      const front = !h ? 'ohne Front' : h.hd.kind === 'line' ? 'Linie' : `${h.st.sectors} Sek<span class="dot" style="background:${LEVEL_COLORS[h.st.level]}" title="${LEVEL_NAMES[h.st.level]}"></span>`;
+      const front = !h ? 'ohne Front' : h.hd.falling ? 'Auffanglinie' : `${h.st.km} km<span class="dot" style="background:${LEVEL_COLORS[h.st.level]}" title="${LEVEL_NAMES[h.st.level]}"></span>`;
       return `<button class="divcard armycard${chosen}${open === x.a.id ? ' open' : ''}${add ? ' can-add' : ''}" data-army="${x.a.id}" style="border-left-color:${armyColor(x.a)}" title="${x.a.name}: ${x.divs.length} Divisionen, ${x.units.length} Kompanien">${add}` +
         `<span class="sym">${natoIcon(heavy, 30, 18, 1, 'XXXX', armyColor(x.a))}</span>` +
         `<span class="name">${x.a.name}</span><span class="meta">${x.divs.length} Div · ${front}</span>` +
@@ -1383,11 +1389,9 @@ const portrait = matchMedia('(orientation: portrait) and (pointer: coarse) and (
 portrait.addEventListener('change', () => {
   if (portrait.matches && app.game && !app.paused && $('menu').hidden) app.togglePause();
 });
-$('sectorChoice').innerHTML = FRONT.sectorChoices.map((km) => `<button data-value="${km}">${km} km</button>`).join('');
-setupChoice('sectorChoice', String(FRONT.sectorChoices.includes(app.settings.sectorKm) ? app.settings.sectorKm : FRONT.sectorKm));
 $('startBtn').onclick = () => {
   lockLandscape();
-  app.start(randomSeed(), choice('mapChoice'), choice('diffChoice'), +choice('oppChoice'), null, +choice('sectorChoice'));
+  app.start(randomSeed(), choice('mapChoice'), choice('diffChoice'), +choice('oppChoice'));
 };
 $('pauseBtn').onclick = () => app.togglePause();
 $('speedBtn').onclick = () => app.setSpeed(app.speed >= 3 ? 1 : app.speed + 1);
@@ -1517,7 +1521,6 @@ window.addEventListener('pointercancel', (e) => endDrag(e, false));
 $('frontBtn').onclick = () => app.toggleFrontMode();
 $('showFrontsBtn').onclick = () => app.toggleShowFronts();
 $('supplyBtn').onclick = () => app.toggleSupply();
-$('borderBtn').onclick = () => app.borderFront();
 $('planBtn').onclick = () => app.setFrontMode({ plan: app.panelFronts() });
 $('attackBtn').onclick = () => {
   for (const f of app.panelFronts()) app.fronts.startAttack(f);
@@ -1542,6 +1545,7 @@ $('clearFallbackBtn').onclick = () => { for (const hd of app.panelHolds()) app.f
 $('pickRandom').onclick = () => app.pickStart(null);
 $('frontCancel').onclick = () => app.setFrontMode(null);
 $('frontErase').onclick = () => app.toggleFrontErase();
+$('frontQuick').onclick = (e) => { const t = e.target.closest('[data-foe]'); if (t) app.frontQuick(t.dataset.foe); };
 $('cmdClose').onclick = () => { app.ui.selection.clear(); app.selectFront(null); app.updateSelectionInfo(); };
 $('haltBtn').onclick = () => app.stopSelection();
 $('newDivBtn').onclick = () => app.newDivision();
@@ -1550,8 +1554,8 @@ $('refillBtn').onclick = () => { const d = app.selectedDivision(); if (d) app.to
 $('newArmyBtn').onclick = () => app.newArmy();
 $('unArmyBtn').onclick = () => app.removeFromArmy();
 $('centerBtn').onclick = () => app.fitCamera();
-$('againBtn').onclick = () => { lockLandscape(); app.start(app.current.seed, app.current.map, app.current.difficulty, app.current.opponents, null, app.current.sectorKm); };
-$('newBtn').onclick = () => { lockLandscape(); app.start(randomSeed(), app.current.map, app.current.difficulty, app.current.opponents, null, app.current.sectorKm); };
+$('againBtn').onclick = () => { lockLandscape(); app.start(app.current.seed, app.current.map, app.current.difficulty, app.current.opponents); };
+$('newBtn').onclick = () => { lockLandscape(); app.start(randomSeed(), app.current.map, app.current.difficulty, app.current.opponents); };
 $('endMenuBtn').onclick = () => { $('end').hidden = true; $('menu').hidden = false; $('resumeBtn').hidden = true; };
 
 function loadSettings() {
