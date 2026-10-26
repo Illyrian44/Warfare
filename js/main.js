@@ -1,20 +1,24 @@
-import { loadMap, MAPS } from './map.js?v=110';
-import { Game } from './game.js?v=110';
-import { AI } from './ai.js?v=110';
-import { Renderer } from './render.js?v=110';
-import { Input } from './input.js?v=110';
-import { formationSlots } from './formation.js?v=110';
-import { FrontManager, chainLength } from './fronts.js?v=110';
-import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=110';
-import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=110';
-import { templateCost } from './production.js?v=110';
+import { loadMap, MAPS } from './map.js?v=111';
+import { Game, menOf } from './game.js?v=111';
+import { AI } from './ai.js?v=111';
+import { Renderer } from './render.js?v=111';
+import { Input } from './input.js?v=111';
+import { formationSlots } from './formation.js?v=111';
+import { FrontManager, chainLength } from './fronts.js?v=111';
+import { DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, unitsOf, divisionColor, divisionOf, armyOf, armyColor, strength } from './orbat.js?v=111';
+import { DIFFICULTY, SUPPLY, KM, CELL, PLAYER_COLORS, PLAYER_NAMES, CITY_RADIUS, UNIT_TYPES, TEMPLATES, UPGRADES, BUILDINGS, BUILDING_MAX, DIPLOMACY } from './config.js?v=111';
+import { templateCost } from './production.js?v=111';
 
 const STEP = 1 / 30;
 const $ = (id) => document.getElementById(id);
-const VERSION = '110'; // für Kartendaten, siehe scripts/bump-version.sh
+const VERSION = '111'; // für Kartendaten, siehe scripts/bump-version.sh
 // Reiter der oberen Leiste: Inhalt in der Seitenleiste
 const TAB_BODIES = { build: 'buildBody', city: 'cityBody', diplo: 'diploBody', logistics: 'logiBody', troops: 'troopBody' };
 const TAB_TITLES = { build: 'Produktion', city: 'Städte', diplo: 'Diplomatie', logistics: 'Logistik', troops: 'Truppen' };
+
+// Zahlen deutsch formatiert, auf step gerundet (9.800); Dezimalzahl mit Komma (0,25)
+const fmtNum = (v, step = 1) => (Math.round(v / step) * step).toLocaleString('de-DE');
+const fmtDec = (v) => String(+v.toFixed(2)).replace('.', ',');
 
 const app = {
   game: null,
@@ -580,7 +584,7 @@ const app = {
       : st.holds.reduce((s, hd) => s + this.fronts.holdStatus(hd).km, 0);
     const parts = [];
     if (divs.length > 1) parts.push(`${divs.length} Div.`);
-    parts.push(`${sel.length} Kp.`);
+    parts.push(`${sel.length} Kp.`, `${fmtNum(menOf(sel), 100)} Mann`);
     if (divs.length) parts.push(!st.holds.length ? 'ohne Front' : own ? `Abschnitt ${km} km` : `Front ${km} km`);
     $('cmdSub').textContent = parts.join(' · ');
     const [stTxt, stCls] = !divs.length ? ['', '']
@@ -1001,6 +1005,10 @@ const app = {
     if (gaps && this.game.orbat[this.human].all(DIVISION).length) list.push(['gap', 'bad', `⚠ ${gaps} km Front ohne Armee`, 'Zur ersten Lücke springen']);
     const hungry = g.units.filter((u) => u.owner === this.human && u.supply < 0.2).length;
     if (hungry) list.push(['supply', 'warn', `⛟ ${hungry} Kp. ohne Nachschub`, 'Kartenebene Nachschub zeigen']);
+    const e = g.eco[this.human];
+    if (e.unpaid) list.push(['money', 'bad', '💰 Kasse leer – kein Sold', 'Der Unterhalt der Truppen übersteigt das Einkommen: die Organisation aller Kompanien sinkt. Weniger Truppen oder mehr Einkommen (Städte, Fabriken, Handel).']);
+    else if (e.income + e.tradeRate - e.upkeep < 0) list.push(['money', 'warn', '💰 Unterhalt > Einkommen', 'Die Kasse schrumpft – ist sie leer, fehlt der Sold und die Organisation sinkt']);
+    if (e.manpower < 300 && g.units.some((u) => u.owner === this.human && u.hp < u.maxHp * 0.9)) list.push(['manpower', 'warn', '👥 Keine Manpower für Ersatz', 'Verwundete Kompanien heilen erst wieder, wenn Manpower nachwächst (Wohnviertel, mehr Städte)']);
     const loose = g.units.filter((u) => u.owner === this.human && !u.regiment).length;
     if (loose) list.push(['loose', '', `${loose} Kp. ohne Division`, 'Reserve öffnen']);
     const html = list.map(([k, cls, text, title]) => `<button class="alert ${cls}" data-alert="${k}" title="${title}">${text}</button>`).join('');
@@ -1010,6 +1018,7 @@ const app = {
   alertAction(k) {
     if (k === 'gap') this.showGap();
     else if (k === 'supply') { if (!this.ui.showSupply) this.toggleSupply(); this.setTab('logistics'); }
+    else if (k === 'money' || k === 'manpower') this.setTab('city');
     else if (k === 'loose') { this.ui.openGroup = 'reserve'; this.divBarSig = null; this.updateDivBar(); }
   },
 
@@ -1065,7 +1074,8 @@ const app = {
       orders.map((o) => o.id).join(','), costs.map((c) => (can(c) ? 1 : 0)).join('')].join('|');
     if (sig !== this.buildSig) {
       this.buildSig = sig;
-      const price = (c, s) => `${c.money}💰${c.manpower ? ` ${c.manpower}👥` : ''}${s ? ` · ${s} s` : ''}`;
+      const price = (c, s) => `${c.money}💰${c.manpower ? ` ${fmtNum(c.manpower)}👥` : ''}${s ? ` · ${s} s` : ''}`;
+      const upkeepOf = (light, heavy) => `Unterhalt ${fmtDec(light * UNIT_TYPES.light.upkeep + heavy * UNIT_TYPES.heavy.upkeep)}💰/s`;
       const sizeName = ['', 'Kleinstadt', 'Mittelstadt', 'Großstadt'];
       let h = '';
       if (!city) h += '<p class="muted">Ohne eigene Stadt ist keine Ausbildung möglich.</p>';
@@ -1075,9 +1085,9 @@ const app = {
           .map((c) => `<option value="${c.id}"${c === city ? ' selected' : ''}>${c.name}${c.capitalOf === p ? ' ★' : ''} – ${sizeName[g.citySize(c)]}, ${prod.citySlots(c)} gleichzeitig</option>`).join('') + '</select>';
         const tanks = prod.canTrain(city, 'heavy');
         if (tab === 'build') h += '<h4>Kompanien</h4><div class="buildRow">' + ['light', 'heavy'].map((t) =>
-          `<button data-act="unit" data-type="${t}"${can(unitCost(t)) && prod.canTrain(city, t) ? '' : ' disabled'}>${t === 'light' ? '＋ Infanterie' : '＋ Panzer'}<small>${prod.canTrain(city, t) ? price(unitCost(t), UNIT_TYPES[t].buildTime) : 'braucht eine Fabrik in der Stadt'}</small></button>`).join('') + '</div>';
+          `<button data-act="unit" data-type="${t}"${can(unitCost(t)) && prod.canTrain(city, t) ? '' : ' disabled'}>${t === 'light' ? '＋ Infanterie' : '＋ Panzer'}<small>${prod.canTrain(city, t) ? `${price(unitCost(t), UNIT_TYPES[t].buildTime)} · ${upkeepOf(t === 'light' ? 1 : 0, t === 'heavy' ? 1 : 0)}` : 'braucht eine Fabrik in der Stadt'}</small></button>`).join('') + '</div>';
         if (tab === 'build') h += '<h4>Divisionen</h4><div class="buildRow">' + TEMPLATES.map((t) =>
-          `<button data-act="template" data-id="${t.id}"${can(templateCost(t)) && (tanks || !t.heavy) ? '' : ' disabled'}>${t.name}<small>${t.light} Inf. + ${t.heavy} Pz. · ${price(templateCost(t))}</small></button>`).join('') + '</div>';
+          `<button data-act="template" data-id="${t.id}"${can(templateCost(t)) && (tanks || !t.heavy) ? '' : ' disabled'}>${t.name}<small>${t.light} Inf. + ${t.heavy} Pz. · ${price(templateCost(t))} · ${upkeepOf(t.light, t.heavy)}</small></button>`).join('') + '</div>';
         // Stadt ausbauen: je Gebäude Stufe, Wirkung und nächste Stufe
         const k = city.construction;
         if (tab === 'city') h += `<h4>${city.name} ausbauen</h4>`;
@@ -1373,7 +1383,7 @@ const app = {
       const chosen = d.units.some((u) => this.ui.selection.has(u)) ? ' sel' : '';
       const add = canAdd(d) ? `<span class="add" data-act="add" data-id="${d.f.id}" title="Auswahl zur ${d.f.name} hinzufügen">＋</span>` : '';
       const own = holdInfo(d.f) ? ' · eigene Front' : '';
-      return `<button class="divcard${chosen}${d.f.refill ? ' refill' : ''}${add ? ' can-add' : ''}" data-id="${d.f.id}" title="${d.f.name}: ${d.units.length} Kompanien${own}">${add}` +
+      return `<button class="divcard${chosen}${d.f.refill ? ' refill' : ''}${add ? ' can-add' : ''}" data-id="${d.f.id}" title="${d.f.name}: ${d.units.length} Kompanien, etwa ${fmtNum(menOf(d.units), 500)} Mann${own}">${add}` +
         `<span class="sym">${natoIcon(heavy, 26, 18, 1, 'XX', divisionColor(d.f))}</span>` +
         `<span class="name">${d.f.name}${d.f.front ? ' <span class="fr" title="hält eine Front">〰</span>' : ''}</span>` +
         bars(d.units) + `<span class="regs">${regs.join('')}</span></button>`;
@@ -1386,7 +1396,7 @@ const app = {
       const add = canAddArmy(x) ? `<span class="add" data-act="armyadd" data-id="${x.a.id}" title="Ausgewählte Divisionen zur ${x.a.name}">＋</span>` : '';
       const h = holdInfo(x.a);
       const front = !h ? 'ohne Front' : h.hd.falling ? 'Auffanglinie' : `${h.st.km} km<span class="dot" style="background:${LEVEL_COLORS[h.st.level]}" title="${LEVEL_NAMES[h.st.level]}"></span>`;
-      return `<button class="divcard armycard${chosen}${open === x.a.id ? ' open' : ''}${add ? ' can-add' : ''}" data-army="${x.a.id}" style="border-left-color:${armyColor(x.a)}" title="${x.a.name}: ${x.divs.length} Divisionen, ${x.units.length} Kompanien">${add}` +
+      return `<button class="divcard armycard${chosen}${open === x.a.id ? ' open' : ''}${add ? ' can-add' : ''}" data-army="${x.a.id}" style="border-left-color:${armyColor(x.a)}" title="${x.a.name}: ${x.divs.length} Divisionen, ${x.units.length} Kompanien, etwa ${fmtNum(menOf(x.units), 500)} Mann">${add}` +
         `<span class="sym">${natoIcon(heavy, 30, 18, 1, 'XXXX', armyColor(x.a))}</span>` +
         `<span class="name">${x.a.name}</span><span class="meta">${x.divs.length} Div · ${front}</span>` +
         bars(x.units) + '</button>';
@@ -1439,9 +1449,11 @@ const app = {
     $('hudUnits').innerHTML = `${myU}<span class="muted"> Einheiten</span>`;
     const e = g.eco[this.human];
     const k = (v) => (v >= 10000 ? `${(v / 1000).toFixed(0)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.floor(v)}`);
+    const net = e.income + e.tradeRate - e.upkeep;
+    const signed = (v, d) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(d)}`;
     $('hudEco').innerHTML =
-      `<span title="Geld: Städte (nach Größe), Gebäude und Land bringen ${e.income.toFixed(1)}/s, der Handel zuletzt etwa ${e.tradeRate.toFixed(1)}/s. Kompanien und Gebäude kosten Geld.">💰 ${k(e.money)}<small class="muted"> +${(e.income + e.tradeRate).toFixed(1)}/s</small></span> ` +
-      `<span title="Manpower: wächst aus der Bevölkerung deiner Städte (Vorrat höchstens ${k(e.mpCap)}), Kompanien kosten Manpower">👥 ${k(e.manpower)}<small class="muted"> +${e.mpRate.toFixed(0)}/s</small></span>`;
+      `<span class="${e.unpaid ? 'broke' : ''}" title="Geld: Städte, Gebäude und Land bringen ${e.income.toFixed(1)}/s, der Handel zuletzt etwa ${e.tradeRate.toFixed(1)}/s; der Unterhalt der Truppen kostet ${e.upkeep.toFixed(1)}/s (Infanterie ${fmtDec(UNIT_TYPES.light.upkeep)}/s, Panzer ${fmtDec(UNIT_TYPES.heavy.upkeep)}/s je Kompanie). Ist die Kasse leer, fehlt der Sold und die Organisation sinkt.">💰 ${k(e.money)}<small class="${net < 0 ? 'neg' : 'muted'}"> ${signed(net, 1)}/s</small></span> ` +
+      `<span title="Manpower (Mann): wächst aus der Bevölkerung deiner Städte um ${e.mpRate.toFixed(0)}/s (Vorrat höchstens ${k(e.mpCap)}). Neue Kompanien kosten ihre volle Stärke, verwundete ersetzen ihre Verluste beim Heilen aus dem Vorrat (zuletzt ${e.mpUsedRate.toFixed(0)}/s). Ohne Manpower heilt niemand.">👥 ${k(e.manpower)}<small class="${e.mpRate - e.mpUsedRate < 0 ? 'neg' : 'muted'}"> ${signed(e.mpRate - e.mpUsedRate, 0)}/s</small></span>`;
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     $('hudTime').textContent = `${m}:${String(s).padStart(2, '0')}`;
     this.updateCommands();

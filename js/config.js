@@ -22,14 +22,17 @@ export const TERRAIN_INFO = [
 
 // speed: Marschtempo auf offener Ebene (Straße ×1,6, Gelände bremst, siehe TERRAIN_INFO)
 // terrainAttack: zusätzlicher Faktor je Gelände (Index wie T)
+// men: Sollstärke in Mann (eine Division aus 10 Infanteriekompanien hat 10.000 Mann);
+// Ausbildung kostet so viel Manpower, Verluste werden beim Heilen aus dem Vorrat ersetzt.
+// upkeep: Unterhalt in Geld je Sekunde, solange die Kompanie besteht
 export const UNIT_TYPES = {
   light: {
     name: 'Leicht', hp: 100, speed: kmh(10), dps: 6, radius: 5, buildTime: 15,
-    terrainAttack: [0, 1, 1, 1, 1, 0], strength: 1, cost: { money: 30, manpower: 150 },
+    terrainAttack: [0, 1, 1, 1, 1, 0], strength: 1, cost: { money: 30, manpower: 1000 }, men: 1000, upkeep: 0.25,
   },
   heavy: {
     name: 'Schwer', hp: 165, speed: kmh(18), dps: 10, radius: 7, buildTime: 26,
-    terrainAttack: [0, 0.7, 1.25, 0.7, 0.85, 0], strength: 1.7, cost: { money: 100, manpower: 90 },
+    terrainAttack: [0, 0.7, 1.25, 0.7, 0.85, 0], strength: 1.7, cost: { money: 100, manpower: 700 }, men: 700, upkeep: 0.6,
   },
 };
 
@@ -61,14 +64,14 @@ export const UNITS_PER_CITY = 10;  // Richtwert für die KI und die Nachschublei
 // Baumenü: Divisionsvorlagen (Zahl der Infanterie- und Panzerkompanien) und Ausrüstung je
 // Division (Stufen mit Preis in Geld; Wirkung je Stufe)
 export const TEMPLATES = [
-  { id: 'inf', name: 'Infanteriedivision', light: 9, heavy: 0 },
-  { id: 'mixed', name: 'Gemischte Division', light: 6, heavy: 3 },
-  { id: 'armor', name: 'Panzerdivision', light: 3, heavy: 6 },
+  { id: 'inf', name: 'Infanteriedivision', light: 10, heavy: 0 },  // 10.000 Mann
+  { id: 'mixed', name: 'Gemischte Division', light: 7, heavy: 3 },  //  9.100 Mann
+  { id: 'armor', name: 'Panzerdivision', light: 4, heavy: 6 },      //  8.200 Mann
 ];
 // Städte ausbauen: Gebäude mit bis zu drei Stufen. Preis (Geld) und Bauzeit (s) wachsen mit
 // der Stufe: cost × (Stufe + 1), time × (1 + Stufe / 2). Häfen nur an der Küste.
 export const BUILDINGS = {
-  housing: { name: 'Wohnviertel', icon: '🏠', effect: '+4 Manpower/s', cost: 120, time: 20 },
+  housing: { name: 'Wohnviertel', icon: '🏠', effect: '+8 Manpower/s', cost: 120, time: 20 },
   factory: { name: 'Fabrik', icon: '🏭', effect: '+0,6 Geld/s · ab Stufe 1 Panzer', cost: 150, time: 25 },
   barracks: { name: 'Kaserne', icon: '⛺', effect: '+1 Ausbildungsplatz', cost: 100, time: 15 },
   depot: { name: 'Depot', icon: '📦', effect: '+50 % Nachschubleistung', cost: 80, time: 15 },
@@ -114,15 +117,20 @@ export const UPGRADES = {
 
 // Wirtschaft: Geld und Manpower je Seite. Städte liefern je nach Größe (aus der echten
 // Einwohnerzahl), die Hauptstadt (Startstadt) zählt immer als Großstadt, das Land bringt
-// etwas Geld dazu. Kompanien kosten beides (cost in UNIT_TYPES).
+// etwas Geld dazu. Kompanien kosten beides (cost in UNIT_TYPES), stehende Truppen kosten
+// laufend Unterhalt (upkeep), und Verluste werden beim Heilen aus dem Manpower-Vorrat ersetzt.
+// Ist die Kasse leer, fehlt der Sold: die Organisation aller Kompanien sinkt.
 export const ECONOMY = {
   sizeOf: (pop) => (pop >= 1500000 ? 3 : pop >= 400000 ? 2 : 1), // 1 Kleinstadt … 3 Großstadt
   cityMoney: 0.6,     // Geld je Sekunde und Stadtgröße
   landMoney: 0.05,    // Geld je Sekunde und Prozent des Landes
-  cityManpower: 4,    // Manpower je Sekunde und Stadtgröße
-  manpowerCap: 45,    // Manpower-Vorrat höchstens so viele Sekunden Zuwachs (mindestens 1000)
+  cityManpower: 8,    // Manpower (Mann) je Sekunde und Stadtgröße
+  housingManpower: 8, // je Stufe Wohnviertel
+  manpowerCap: 60,    // Manpower-Vorrat höchstens so viele Sekunden Zuwachs (mindestens minCap)
+  minCap: 5000,
   startMoney: 150,
-  startManpower: 600,
+  startManpower: 3000,
+  unpaidOrgPerHour: 0.08, // ohne Sold: Organisationsverlust je Stunde (Anteil des Maximums)
 };
 
 // Versorgung: jede eigene Stadt ist ein Depot und beliefert die Kompanien, die sie über

@@ -2,13 +2,13 @@ import {
   CELL, T, TERRAIN_INFO, UNIT_TYPES, ATTACK_RANGE, ENEMY_GAP, ENGAGED_SPEED, SURROUND_BONUS,
   CITY_CAPTURE_RADIUS, CAPTURE_TIME, WIN_SHARE, START_UNITS, ECONOMY, UPGRADES, UNITS_PER_CITY, BUILDINGS, DIPLOMACY, GROWTH,
   UNIT_VISION, CITY_VISION, UNIT_BORDER, CITY_BORDER, DIVISION_ROTATE, SUPPLY, ORG, KM, HOURS_PER_SECOND,
-} from './config.js?v=110';
-import { mulberry32 } from './rng.js?v=110';
-import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=110';
-import { HQManager } from './hq.js?v=110';
-import { SupplyNetwork } from './supply.js?v=110';
-import { Trade } from './trade.js?v=110';
-import { Production } from './production.js?v=110';
+} from './config.js?v=111';
+import { mulberry32 } from './rng.js?v=111';
+import { OrderOfBattle, DIVISION, unitsOf } from './orbat.js?v=111';
+import { HQManager } from './hq.js?v=111';
+import { SupplyNetwork } from './supply.js?v=111';
+import { Trade } from './trade.js?v=111';
+import { Production } from './production.js?v=111';
 
 // Größte Reichweite zwischen zwei Kompanien (Angriff plus beide Radien)
 const PAIR_REACH = ATTACK_RANGE + 2 * Math.max(...Object.values(UNIT_TYPES).map((t) => t.radius));
@@ -75,7 +75,7 @@ export class Game {
     this.share = slots().map(() => 0);
     // Kasse je Seite: Geld, Manpower und ihre Zuwächse je Sekunde (siehe updateEconomy)
     this.eco = slots().map((_, p) => (p
-      ? { money: ECONOMY.startMoney, manpower: ECONOMY.startManpower, income: 0, mpRate: 0, mpCap: 1000, spent: 0, trade: 0, tradeRate: 0, tradeSeen: 0 }
+      ? { money: ECONOMY.startMoney, manpower: ECONOMY.startManpower, income: 0, upkeep: 0, unpaid: false, mpRate: 0, mpCap: ECONOMY.minCap, mpUsed: 0, mpUsedRate: 0, spent: 0, trade: 0, tradeRate: 0, tradeSeen: 0 }
       : null));
     this.ecoTimer = 0;
 
@@ -278,12 +278,15 @@ export class Game {
     return c.capitalOf && c.capitalOf === c.owner ? 3 : c.size;
   }
 
-  // Einkommen einmal je Sekunde neu berechnen, Geld und Manpower in jedem Schritt gutschreiben.
-  // prodMult (Schwierigkeit der KI) wirkt auf beide Zuwächse
+  // Einkommen und Unterhalt einmal je Sekunde neu berechnen, Geld und Manpower in jedem Schritt
+  // gutschreiben bzw. abbuchen. prodMult (Schwierigkeit der KI) wirkt auf beide Zuwächse, nicht
+  // auf den Unterhalt. Reicht die Kasse nicht für den Unterhalt, fehlt der Sold (unpaid)
   updateEconomy(dt) {
     this.ecoTimer -= dt;
     if (this.ecoTimer <= 0) {
       this.ecoTimer = 1;
+      const upkeep = {};
+      for (const u of this.units) upkeep[u.owner] = (upkeep[u.owner] || 0) + UNIT_TYPES[u.type].upkeep;
       for (const p of this.players) {
         const e = this.eco[p];
         let size = 0, money = 0, mp = 0;
@@ -292,12 +295,16 @@ export class Game {
           size += this.citySize(c);
           // Gebäude: Fabrik und Hafen bringen Geld, Wohnviertel Manpower
           money += c.buildings.factory * 0.6 + c.buildings.port * 0.4;
-          mp += c.buildings.housing * 4;
+          mp += c.buildings.housing * ECONOMY.housingManpower;
         }
         const m = this.prodMult[p];
         e.income = (size * ECONOMY.cityMoney + money + this.share[p] * 100 * ECONOMY.landMoney) * m;
         e.mpRate = (size * ECONOMY.cityManpower + mp) * m;
-        e.mpCap = Math.max(1000, e.mpRate * ECONOMY.manpowerCap);
+        e.mpCap = Math.max(ECONOMY.minCap, e.mpRate * ECONOMY.manpowerCap);
+        e.upkeep = upkeep[p] || 0;
+        // Ersatz für Verluste je Sekunde, geglättet über etwa eine halbe Minute
+        e.mpUsedRate = e.mpUsedRate * 0.95 + e.mpUsed * 0.05;
+        e.mpUsed = 0;
         // Handelseinnahmen je Sekunde, geglättet über etwa eine Minute
         e.tradeRate = e.tradeRate * 0.97 + (e.trade - e.tradeSeen) * 0.03;
         e.tradeSeen = e.trade;
@@ -306,7 +313,9 @@ export class Game {
     for (const p of this.players) {
       const e = this.eco[p];
       if (!this.alive(p)) continue;
-      e.money += e.income * dt;
+      e.money += (e.income - e.upkeep) * dt;
+      e.unpaid = e.money < 0;
+      if (e.unpaid) e.money = 0;
       e.manpower = Math.min(e.mpCap, e.manpower + e.mpRate * dt);
     }
   }
@@ -528,6 +537,14 @@ export class Game {
         const own = this.territory[map.cellIndex(u.x, u.y)] === u.owner;
         regen = (own ? 4 : 1.5) * (u.supply - 0.5) / 0.5;
       }
+      if (regen > 0) {
+        // Verluste ersetzen kostet Manpower (so viele Mann, wie der Kompanie fehlen)
+        const e = this.eco[u.owner];
+        const men = UNIT_TYPES[u.type].men;
+        const heal = Math.min(regen * dt, u.maxHp - u.hp, e ? e.manpower * u.maxHp / men : Infinity);
+        regen = Math.max(0, heal) / dt;
+        if (e && heal > 0) { const used = heal / u.maxHp * men; e.manpower -= used; e.mpUsed += used; }
+      }
       u.hp = Math.min(u.maxHp, u.hp + regen * dt - u.incoming * ORG.hpShare);
       this.updateOrg(u, hours);
       if (u.org <= 0 && !u.broken) broke.push(u);
@@ -699,7 +716,9 @@ export class Game {
     if (u.incoming > 0) u.org -= u.incoming * ORG.damage * u.maxOrg / u.maxHp;
     const fed = Math.min(1, u.supply * 2);
     const cap = u.maxOrg * (0.5 + 0.5 * fed);
-    if (u.supply < 0.15 || u.org > cap) u.org -= ORG.starvePerHour * u.maxOrg * hours;
+    const e = this.eco[u.owner];
+    if (e && e.unpaid) u.org -= ECONOMY.unpaidOrgPerHour * u.maxOrg * hours; // ohne Sold keine Erholung
+    else if (u.supply < 0.15 || u.org > cap) u.org -= ORG.starvePerHour * u.maxOrg * hours;
     else if (!u.target) u.org += ORG.recoverPerHour * u.maxOrg * fed * (u.path.length ? ORG.march : 1) * hours;
     u.org = Math.max(0, Math.min(u.maxOrg, u.org));
   }
@@ -941,6 +960,13 @@ function surrounded(angles) {
 
 // Kampfwert für Kräftevergleiche (KI, HQs): Typ, Lebenspunkte, Organisation und Nachschub;
 // zerschlagene Kompanien kämpfen nicht und zählen nicht
+// Mannstärke: Sollstärke je Kompanie nach ihren Lebenspunkten
+export function menOf(units) {
+  let s = 0;
+  for (const u of units) s += UNIT_TYPES[u.type].men * Math.max(0, u.hp) / u.maxHp;
+  return s;
+}
+
 export function unitStrength(u) {
   if (u.broken) return 0;
   const supply = SUPPLY.combatMin + (1 - SUPPLY.combatMin) * Math.min(1, u.supply * 2);

@@ -14,7 +14,7 @@ const realMap = (id, seed) => {
 };
 const { Game } = await load('game');
 const { AI } = await load('ai');
-const { TERRAIN_INFO } = await load('config');
+const { TERRAIN_INFO, UNIT_TYPES } = await load('config');
 const { REGIMENT, DIVISION, ARMY, DIVISION_MAX, REGIMENT_MAX, strength, divisionOf } = await load('orbat');
 const { formationSlots } = await load('formation');
 const { FrontManager } = await load('fronts');
@@ -347,23 +347,23 @@ function checkState(g, label, ais) {
 {
   const g = new Game(realMap('balkan', 5), { players: 2 });
   const prod = g.production, e = g.eco[1];
-  e.money = 5000; e.manpower = 9000; e.mpCap = 20000;
+  e.money = 5000; e.manpower = 30000; e.mpCap = 50000;
   const home = g.starts[1];
   const before = { money: e.money, manpower: e.manpower };
   const one = prod.order(1, home, 'light');
-  if (!one || e.money !== before.money - 30 || e.manpower !== before.manpower - 150) fail('Baumenü: Kompanie wird nicht korrekt bezahlt');
+  if (!one || e.money !== before.money - 30 || e.manpower !== before.manpower - 1000) fail('Baumenü: Kompanie wird nicht korrekt bezahlt');
   prod.cancel(one.id);
   if (e.money !== before.money || e.manpower !== before.manpower) fail('Baumenü: Abbruch erstattet die Kosten nicht');
   if (prod.order(1, g.starts[2], 'light')) fail('Baumenü: Ausbildung in einer fremden Stadt möglich');
   if (prod.orderTemplate(1, home, 'mixed') || prod.order(1, home, 'heavy')) fail('Baumenü: Panzer ohne Fabrik ausgebildet');
   g.cities[home].buildings.factory = 1;
   const group = prod.orderTemplate(1, home, 'mixed');
-  if (!group || group.length !== 9) fail('Baumenü: Vorlage „Gemischte Division“ bestellt nicht 9 Kompanien');
+  if (!group || group.length !== 10) fail('Baumenü: Vorlage „Gemischte Division“ bestellt nicht 10 Kompanien');
   for (let s = 0; s < 30 * 120 && prod.ordersOf(1).length; s++) { prod.step(STEP); g.events.length = 0; }
   const div = g.orbat[1].all(DIVISION).at(-1);
   const types = div ? unitsOfDiv(div) : [];
-  if (!div || types.length !== 9 || types.filter((t) => t === 'heavy').length !== 3) fail(`Baumenü: Vorlage ergibt ${types.length} Kompanien statt 6 Inf. + 3 Pz.`);
-  // Großstadt (Hauptstadt) bildet 3 gleichzeitig aus: 9 Kompanien in 3 Durchgängen
+  if (!div || types.length !== 10 || types.filter((t) => t === 'heavy').length !== 3) fail(`Baumenü: Vorlage ergibt ${types.length} Kompanien statt 7 Inf. + 3 Pz.`);
+  // Großstadt (Hauptstadt) bildet 3 gleichzeitig aus: 10 Kompanien in 4 Durchgängen
   if (g.time !== 0) fail('Baumenü-Test darf die Spielzeit nicht verändern');
   if (div) {
     if (!prod.upgrade(1, div, 'artillery') || div.equip.artillery !== 1) fail('Baumenü: Artillerie lässt sich nicht verbessern');
@@ -389,6 +389,41 @@ function checkState(g, label, ais) {
   const inland = g.cities.find((c) => !c.coastal), coast = g.cities.find((c) => c.coastal);
   if (!inland || !coast || prod.nextBuilding(inland, 'port') || !prod.nextBuilding(coast, 'port')) fail('Städtebau: Häfen nicht nur an der Küste');
   if (!failed) console.log('ok   Baumenü und Städtebau: Ausbildung, Vorlagen, Abbruch, Ausrüstung, Gebäude');
+}
+
+// --- Unterhalt, Ersatz aus dem Manpower-Vorrat, fehlender Sold ---------------------------
+{
+  const before = failed;
+  const g = new Game(realMap('balkan', 5), { players: 2 });
+  const e = g.eco[1];
+  g.step(STEP); g.events.length = 0;
+  const mine = g.unitsOf(1);
+  const want = mine.reduce((s, u) => s + UNIT_TYPES[u.type].upkeep, 0);
+  if (Math.abs(e.upkeep - want) > 1e-9 || !(want > 0)) fail(`Unterhalt: ${e.upkeep} statt ${want}`);
+  // Geld sinkt um den Unterhalt
+  e.money = 100; e.income = 0; g.ecoTimer = 10; e.tradeRate = 0;
+  const m0 = e.money;
+  for (let s = 0; s < 30; s++) { g.updateEconomy(STEP); }
+  if (Math.abs(m0 - e.upkeep - e.money) > 1e-6) fail(`Unterhalt: nach 1 s ${e.money} statt ${m0 - e.upkeep}`);
+  // Heilen ersetzt Verluste aus dem Manpower-Vorrat; ohne Manpower kein Heilen
+  const u = mine[0];
+  u.hp = u.maxHp * 0.5; u.supply = 1; u.path = [];
+  e.manpower = 100000; e.mpCap = 200000; e.mpRate = 0; e.money = 1000;
+  const hp0 = u.hp, mp0 = e.manpower;
+  for (let s = 0; s < 30; s++) { g.step(STEP); g.events.length = 0; }
+  const healed = u.hp - hp0, used = mp0 - e.manpower;
+  const men = UNIT_TYPES[u.type].men;
+  if (!(healed > 0) || Math.abs(used - healed / u.maxHp * men) > men * 0.02) fail(`Ersatz: ${healed.toFixed(2)} LP geheilt, ${used.toFixed(1)} Manpower verbraucht`);
+  e.manpower = 0;
+  const hp1 = u.hp;
+  for (let s = 0; s < 30; s++) { g.step(STEP); g.events.length = 0; e.manpower = Math.min(e.manpower, 0); }
+  if (u.hp > hp1 + 1e-9) fail('Ersatz: ohne Manpower wird geheilt');
+  // Kasse leer: Organisation sinkt, Geld bleibt bei 0
+  e.money = 0; g.ecoTimer = 10; e.income = 0; e.tradeRate = 0; e.manpower = 100000;
+  const org0 = u.org;
+  for (let s = 0; s < 30 * 5; s++) { g.step(STEP); g.events.length = 0; g.ecoTimer = 10; e.income = 0; }
+  if (!e.unpaid || e.money !== 0 || !(u.org < org0)) fail(`Sold: unpaid ${e.unpaid}, Geld ${e.money}, Org ${org0} -> ${u.org}`);
+  if (failed === before) console.log('ok   Unterhalt, Ersatz aus dem Manpower-Vorrat, fehlender Sold');
 }
 
 for (const [seed, size, np] of CASES) {

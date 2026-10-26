@@ -1,8 +1,8 @@
-import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX } from './config.js?v=110';
-import { unitStrength } from './game.js?v=110';
-import { mulberry32 } from './rng.js?v=110';
-import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=110';
-import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=110';
+import { DIFFICULTY, SUPPLY, KM, DIPLOMACY, UPGRADES, BUILDING_MAX, UNIT_TYPES } from './config.js?v=111';
+import { unitStrength } from './game.js?v=111';
+import { mulberry32 } from './rng.js?v=111';
+import { FrontManager, projectOnChains, sliceChains, chainLength } from './fronts.js?v=111';
+import { DIVISION, strength, unitsOf, centerOf } from './orbat.js?v=111';
 
 const THREAT_RADIUS = 170;
 const TARGET_RADIUS = 240;
@@ -13,6 +13,8 @@ const DIV_LEAVE = 400;      // so weit entfernte Kompanien verlassen ihre Divisi
 const GAP_RESPLIT = 8;      // so viele Grenzfelder ohne Front lösen eine neue Aufteilung aus
 const PUSH_DEPTH = 80;      // begrenzter Vorstoß: so weit (8 km) ins Feindgebiet
 const PUSH_RATIO = 1.3;     // und nur mit so viel Überlegenheit vor Ort
+const UPKEEP_SHARE = 0.85; // höchstens so viel des Einkommens geht in den Unterhalt der Truppen
+const MP_RESERVE = 1500;    // so viel Manpower bleibt für den Ersatz von Verlusten
 
 export class AI {
   constructor(game, player, difficulty = 'medium') {
@@ -44,15 +46,24 @@ export class AI {
   }
 
   // Ausbildung über das Baumenü: freie Plätze der eigenen Städte füllen (große zuerst),
-  // solange die Kasse reicht und die Armee unter ihrem Richtwert liegt
+  // solange die Kasse reicht, die Armee unter ihrem Richtwert liegt, das Einkommen auch den
+  // Unterhalt der neuen Kompanie trägt und Manpower für den Ersatz von Verlusten bleibt
   build(myCities, myUnits) {
-    const g = this.game, prod = g.production;
-    let total = myUnits.length + prod.ordersOf(this.me).length;
+    const g = this.game, prod = g.production, e = g.eco[this.me];
+    const orders = prod.ordersOf(this.me);
+    let total = myUnits.length + orders.length;
+    // Unterhalt nach Fertigstellung aller laufenden Aufträge
+    let upkeep = e.upkeep + orders.reduce((s, o) => s + UNIT_TYPES[o.type].upkeep, 0);
+    const net = e.income + e.tradeRate;
     const cities = myCities.slice().sort((a, b) => g.citySize(b) - g.citySize(a));
     for (const c of cities) {
       while (total < this.armyCap() && prod.orders.filter((o) => o.city === c.id).length < prod.citySlots(c)) {
         const type = this.rng() < this.cfg.heavyRatio && prod.canTrain(c, 'heavy') ? 'heavy' : 'light';
+        const ut = UNIT_TYPES[type];
+        if (upkeep + ut.upkeep > net * UPKEEP_SHARE) { this.construct(cities); this.equip(); return; }
+        if (e.manpower - ut.cost.manpower < MP_RESERVE) { this.construct(cities); this.equip(); return; }
         if (!prod.order(this.me, c.id, type)) return;
+        upkeep += ut.upkeep;
         total++;
       }
     }
@@ -86,7 +97,7 @@ export class AI {
     const busy = prod.ordersOf(this.me).length >= cities.reduce((s, c) => s + prod.citySlots(c), 0);
     // Häfen bringen Seehandel, sobald es mindestens zwei Küstenstädte gibt
     const port = cities.filter((c) => c.coastal).length >= 2 ? ['port'] : [];
-    const order = e.manpower < 400 ? ['housing', 'barracks', 'factory', ...port] : busy ? ['barracks', 'factory', ...port, 'housing'] : ['factory', ...port, 'housing', 'barracks'];
+    const order = e.manpower < 2500 ? ['housing', 'barracks', 'factory', ...port] : busy ? ['barracks', 'factory', ...port, 'housing'] : ['factory', ...port, 'housing', 'barracks'];
     for (const key of order) {
       const c = free.find((x) => prod.nextBuilding(x, key));
       if (c && tryBuild(c, key)) return;
